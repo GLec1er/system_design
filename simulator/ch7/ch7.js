@@ -106,7 +106,7 @@
         learn: { what: 'Реляционная БД с room_type_inventory и reservation. Источник истины.', plus: ['ACID: инвентарь и бронь меняются вместе', 'Блокировки и CHECK прямо в БД'], minus: ['Запись упирается в один primary, пока нет шардов'] } },
       payDB: { name: 'Payment DB', icon: '🧾', cat: 'db', pos: [915, 620], cap: 10000, lat: 15, cost: 300, cx: 1, maxRep: 4, db: true, repLabel: 'шард.', links: [['payment', 'self']], tag: 'SQL: платежи',
         learn: { what: 'БД платежей у Payment Service.', plus: ['У каждого сервиса своя БД'], minus: ['Нужна распределённая согласованность с бронью'] } },
-      cache: { name: 'Кэш (Redis)', icon: '⚡', cat: 'cache', pos: [685, 170], cap: 50000, lat: 1, cost: 200, cx: 1.5, maxRep: 6, cache: true, at: 'db', absorb: { view: 0.95, search: 0.9 },
+      cache: { name: 'Кэш (Redis)', icon: '⚡', cat: 'cache', pos: [685, 170], cap: 50000, lat: 1, cost: 200, cx: 1.5, maxRep: 6, cache: true, multi: true, at: 'db', absorb: { view: 0.95, search: 0.9 },
         links: [[['hotel', 'reservation'], 'self']], tag: 'Чтения из памяти',
         learn: { what: 'Сервис сначала смотрит в кэш и идёт в БД только при промахе (cache-aside). Можно поставить два: для отелей и для инвентаря.', plus: ['Снимает с БД 90–95% чтений', 'Чтение за 1 мс'], minus: ['Может отставать от БД: показывает «есть места», которых уже нет', 'Для брони не используется: проверка всегда в БД'] } },
 
@@ -114,7 +114,7 @@
         learn: { what: 'Сеть серверов по миру, отдаёт статику и закэшированные страницы отелей.', plus: ['Забирает ~60% просмотров ещё до Gateway', 'Быстрее для пользователя'], minus: ['Не помогает брони и доступности: они динамические', 'Нужна инвалидация при смене цен и фото'] } },
       limiter: { name: 'Rate limiter', icon: '🚦', cat: 'edge', extra: true, pos: [235, 140], cap: 200000, lat: 1, cost: 100, cx: 1, maxRep: 2, absorb: { view: 0.15, search: 0.15 }, links: [['gateway', 'self']], tag: 'Отсекает ботов и парсеры',
         learn: { what: 'Ограничивает частоту запросов на пользователя или IP.', plus: ['В распродажу режет ~15% трафика от ботов и парсеров цен'], minus: ['Может задеть живых пользователей', 'Брони он не ускоряет'] } },
-      kafka: { name: 'Kafka', icon: '🧵', cat: 'async', extra: true, pos: [1070, 260], cap: 200000, lat: 5, cost: 500, cx: 2.5, maxRep: 6, links: [['reservation', 'self'], ['resDB', 'self']], tag: 'Очередь событий',
+      kafka: { name: 'Kafka', icon: '🧵', cat: 'async', extra: true, pos: [1070, 260], cap: 200000, lat: 5, cost: 500, cx: 2.5, maxRep: 6, links: [['reservation', 'self'], ['self', 'notification']], bring: ['notification'], drop: [['reservation', 'notification']], tag: 'Очередь событий',
         learn: { what: 'Журнал событий: «бронь создана», «оплата прошла», изменения в БД (CDC).', plus: ['Письма и аналитика не тормозят бронь: Reservation → Kafka → Notification', 'CDC: Reservation DB → Kafka → кэш инвентаря, и кэш почти не отстаёт', 'Удобная основа для Saga'], minus: ['Ещё один кластер: +сложность и цена', 'Сама по себе ничего не ускоряет, если к ней не подключить потребителей'] } },
       notification: { name: 'Notification Service', icon: '📨', cat: 'svc', extra: true, pos: [1070, 520], cap: 2000, lat: 120, cost: 100, cx: 1, maxRep: 50, links: [[['kafka', 'reservation'], 'self']], tag: 'Письмо с подтверждением',
         learn: { what: 'Отправляет письма и пуши о брони.', plus: ['Пользователь получает подтверждение'], minus: ['Если звать его синхронно из Reservation Service, бронь ждёт почту (+120 мс) и падает вместе с ней. Лучше через Kafka.'] } },
@@ -122,8 +122,8 @@
         learn: { what: 'Перед бронью сервис берёт lock на «отель + тип + даты» в Redis.', plus: ['Сильно снижает гонки, даже если в БД нет защиты'], minus: ['Lock с TTL может истечь посреди операции, а Redis может упасть: перепродажи не исчезают полностью', 'Ещё одна точка отказа. Блокировка в самой БД надёжнее'] } },
       search: { name: 'Elasticsearch', icon: '🔎', cat: 'db', extra: true, pos: [685, 20], cap: 5000, lat: 30, cost: 600, cx: 3, maxRep: 10, links: [['hotel', 'self']], tag: 'Полнотекстовый поиск',
         learn: { what: 'Поисковый движок: «отели в Париже у моря с бассейном».', plus: ['Мощный поиск и фильтры'], minus: ['Поиска нет в требованиях главы: платишь сложностью и ценой без пользы', 'Данные нужно синхронизировать с Hotel DB'] } },
-      nosql: { name: 'Cassandra', icon: '🪐', cat: 'db', extra: true, pos: [1070, 60], cap: 20000, lat: 8, cost: 500, cx: 2, maxRep: 30, db: true, repLabel: 'узл.', links: [['reservation', 'self']], tag: 'NoSQL вместо SQL',
-        learn: { what: 'Распределённая NoSQL-БД. Можно попробовать вместо Reservation DB: убери стрелку Reservation Service → Reservation DB.', plus: ['Запись масштабируется добавлением узлов', 'Нет единого primary'], minus: ['Нет ACID-транзакций на несколько строк: блокировки и CHECK не работают, двойные брони вернутся', 'Именно поэтому в книге выбрана реляционная БД'] } },
+      nosql: { name: 'Cassandra', icon: '🪐', cat: 'db', extra: true, pos: [1070, 60], cap: 20000, lat: 8, cost: 500, cx: 2, maxRep: 30, db: true, repLabel: 'узл.', links: [['reservation', 'self']], drop: [['reservation', 'resDB']], tag: 'NoSQL вместо SQL',
+        learn: { what: 'Распределённая NoSQL-БД вместо Reservation DB: при добавлении брони сразу пойдут в неё.', plus: ['Запись масштабируется добавлением узлов', 'Нет единого primary'], minus: ['Нет ACID-транзакций на несколько строк: блокировки и CHECK не работают, двойные брони вернутся', 'Именно поэтому в книге выбрана реляционная БД'] } },
     },
 
     flows: [
@@ -225,7 +225,6 @@
       if (ok('events')) ctx.warn('info', 'Бронь публикует событие в Kafka: письмо уходит асинхронно и не тормозит бронь.');
       if (of('kafka').length && !ok('events') && !ok('cdc')) ctx.warn('info', 'У Kafka нет потребителей: подключи Kafka → Notification Service или Kafka → кэш инвентаря (CDC).');
       if (!acid) ctx.warn(stage === 'deep' ? 'bad' : 'warn', 'Брони пишутся в Cassandra: запись масштабируется легко, но нет ACID-транзакций. Блокировки и CHECK не работают, двойные брони вернутся.');
-      if (of('search').length) ctx.warn('info', 'Elasticsearch даёт полнотекстовый поиск, которого нет в требованиях: +сложность и синхронизация данных без пользы для потоков главы.');
       if (linked('reservation', 'lock')) book.extraLat += 3;
       if (stage !== 'deep') {
         if (flows.find((f) => f.id === 'search').cached && !ok('cdc')) ctx.warn('info', 'Кэш инвентаря обновляется по TTL и может отставать. С Kafka и CDC (Reservation DB → Kafka → кэш) он почти не отстаёт.');
