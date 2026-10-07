@@ -104,7 +104,8 @@ a{color:var(--accent)}
 
 /* оценка и API */
 .est{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:24px;align-items:start}
-@media (max-width:780px){.est{grid-template-columns:1fr}}
+@media (max-width:780px){.est{grid-template-columns:minmax(0,1fr)}}
+#estOut{overflow-x:auto}
 .tbl{width:100%;border-collapse:collapse;font-size:14px;margin-bottom:10px}
 .tbl td,.tbl th{border-bottom:1px solid var(--line);padding:8px 6px;text-align:left;vertical-align:top}
 .tbl th{font-size:12px;color:var(--muted);font-weight:600}
@@ -398,3 +399,25 @@ h3.sec{margin:22px 0 10px;font-size:13px;letter-spacing:.04em;text-transform:upp
 .nfr dd{margin:0}
 .nfr.flash{animation:nflash 1.2s}
 @keyframes nflash{0%,40%{box-shadow:0 0 0 3px var(--accent)}100%{box-shadow:none}}
+
+/* оценка: что двигает каждый ползунок */
+.dep{border-radius:10px;padding:4px 8px;margin:0 -8px 6px;transition:background .15s}
+.dep.on{background:var(--accent-soft)}
+.dep .slider{margin-bottom:4px}
+.dep .shint{font-size:12.5px;display:block;margin:-4px 0 4px}
+.aff{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:12px;color:var(--muted)}
+.ach{padding:1px 7px;border-radius:999px;border:1px solid var(--line);background:var(--card);white-space:nowrap}
+.ach.up{border-color:var(--ok);color:var(--ok)}
+.ach.down{border-color:var(--muted)}
+.small{font-size:12.5px}
+.tbl .to{font-size:12px;margin-top:3px;color:var(--accent)}
+.tbl tr{transition:opacity .15s,background .15s}
+.tbl tr.dim{opacity:.35}
+.tbl tr.hl{background:var(--accent-soft)}
+.tbl td.chg{animation:chg .9s}
+@keyframes chg{0%{background:var(--warn-soft)}100%{background:transparent}}
+.scnsrc .fr{display:inline-flex;align-items:center;gap:4px;margin-right:8px;white-space:nowrap}
+.scnsrc .fr i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.ach.later{opacity:.6;border-style:dashed}
+.tbl .to.m{display:none}
+@media (max-width:600px){#estOut .tbl th:nth-child(2),#estOut .tbl td:nth-child(2){display:none}#estOut .tbl .to.m{display:block}}
