@@ -22,6 +22,7 @@
   }
   const ms = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + ' с' : Math.round(n) + ' мс');
   const money = (n) => '$' + (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : Math.round(n)) + '/мес';
+  const pct = (u) => (u < 10 ? Math.round(u * 100) + '%' : '×' + fmt(u)); // ×1800 читается легче, чем 180 000%
   const cls = (u) => (u > 0.9 ? 'bad' : u > 0.7 ? 'warn' : '');
 
   // ---------- состояние ----------
@@ -29,8 +30,8 @@
     const est = {}, params = {}, choices = {};
     L.estimate.inputs.forEach((i) => (est[i.id] = i.value));
     L.problems.forEach((p) => { (p.params || []).forEach((x) => (params[x.id] = x.value)); if (p.options) choices[p.key] = p.options[0].v; });
-    params[L.load.id] = L.load.value;
-    return { step: 0, visited: {}, req: {}, reqChecked: false, est, graph: { nodes: [], edges: [] }, deep: { params, choices }, show: null };
+    L.scenario.forEach((x) => (params[x.id] = x.value));
+    return { step: 0, visited: {}, req: {}, reqChecked: false, est, graph: { nodes: [], edges: [] }, deep: { params, choices }, show: null, palClosed: {} };
   }
   const defaults = fresh();
   function load() {
@@ -45,11 +46,17 @@
   }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(Object.assign({ v: 1 }, st))); } catch (e) {} }
   let st = load();
+  L.scenario.forEach((x) => { const v = st.deep.params[x.id]; if (!x.stops.includes(v)) st.deep.params[x.id] = x.stops.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a)); });
   let selNode = null, selEdge = null, pendingFrom = null, last = null;
 
   const step = () => L.steps[st.step];
-  // На шаге дизайна решения углубления не действуют, но ползунок нагрузки общий.
-  const deepFor = (stage) => (stage === 'deep' ? st.deep : { params: Object.assign({}, defaults.deep.params, { [L.load.id]: st.deep.params[L.load.id] }), choices: defaults.deep.choices });
+  // На шаге дизайна решения углубления не действуют, но сценарий нагрузки (пик и рост) общий для всех шагов.
+  const scn = () => Object.fromEntries(L.scenario.map((x) => [x.id, st.deep.params[x.id]]));
+  const deepFor = (stage) => (stage === 'deep' ? st.deep : { params: Object.assign({}, defaults.deep.params, scn()), choices: defaults.deep.choices });
+  const scnText = () => L.scenario.map((x) => `${x.label.toLowerCase()} ${x.unit}${st.deep.params[x.id]}`).join(', ');
+  // Эталон под тот же сценарий и те же решения, что у ученика; считается только при их изменении.
+  let refMemo = {};
+  const refFor = (stage) => { const k = JSON.stringify([stage, st.est, deepFor(stage)]); return refMemo[k] || (refMemo = { [k]: E.adapt(L, stage, st.est, deepFor(stage)) })[k]; };
   const analyzeG = (g, stage) => E.analyze(L, g, st.est, deepFor(stage), stage);
   const analyze = (stage) => analyzeG(st.graph, stage);
 
@@ -139,14 +146,28 @@
     return `<div class="slider"><label for="in_${i.id}"><span>${esc(i.label)}</span><output id="out_${i.id}">${fmt(v)} ${esc(i.unit)}</output></label>
       <input type="range" id="in_${i.id}" ${attr}="${i.id}" min="${i.min}" max="${i.max}" step="${i.step}" value="${v}"></div>`;
   }
+  // Ползунок сценария ходит по stops (1, 2, 5, 10 …), чтобы и ×2, и ×1000 были под рукой.
+  function scnHtml(x) {
+    const v = st.deep.params[x.id], i = Math.max(0, x.stops.indexOf(v));
+    return `<label class="load" title="${esc(x.hint)}"><span>${esc(x.label)}</span><input type="range" data-scn="${x.id}" min="0" max="${x.stops.length - 1}" step="1" value="${i}" aria-label="${esc(x.label)}"><output id="scn_${x.id}">${esc(x.unit)}${v}</output></label>`;
+  }
+  function bindScn(then) {
+    $$('[data-scn]').forEach((el) => (el.oninput = () => {
+      const x = L.scenario.find((q) => q.id === el.dataset.scn), v = x.stops[+el.value];
+      st.deep.params[x.id] = v; $('#scn_' + x.id).textContent = x.unit + v; save(); then();
+    }));
+  }
   function estView() {
     return `${head(step(), L.estimate.intro)}<section class="card">
-      <div class="est"><div>${L.estimate.inputs.map((i) => sliderHtml(i, st.est[i.id], 'data-est')).join('')}</div><div id="estOut"></div></div></section>`;
+      <div class="est"><div>${L.estimate.inputs.map((i) => sliderHtml(i, st.est[i.id], 'data-est')).join('')}
+        <div class="scn"><h4 class="grp">📐 Сценарий нагрузки</h4><p class="muted">Один на всю главу: по этим цифрам считаются карта, узкие места и эталон.</p>${L.scenario.map(scnHtml).join('')}</div></div>
+      <div id="estOut"></div></div></section>`;
   }
   function renderEst() {
-    const d = L.derive(st.est, defaults.deep);
-    $('#estOut').innerHTML = `<table class="tbl"><thead><tr><th>Что считаем</th><th>Как</th><th>Итог</th></tr></thead><tbody>
-      ${L.estimate.rows(d).map((r) => `<tr><td>${esc(r.label)}</td><td class="muted">${esc(r.formula)}</td><td class="num">${fmt(r.v)}</td></tr>`).join('')}</tbody></table>
+    const now = L.derive(st.est, { params: {} }), d = L.derive(st.est, { params: scn() });
+    $('#estOut').innerHTML = `<table class="tbl"><thead><tr><th>Что считаем</th><th>Как</th><th>Сейчас</th><th>Сценарий</th></tr></thead><tbody>
+      ${L.estimate.rows(now).map((r, i) => { const v = L.estimate.rows(d)[i].v * (r.peak ? d.k : 1);
+        return `<tr><td>${esc(r.label)}</td><td class="muted">${esc(r.formula)}${r.peak && d.k > 1 ? ` × пик ${d.k}` : ''}</td><td class="num">${fmt(r.v)}</td><td class="num ${v > r.v ? 'up' : ''}">${fmt(v)}</td></tr>`; }).join('')}</tbody></table>
       <div class="w info">${esc(L.estimate.conclusion(d))}</div>`;
   }
   function bindEst() {
@@ -154,6 +175,7 @@
       const i = L.estimate.inputs.find((x) => x.id === el.dataset.est);
       st.est[i.id] = +el.value; $('#out_' + i.id).textContent = fmt(+el.value) + ' ' + i.unit; save(); renderEst();
     }));
+    bindScn(renderEst);
     renderEst();
   }
 
@@ -172,7 +194,7 @@
   let scale = 1, zoom = 1, autoS = null, lastDpr = window.devicePixelRatio, prevKpi = null, toastT = null;
 
   function mapView() {
-    const s = step(), deep = s.stage === 'deep', ld = L.load;
+    const s = step(), deep = s.stage === 'deep';
     const intro = deep
       ? 'Схема та же, но теперь появляются проблемы. Выбирай решения в карточках под картой, крути нагрузку и пробуй необязательные блоки: метрики покажут, что стало лучше и что хуже.'
       : 'Собери архитектуру. Каждый поток должен дойти от клиента до своих данных. Попробуй и необязательные блоки: у каждого в палитре видно, что изменится, если его добавить.';
@@ -180,16 +202,17 @@
       <div class="kpis" id="kpis"></div>
       <section class="broken" id="broken" hidden></section>
       <div class="lab-grid">
-        <aside class="card pal-card"><h3>Палитра</h3><div id="pal"></div></aside>
+        <aside class="card pal-card pal-book"><div class="palh"><b>📘 По книге</b><small>Этих блоков хватает для ответа на интервью.</small></div><div id="palBook"></div></aside>
         <section class="card mapcard" id="mapcard">
           <div class="toolbar">
-            <label class="load" title="${esc(ld.hint)}"><span>⚡ ${esc(ld.label)}</span><input type="range" id="load" min="${ld.min}" max="${ld.max}" step="${ld.step}" value="${st.deep.params[ld.id]}"><output id="loadOut">×${st.deep.params[ld.id]}</output></label>
+            <div class="scnbar">${L.scenario.map(scnHtml).join('')}<span class="scnsrc" id="scnsrc"></span></div>
             <div class="tb">
               <button class="ib" data-z="-1" aria-label="Уменьшить" title="Уменьшить">−</button><button class="ib" data-z="0" title="Вписать">⤢</button><button class="ib" data-z="1" aria-label="Увеличить" title="Увеличить">+</button>
               <button class="ib" id="full" title="Во весь экран">⛶</button>
-              <button class="btn sm" id="ref">✨ Эталон</button><button class="btn sm ghost" id="clr">Очистить</button>
+              <button class="btn sm" id="ref" title="Эталон под текущий сценарий: оригинал из книги или его адаптация">✨ Эталон</button><button class="btn sm ghost" id="refBook" title="Схема ровно как в книге">📘 Оригинал</button><button class="btn sm ghost" id="clr">Очистить</button>
             </div>
           </div>
+          <div class="cmp" id="cmp"></div>
           <div class="bookline" id="bookline"></div>
           <div class="legend" id="legend"></div>
           <p class="lghelp">Стрелка значит «вызывает»: запрос идёт по стрелке, ответ возвращается обратно. Точки на стрелке это запросы, цвет показывает поток, число это запросов в секунду. Серый пунктир: по стрелке ничего не идёт, а на блоке написано почему: 🔌 не подключён (не хватает стрелки) или 💤 не нужен в этой схеме. Нажми на стрелку или блок, чтобы увидеть подробности.</p>
@@ -205,6 +228,7 @@
             <aside class="insp" id="insp" hidden></aside>
           </div>
         </section>
+        <aside class="card pal-card pal-exp"><div class="palh"><b>🧪 Эксперименты</b><small>В книге их нет. Добавь и посмотри, что станет лучше, а что хуже.</small></div><div id="palExp"></div></aside>
       </div>
       ${deep ? '<h3 class="sec">Проблемы углубления</h3><div class="probs" id="probs"></div>' : ''}
       <section class="card ai" id="ai"></section>
@@ -216,10 +240,15 @@
   }
 
   function bindMap() {
-    $('#ref').onclick = () => { loadRef(step().stage); toast('Разложена эталонная схема. Попробуй что-то изменить и посмотри на метрики.'); };
+    $('#ref').onclick = () => {
+      const A = refFor(step().stage);
+      loadRef(A.graph);
+      toast(A.original ? 'Разложен эталон: при этом сценарии схема из книги выдерживает нагрузку как есть.' : `Эталон адаптирован под сценарий (${scnText()}): ${A.changes.join('; ')}.${A.ok ? '' : ' Но и так не выдерживает: причины над картой.'}`);
+    };
+    $('#refBook').onclick = () => { loadRef(E.refGraph(L, step().stage)); toast('Разложена схема ровно как в книге. Сравни её метрики с адаптацией под нагрузку.'); };
     $('#clr').onclick = () => { if (confirm('Убрать все блоки и стрелки с карты?')) { st.graph = { nodes: [], edges: [] }; selNode = null; changed(); } };
     $('#edel').onclick = () => { if (selEdge != null) { st.graph.edges.splice(selEdge, 1); selEdge = null; changed(); } };
-    $('#load').oninput = (e) => { st.deep.params[L.load.id] = +e.target.value; $('#loadOut').textContent = '×' + e.target.value; save(); update(); };
+    bindScn(update);
     $$('[data-z]').forEach((b) => (b.onclick = () => { const z = +b.dataset.z; zoom = z ? Math.max(0.5, Math.min(2.5, zoom + z * 0.15)) : 1; fit(!z); }));
     $('#full').onclick = () => { $('#mapcard').classList.toggle('full'); document.body.classList.toggle('noscroll'); fit(true); };
     fit();
@@ -249,12 +278,8 @@
     if (last) drawEdges();
   }
 
-  function loadRef(stage) {
-    const R = L.reference[stage];
-    st.graph = {
-      nodes: R.nodes.map((n) => { const [type, id, pos] = [].concat(n); const p = pos || L.blocks[type].pos; const cfg = R.cfg && R.cfg[id || type]; return Object.assign({ id: id || type, type, x: p[0], y: p[1] }, cfg && { cfg: Object.assign({}, cfg) }); }),
-      edges: R.edges.map(([from, to]) => ({ from, to })),
-    };
+  function loadRef(g) {
+    st.graph = JSON.parse(JSON.stringify(g));
     selNode = null;
     changed();
   }
@@ -321,16 +346,32 @@
     return chips;
   }
 
+  const fitHtml = (f) => `<p><b class="fy">Хорош для:</b> ${esc(f.use)}</p><p><b class="fn">Не стоит:</b> ${esc(f.avoid)}</p><p><b>Ограничения:</b> ${esc(f.limits)}</p>`;
+  const infoOpen = new Set();
+
+  // Две палитры: слева блоки из книги, справа эксперименты; внутри тематические группы, которые можно свернуть.
   function renderPalette(r) {
-    const groups = [['📘 По книге', 'Этих блоков хватает для ответа на интервью.', (b) => !b.extra], ['🧪 Эксперименты', 'В книге их нет. Добавь и посмотри, что станет лучше, а что хуже.', (b) => b.extra]];
-    $('#pal').innerHTML = groups.map(([title, sub, f]) => `<div class="pgroup"><div class="pgt">${title}<small>${sub}</small></div>${Object.entries(L.blocks).filter(([, b]) => f(b)).map(([t, b]) => {
+    const rank = (g, extra) => { const i = ((extra && L.expGroups) || L.groups || []).indexOf(g); return i < 0 ? 99 : i; };
+    const item = ([t, b]) => {
       const onMap = st.graph.nodes.some((n) => n.type === t);
       const done = onMap && !b.multi, chips = done ? [] : effects(r, analyzeG(E.addBlock(L, st.graph, t, [0, 0]).graph, step().stage));
-      return `<button class="pi cat-${b.cat}" data-t="${t}" title="Перетащи на карту или нажми">
-        <span class="pic">${b.icon}</span><span class="pin"><b>${esc(b.name)}</b>${onMap ? '<em>на карте</em>' : ''}<small>${esc(b.tag || '')}</small>
-        ${done ? '' : `<span class="chips">${chips.length ? chips.slice(0, 4).map(([t, good]) => `<span class="chip ${good ? 'good' : 'bad'}">${esc(t)}</span>`).join('') : '<span class="chip">сейчас без эффекта</span>'}</span>`}</span></button>`;
-    }).join('')}</div>`).join('');
-    $$('#pal .pi').forEach(bindPaletteItem);
+      return `<div class="pwrap"><button class="pi cat-${b.cat}" data-t="${t}" title="Перетащи на карту или нажми">
+        <span class="pic">${b.icon}</span><span class="pin"><b>${esc(b.name)}</b><span class="pmeta"><span class="ptag ${b.extra ? 'xp' : 'bk'}">${b.extra ? '🧪 эксперимент' : '📘 книга'}</span>${onMap ? '<em>на карте</em>' : ''}</span><small>${esc(b.tag || '')}</small>
+        ${done ? '' : `<span class="chips">${chips.length ? chips.slice(0, 4).map(([t, good]) => `<span class="chip ${good ? 'good' : 'bad'}">${esc(t)}</span>`).join('') : '<span class="chip">сейчас без эффекта</span>'}</span>`}</span></button>
+        ${b.fit ? `<button class="pinfo" data-info="${t}" aria-expanded="${infoOpen.has(t)}" title="Для чего подходит, когда не стоит, ограничения">ⓘ</button>${infoOpen.has(t) ? `<div class="pfit">${fitHtml(b.fit)}</div>` : ''}` : ''}</div>`;
+    };
+    const side = (extra) => {
+      const list = Object.entries(L.blocks).filter(([, b]) => !!b.extra === extra);
+      return [...new Set(list.map(([, b]) => b.group || 'Другое'))].sort((a, b) => rank(a, extra) - rank(b, extra)).map((g) => {
+        const key = (extra ? 'x:' : 'b:') + g, items = list.filter(([, b]) => (b.group || 'Другое') === g);
+        return `<details class="pgroup" data-g="${esc(key)}" ${st.palClosed && st.palClosed[key] ? '' : 'open'}><summary>${esc(g)}<span>${items.length}</span></summary>${items.map(item).join('')}</details>`;
+      }).join('');
+    };
+    $('#palBook').innerHTML = side(false);
+    $('#palExp').innerHTML = side(true);
+    $$('.pal-card .pi').forEach(bindPaletteItem);
+    $$('.pal-card details').forEach((d) => (d.ontoggle = () => { st.palClosed = Object.assign({}, st.palClosed, { [d.dataset.g]: !d.open }); save(); }));
+    $$('.pal-card [data-info]').forEach((b) => (b.onclick = () => { const t = b.dataset.info; infoOpen.has(t) ? infoOpen.delete(t) : infoOpen.add(t); renderPalette(last); }));
   }
 
   function bindPaletteItem(el) {
@@ -364,12 +405,13 @@
       const n = r.nodes[g.id], b = n.def, hot = n === r.m.bottleneck && r.m.maxU > 0.7;
       const body = b.cap
         ? `<div class="meter"><i class="${cls(n.util)}" style="width:${Math.min(100, n.util * 100)}%"></i></div>
-           <div class="nmx"><span>${fmt(n.load)} rps</span><b class="${cls(n.util)}">${Math.round(n.util * 100)}%</b></div>
+           <div class="nmx"><span>${fmt(n.load)} rps</span><b class="${cls(n.util)}">${pct(n.util)}</b></div>
            <div class="nf">${sizePills(b, n)}<span class="pill">${ms(b.lat * n.q)}</span>${n.badges.map((x) => `<span class="pill bd" title="${esc(x.title)}">${x.icon}</span>`).join('')}</div>`
         : `<div class="nf"><span class="pill">${fmt(Object.values(n.flows).reduce((s, v) => s + v, 0))} rps</span></div>`;
-      return `<div class="node cat-${b.cat} ${b.extra ? 'exp' : ''} ${hot ? 'hot' : ''} ${n.load || !b.cap ? '' : 'idle'} ${selNode === g.id ? 'sel' : ''}" data-id="${g.id}" style="left:${g.x}px;top:${g.y}px">
+      const cl = clusterHtml(b, n, r);
+      return `<div class="node cat-${b.cat} ${b.extra ? 'exp' : ''} ${cl ? 'wide' : ''} ${hot ? 'hot' : ''} ${n.load || !b.cap ? '' : 'idle'} ${selNode === g.id ? 'sel' : ''}" data-id="${g.id}" style="left:${g.x}px;top:${g.y}px">
         <div class="nh"><span class="ni">${b.icon}</span><span class="nt"><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''}${b.extra ? ' · 🧪 эксперимент' : ''}</small></span><button class="nx" data-del aria-label="Удалить ${esc(b.name)}" title="Удалить">×</button></div>
-        ${body}
+        ${body}${cl}
         ${n.why ? `<div class="nwhy ${n.why.kind}">${n.why.kind === 'useless' ? '💤 Не нужен в этой главе' : n.why.kind === 'dup' ? '💤 Лишний дубль' : '🔌 Не подключён'}</div>` : ''}
         <button class="port" data-port aria-label="Провести стрелку от «${esc(b.name)}»" title="Потяни к другому блоку"></button></div>`;
     }).join('');
@@ -378,8 +420,47 @@
   function sizePills(b, n) {
     const c = n.cfg;
     if (b.tune === 'sql') return `<span class="pill" title="Шарды">${c.shards} шард.</span>${c.replicas ? `<span class="pill" title="Реплики для чтения">+${c.replicas} репл.</span>` : ''}`;
-    if (b.tune === 'kafka') return `<span class="pill" title="Партиции и репликация">${c.partitions} парт. · RF${c.rf}</span>`;
+    if (b.tune === 'kafka') return `<span class="pill" title="Брокеры, партиции и репликация">${c.brokers} брок. · ${c.partitions} парт. · RF${n.cluster.rf}</span>`;
+    if (b.tune === 'rabbit') return `<span class="pill" title="Очереди и их тип">${c.queues} очер. · ${c.qtype}</span>`;
     return `<span class="pill" title="${esc(b.repLabel || 'реплик')}, подбираются сами">×${n.rep}</span>`;
+  }
+
+  // Что внутри блока: шарды и реплики БД, брокеры и партиции Kafka, exchange и очереди RabbitMQ.
+  function consumersOf(r, id) {
+    const out = new Map();
+    r.flows.forEach((f) => f.ok && f.path.forEach((x, i) => { const nx = f.path[i + 1]; if (x.id === id && nx) out.set(nx.id, r.nodes[nx.id]); }));
+    return [...out.values()];
+  }
+  const producersOf = (r, id) => [...new Set(st.graph.edges.filter((e) => e.to === id && r.nodes[e.from]).map((e) => r.nodes[e.from].def.name))].join(', ') || 'никто';
+  function clusterHtml(b, n, r) {
+    const c = n.cluster;
+    if (!c) return '';
+    if (b.tune === 'sql') {
+      const S = c.shards.length;
+      if (S < 2 && !c.replicas) return '';
+      const even = c.shards.every((x) => Math.abs(x.share - 1 / S) < 1e-9), show = S > 8 ? c.shards.slice(0, 7) : c.shards;
+      return `<div class="cl">${S > 1 ? `<div class="clr">🧭 Роутер${c.key ? `: по ${esc(c.key)}` : ''}${even ? '' : ' · <b class="warn">перекос</b>'}</div>` : ''}
+        <div class="shs">${show.map((x, i) => `<div class="shd" title="Шард ${i + 1}: ${pct(x.share)} данных и запросов. Primary ${pct(x.pU)}${c.replicas ? `, реплики по ${pct(x.rU)}` : ''}">
+          ${S > 1 ? `<span class="shn">S${i + 1}${even ? '' : ' · ' + pct(x.share)}</span>` : ''}<span class="pp ${cls(x.pU)}">P ${pct(x.pU)}</span>
+          ${c.replicas ? `<span class="rl" title="${c.sync === 'sync' ? 'Синхронная' : 'Асинхронная'} репликация primary → реплики">${c.sync === 'sync' ? '⇊' : '⇣'}</span><span class="rs">${Array.from({ length: c.replicas }, () => `<i class="${cls(x.rU)}"></i>`).join('')}</span>` : ''}</div>`).join('')}
+          ${S > 8 ? `<div class="shd more">+${S - 7}</div>` : ''}</div>
+        <div class="clk"><span>✍️ запись → P</span><span>👁 чтение → ${c.replicas ? 'P и R' : 'P'}</span></div></div>`;
+    }
+    if (b.tune === 'kafka') {
+      const B = c.brokers, P = c.partitions, on = (k) => Array.from({ length: P }, (_, p) => p).filter((p) => (k - (p % B) + B) % B < c.rf);
+      const cons = consumersOf(r, n.id);
+      return `<div class="cl"><div class="clr">✍️ ${esc(producersOf(r, n.id))} → топик, ${P} парт.</div>
+        <div class="brs">${Array.from({ length: B }, (_, k) => { const all = on(k), lead = all.filter((p) => p % B === k);
+          return `<div class="br" title="Брокер ${k + 1}: лидер для ${lead.length} партиций, копии ещё ${all.length - lead.length}"><span class="shn">B${k + 1}</span><span class="pts">${lead.slice(0, 6).map((p) => `<i class="ld">P${p}</i>`).join('')}${lead.length > 6 ? `<i>+${lead.length - 6}</i>` : ''}</span>${all.length > lead.length ? `<small>+${all.length - lead.length} коп.</small>` : ''}</div>`; }).join('')}</div>
+        <div class="clk">${cons.length ? cons.map((x) => x.def.cache ? `<span>📥 ${esc(x.def.name)}: CDC</span>` : `<span>👥 ${esc(x.def.name)}: ${x.rep} потреб., ${x.rep >= P ? 'по 1 партиции' : `по ${Math.ceil(P / x.rep)} парт.`}${x.want > P ? `; нужно ${x.want}, но лишним не досталось бы партиций` : ''}</span>`).join('') : '<span>👥 потребителей нет</span>'}<span>RF ${c.rf}: лидер + ${c.rf - 1} коп.</span></div></div>`;
+    }
+    if (b.tune === 'rabbit') {
+      const cons = consumersOf(r, n.id);
+      return `<div class="cl"><div class="clr">✍️ ${esc(producersOf(r, n.id))} → exchange</div>
+        <div class="qs">${Array.from({ length: c.queues }, (_, i) => `<i class="q ${cls(n.util)}" title="Очередь ${i + 1}: ${pct(n.util)}">q${i + 1} ${pct(n.util)}</i>`).join('')}</div>
+        <div class="clk">${cons.length ? cons.map((x) => `<span>👥 ${esc(x.def.name)}: ${x.rep} конкурируют</span>`).join('') : '<span>👥 потребителей нет</span>'}<span>${c.qtype} · prefetch ${c.prefetch}</span></div></div>`;
+    }
+    return '';
   }
 
   function rectOf(id) {
@@ -584,6 +665,10 @@
       box.innerHTML = `<p class="onote">Сейчас: ${c.shards} шард.${key}, реплик ${c.replicas}. Загрузка ${Math.round(n.util * 100)}%.</p><button class="btn sm" data-open="${g.id}">⚙️ Настроить ${esc(def.name)}</button>`;
       $('[data-open]', box).onclick = () => { select(g.id); $('#mapcard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
     });
+    const d = r.d;
+    $('#scnsrc').innerHTML = `📐 Из оценки: ${fmt(d.tps)} броней/с, в пике ${fmt(d.tps * d.k)}/с, просмотров ${fmt(d.view * d.k)}/с <button class="lnk" data-go="${L.steps.findIndex((x) => x.kind === 'est')}">изменить</button>`;
+    $('[data-go]', $('#scnsrc')).onclick = (e) => go(+e.target.dataset.go);
+    renderCmp(r);
     const nb = st.graph.nodes.filter((g) => !L.blocks[g.type].extra).length, nx = st.graph.nodes.length - nb;
     $('#bookline').innerHTML = `<span class="bk">📘 По книге: ${nb}</span><span class="xp">🧪 Эксперименты: ${nx}</span><span class="muted">Блоки-эксперименты на карте с пунктирной рамкой.</span>`;
     const goals = L.goals[step().stage], done = goals.filter((g) => g.check(r)).length;
@@ -595,6 +680,18 @@
     $('#broken').innerHTML = `<h4><span>❗</span> Что сломалось</h4><ul>${bad.map((w) => `<li>${esc(w.text)}</li>`).join('')}</ul>`;
     $('#warns').innerHTML = rest.length ? rest.map((w) => `<div class="w ${w.lvl}"><span>${icon[w.lvl]}</span><span>${esc(w.text)}</span></div>`).join('') : '<div class="note">Пока всё спокойно.</div>';
     renderInspector();
+  }
+
+  // Эталон и схема ученика под одним сценарием и одними решениями.
+  function renderCmp(r) {
+    const A = refFor(step().stage);
+    const k = (x) => { const b = x.flows.find((f) => f.id === 'book');
+      return `<span class="${x.m.served >= 1 && x.m.maxU <= 0.9 ? 'ok' : 'bad'}">выдерживает ${pct(x.m.served)}, пик загрузки ${pct(x.m.maxU)}</span> · бронь ${b && b.ok ? ms(b.lat) : '—'} · ${money(x.m.cost)} · сложность ${x.m.cx.toFixed(1)}`; };
+    $('#cmp').innerHTML = `<div class="cref ${A.ok ? '' : 'nok'}"><div class="ct"><b>${A.original ? '📘 Эталон: оригинал из книги' : `🔧 Эталон: адаптация под ${esc(scnText())}`}</b><small>${k(A.r)}</small></div>
+      ${A.original ? '<p class="muted">При этом сценарии схема из книги выдерживает нагрузку без изменений.</p>'
+        : `<details><summary>Чем отличается от книги (${A.changes.length})</summary><ul>${A.changes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul><p class="muted">Оригинал из книги здесь: ${k(A.before)}</p></details>`}
+      ${A.ok ? '' : `<div class="blk">⛔ Даже адаптированный эталон не выдерживает. Упёрлись: ${A.blockers.map((x) => `«${esc(x.name)}» ${pct(x.util)} (${esc(x.limit)})`).join(', ')}. Нужно: ${[...new Set(A.blockers.map((x) => x.need))].map(esc).join('; ')}.</div>`}</div>
+      <div class="cmine"><div class="ct"><b>🧩 Твоя схема</b><small>${st.graph.nodes.length ? k(r) : 'карта пустая'}</small></div></div>`;
   }
 
   function renderInspector() {
@@ -609,11 +706,13 @@
     const li = (a) => (a && a.length ? '<ul>' + a.map((t) => `<li>${esc(t)}</li>`).join('') + '</ul>' : '');
     box.innerHTML = `<div class="ih cat-${b.cat}"><span class="ni">${b.icon}</span><div><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''} · ${b.extra ? '🧪 эксперимент, в книге его нет' : '📘 по книге'}</small></div><button class="nx" id="inspX" aria-label="Закрыть">×</button></div>
       <p>${esc(b.learn.what)}</p>
-      ${b.cap ? `<div class="istats"><div><span>Нагрузка</span><b>${fmt(n.load)} / ${fmt(n.capTotal)} rps</b></div><div><span>Загрузка</span><b class="${cls(n.util)}">${Math.round(n.util * 100)}%</b></div><div><span>${esc(b.repLabel || 'Реплик')}</span><b>${n.rep}${n.rep >= n.maxRep ? ' (макс.)' : ''}</b></div><div><span>Задержка</span><b>${ms(b.lat * n.q)}</b></div></div>` : ''}
+      ${b.cap ? `<div class="istats"><div><span>Нагрузка</span><b>${fmt(n.load)} / ${fmt(n.capTotal)} rps</b></div><div><span>Загрузка</span><b class="${cls(n.util)}">${pct(n.util)}</b></div><div><span>${esc(b.repLabel || 'Реплик')}</span><b>${n.rep}${!b.tune && n.rep >= n.maxRep ? ' (макс.)' : ''}</b></div><div><span>Задержка</span><b>${ms(b.lat * n.q)}</b></div></div>` : ''}
+      ${n.explain && n.explain.length ? `<h5>Почему такая нагрузка</h5><ul class="expl">${n.explain.map((t) => `<li>${esc(t)}</li>`).join('')}${n.limit ? `<li class="lim">Упёрся: ${esc(n.limit)}. Нужно: ${esc(n.need)}.</li>` : ''}</ul>` : ''}
       ${tuneHtml(b, n)}
       ${flows.length ? `<h5>Какие потоки идут</h5>${flows.map((f) => `<div class="fbar"><span>${esc(f.label)}</span><i style="width:${(n.flows[f.id] / max) * 100}%;background:${f.color}"></i><b>${fmt(n.flows[f.id])}</b></div>`).join('')}` : `<p class="why ${n.why ? n.why.kind : ''}">${n.why ? (n.why.kind === 'useless' ? '💤 ' : '🔌 ') + esc(n.why.text) : 'Через блок не идёт ни один поток.'}</p>`}
       ${b.learn.plus && b.learn.plus.length ? `<h5 class="plus">Что даёт</h5>${li(b.learn.plus)}` : ''}
       ${b.learn.minus && b.learn.minus.length ? `<h5 class="minus">Чем платим</h5>${li(b.learn.minus)}` : ''}
+      ${b.fit ? `<h5>Когда брать</h5><div class="pfit">${fitHtml(b.fit)}</div>` : ''}
       <button class="btn sm ghost danger" id="inspDel">Убрать с карты</button>`;
     $$('#insp [data-tf]').forEach((el) => (el.onclick = () => setCfg(g, el.dataset.tf, el.dataset.v)));
     if ($('#autoTune')) $('#autoTune').onclick = () => autoTune(g);
@@ -639,25 +738,13 @@
     g.cfg = Object.assign({}, g.cfg, { [id]: o.v });
     changed();
   }
-  // Перебираем размеры от дешёвых к дорогим и берём первый, где блок и те, кого он кормит, загружены не больше чем на 70%.
+  // Самый дешёвый размер, при котором блок и те, кого он кормит, загружены не больше чем на 70% (подбирает движок).
   function autoTune(g) {
-    const def = L.blocks[g.type], base = last.nodes[g.id].cfg, cands = [];
-    if (def.tune === 'sql') [1, 2, 4, 8, 16].forEach((sh) => [0, 1, 2, 3, 5].forEach((rp) => cands.push({ shards: sh, replicas: rp, cost: sh * (1 + 0.6 * rp) })));
-    else [1, 3, 6, 12, 24].forEach((pt) => cands.push({ partitions: pt, cost: pt }));
-    cands.sort((a, b) => a.cost - b.cost);
-    const ids = [g.id].concat(st.graph.edges.filter((e) => e.from === g.id).map((e) => e.to));
-    const old = g.cfg;
-    let pick = null, r = null;
-    for (const c of cands) {
-      g.cfg = Object.assign({}, base, c); delete g.cfg.cost;
-      r = analyzeG(st.graph, step().stage);
-      if (ids.every((id) => r.nodes[id].util <= E.TARGET + 0.001)) { pick = g.cfg; break; }
-    }
-    g.cfg = pick || g.cfg || old;
-    const c = g.cfg, u = Math.round(r.nodes[g.id].util * 100);
-    const what = def.tune === 'sql' ? `${c.shards} шард., реплик ${c.replicas}` : `${c.partitions} партиций`;
-    const reads = def.tune === 'sql' && r.nodes[g.id].wload < 0.2 * r.nodes[g.id].load ? ' Почти всё здесь чтения: кэш перед БД обойдётся дешевле реплик.' : '';
-    toast(pick ? `Подобрал: ${what}. Загрузка ${u}%.${reads}` : `Даже ${what} не хватает (${u}%). ${def.tune === 'sql' ? 'Сними чтения кэшем перед БД.' : 'Добавь потребителей.'}`);
+    const def = L.blocks[g.type], res = E.sizeFor(L, st.graph, st.est, deepFor(step().stage), step().stage, g.id), c = res.cfg, n = res.r.nodes[g.id];
+    g.cfg = c;
+    const what = { sql: `${c.shards} шард., реплик ${c.replicas}`, kafka: `${c.brokers} брокер., ${c.partitions} партиций`, rabbit: `${c.queues} очеред.` }[def.tune];
+    const reads = def.tune === 'sql' && n.wload < 0.2 * n.load ? ' Почти всё здесь чтения: кэш перед БД обойдётся дешевле реплик.' : '';
+    toast(res.ok ? `Подобрал: ${what}. Загрузка ${pct(n.util)}.${reads}` : `Даже ${what} не хватает (${pct(n.util)}). ${n.need ? 'Нужно: ' + n.need + '.' : ''}`);
     changed();
   }
 
@@ -717,10 +804,11 @@
       chapter: `Глава ${L.n}. ${L.title}`,
       stage: s.stage === 'deep' ? 'углубление: конкурентность, масштаб, транзакции' : 'высокоуровневый дизайн',
       blocks: Object.fromEntries(Object.entries(L.blocks).map(([t, b]) => [t, { name: b.name, what: b.learn.what, plus: b.learn.plus, minus: b.learn.minus, can_call: E.linkTargets(L, t) }])),
-      map: { nodes: st.graph.nodes.map((g) => ({ id: g.id, type: g.type, load_rps: Math.round(r.nodes[g.id].load), util: +r.nodes[g.id].util.toFixed(2), replicas: r.nodes[g.id].rep })), edges: st.graph.edges },
+      map: { nodes: st.graph.nodes.map((g) => ({ id: g.id, type: g.type, load_rps: Math.round(r.nodes[g.id].load), util: +r.nodes[g.id].util.toFixed(2), replicas: r.nodes[g.id].rep, limit: r.nodes[g.id].limit })), edges: st.graph.edges },
       flows: r.flows.map((f) => ({ id: f.id, label: f.label, optional: f.optional, rps: +f.rate.toFixed(1), reaches_data: f.ok, latency_ms: f.ok ? Math.round(f.lat) : null })),
       metrics: { served: +r.m.served.toFixed(2), bottleneck: r.m.bottleneck && r.m.bottleneck.def.name, cost_month: Math.round(r.m.cost), complexity: +r.m.cx.toFixed(1), ...Object.fromEntries(L.metrics.map((x) => [x.label, Math.round(r.m[x.id] || 0)])) },
-      load_multiplier: st.deep.params[L.load.id],
+      scenario: scn(),
+      reference: (() => { const A = refFor(s.stage); return { original_from_book: A.original, changes_for_this_load: A.changes, holds: A.ok, blockers: A.blockers.map((x) => `${x.name}: ${x.limit}`) }; })(),
       decisions: s.stage === 'deep' ? L.problems.filter((p) => p.options).map((p) => ({ problem: p.title, chosen: p.options.find((o) => o.v === st.deep.choices[p.key]).label, options: p.options.map((o) => o.label) })) : null,
       db_settings: Object.fromEntries(st.graph.nodes.filter((g) => L.blocks[g.type].tune).map((g) => [g.id, last.nodes[g.id].cfg])),
       warnings: r.warnings.map((w) => w.text),

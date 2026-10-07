@@ -1,5 +1,13 @@
 /* Глава 7. Hotel Reservation System: данные для лаборатории (simulator/lab). */
 (function (g) {
+  const SQL_FIT = { use: 'Брони, инвентарь, деньги: всё, где нужны ACID-транзакции, ограничения и JOIN.', avoid: 'Сотни тысяч записей в секунду без естественного ключа шардирования.', limits: 'Запись упирается в один primary; шардирование делается вручную и ломает JOIN и транзакции между шардами.' };
+  // Чем адаптировать эталон под нагрузку выше книжной, по порядку (дальше движок подбирает размеры БД).
+  const ADAPT = [
+    { add: 'cache', id: 'cache', from: 'hotel', pos: [685, 170], why: 'кэш отелей снимает чтения с Hotel DB' },
+    { add: 'cache', id: 'cacheR', from: 'reservation', pos: [685, 290], why: 'кэш доступности снимает чтения с Reservation DB' },
+    { add: 'cdn', from: 'client', why: 'CDN отдаёт просмотры до Gateway' },
+    { add: 'limiter', from: 'gateway', why: 'rate limiter срезает ботов и парсеры' },
+  ];
   g.LAB = {
     id: 'ch7', n: 7, title: 'Hotel Reservation System', subtitle: 'Бронирование отелей',
     intro: 'Система бронирования вроде Booking или Marriott. Нагрузка маленькая, поэтому сложность не в объёме, а в корректности: нельзя продать один номер дважды, когда люди жмут кнопку одновременно и по два раза.',
@@ -48,15 +56,18 @@
         { id: 'conv', label: 'Доходит до следующего шага воронки', unit: '%', min: 2, max: 50, step: 1, value: 10 },
       ],
       rows: (d) => [
-        { label: 'Броней в день', formula: 'номера × заполняемость ÷ срок', v: d.B },
-        { label: 'Броней в секунду (запись)', formula: 'брони в день ÷ 86 400', v: d.tps },
-        { label: 'Страница бронирования, QPS', formula: 'TPS ÷ конверсия', v: d.page },
-        { label: 'Просмотр отелей, QPS', formula: 'страница брони ÷ конверсия', v: d.view },
+        // peak: величина в секунду, в пике умножается на ×распродажи
+        { label: 'Броней в день', formula: 'номера × заполняемость ÷ срок × рост', v: d.B },
+        { label: 'Броней в секунду (запись)', formula: 'брони в день ÷ 86 400', v: d.tps, peak: true },
+        { label: 'Страница бронирования, QPS', formula: 'TPS ÷ конверсия', v: d.page, peak: true },
+        { label: 'Просмотр отелей, QPS', formula: 'страница брони ÷ конверсия', v: d.view, peak: true },
+        { label: 'Посетителей в день (DAU)', formula: 'просмотры × 86 400 ÷ 10 страниц на человека', v: (d.view * 86400) / 10 },
         { label: 'Строк в room_type_inventory', formula: 'отели × 20 типов × 730 дней', v: d.invRows },
       ],
-      conclusion: (d) => d.tps < 300
-        ? `Запись около ${d.tps < 10 ? d.tps.toFixed(1) : Math.round(d.tps)} в секунду: это мало. Одна реляционная БД справится, шардировать ради нагрузки не нужно. Значит, вся сложность будет в конкурентности, а не в масштабе.`
-        : `Запись уже около ${Math.round(d.tps)} в секунду. Одна БД ещё может справиться, но пора думать о шардировании.`,
+      conclusion: (d) => { const w = d.tps * d.k, t = w < 10 ? w.toFixed(1) : Math.round(w);
+        return w < 300 ? `В пике сценария запись около ${t} в секунду: это мало. Одна реляционная БД справится, шардировать ради нагрузки не нужно. Значит, вся сложность будет в конкурентности, а не в масштабе.`
+          : w < 1000 ? `В пике сценария запись около ${t} в секунду. Один primary ещё справляется, но запас тает: пора думать о шардировании.`
+          : `В пике сценария запись около ${t} в секунду: один primary (в модели около 1500 rps) не вытянет. Нужны шарды, а чтения стоит снять кэшем.`; },
     },
 
     api: {
@@ -82,57 +93,84 @@
       ],
     },
 
-    board: { w: 1240, h: 760 },
-    load: { id: 'flash', label: 'Нагрузка', unit: '×', min: 1, max: 100, step: 1, value: 1, hint: 'Пик распродажи: во сколько раз трафик выше обычного' },
+    board: { w: 1320, h: 820 },
+    // Сценарий нагрузки общий для оценки, карты и эталона. stops: значения ползунка.
+    scenario: [
+      { id: 'flash', label: 'Пик распродажи', unit: '×', stops: [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000], value: 1, hint: 'Во сколько раз трафик в пик выше обычного дня' },
+      { id: 'growth', label: 'Рост бизнеса', unit: '×', stops: [1, 2, 5, 10, 20], value: 1, hint: 'Во сколько раз больше номеров и броней, чем сейчас' },
+    ],
+    // Порядок тематических групп в палитре (block.group).
+    groups: ['Вход', 'Сервисы', 'SQL', 'Кэширование', 'Очереди и брокеры', 'NoSQL', 'Вход и защита', 'Поиск', 'Координация'],
+    expGroups: ['Очереди и брокеры', 'NoSQL', 'Кэширование', 'Вход и защита', 'Поиск', 'Координация', 'Сервисы'],
 
     // cat задаёт цвет блока на карте; extra: блок не нужен по книге, но его можно попробовать.
     // learn.plus / learn.minus: что даёт и чем платим. links: стрелки, которые проводятся при добавлении.
     blocks: {
-      client: { name: 'Клиент', icon: '👤', cat: 'edge', pos: [20, 330], cap: 0, tag: 'Браузер или приложение',
+      client: { name: 'Клиент', icon: '👤', cat: 'edge', group: 'Вход', pos: [20, 330], cap: 0, tag: 'Браузер или приложение',
         learn: { what: 'Браузер или приложение. Отсюда начинаются все пользовательские потоки.', plus: [], minus: [] } },
-      gateway: { name: 'API Gateway', icon: '🚪', cat: 'edge', pos: [235, 330], cap: 5000, lat: 5, cost: 150, cx: 0.5, maxRep: 200, links: [['client', 'self']], tag: 'Единая точка входа',
+      gateway: { name: 'API Gateway', icon: '🚪', cat: 'edge', group: 'Вход', pos: [235, 330], cap: 5000, lat: 5, cost: 150, cx: 0.5, maxRep: 200, links: [['client', 'self']], tag: 'Единая точка входа',
         learn: { what: 'Маршрутизация, авторизация, rate limiting в одном месте.', plus: ['Клиент не знает о внутренних сервисах', 'Сервисы можно менять за спиной'], minus: ['Ещё один хоп: +5 мс'] } },
-      hotel: { name: 'Hotel Service', icon: '🏨', cat: 'svc', pos: [455, 60], cap: 1000, lat: 20, cost: 120, cx: 1, maxRep: 200, links: [['gateway', 'self']], tag: 'Отели, номера, цены',
+      hotel: { name: 'Hotel Service', icon: '🏨', cat: 'svc', group: 'Сервисы', pos: [455, 60], cap: 1000, lat: 20, cost: 120, cx: 1, maxRep: 200, links: [['gateway', 'self']], tag: 'Отели, номера, цены',
         learn: { what: 'Отдаёт отели, типы номеров и цены.', plus: ['Данные почти статичные: легко кэшировать', 'Stateless: масштабируется добавлением копий'], minus: [] } },
-      reservation: { name: 'Reservation Service', icon: '📝', cat: 'svc', pos: [455, 400], cap: 500, lat: 30, cost: 150, cx: 1.5, maxRep: 200, links: [['gateway', 'self']], tag: 'Брони и инвентарь',
+      reservation: { name: 'Reservation Service', icon: '📝', cat: 'svc', group: 'Сервисы', pos: [455, 400], cap: 500, lat: 30, cost: 150, cx: 1.5, maxRep: 200, links: [['gateway', 'self']], tag: 'Брони и инвентарь',
         learn: { what: 'Проверяет доступность, создаёт и отменяет брони, обновляет инвентарь.', plus: ['Единственное место, которое меняет инвентарь'], minus: ['Здесь живут все проблемы конкурентности'] } },
-      payment: { name: 'Payment Service', icon: '💳', cat: 'svc', pos: [455, 600], cap: 300, lat: 150, cost: 150, cx: 1, maxRep: 200, links: [['reservation', 'self']], tag: 'Списание денег',
+      payment: { name: 'Payment Service', icon: '💳', cat: 'svc', group: 'Сервисы', pos: [455, 600], cap: 300, lat: 150, cost: 150, cx: 1, maxRep: 200, links: [['reservation', 'self']], tag: 'Списание денег',
         learn: { what: 'Списание денег через платёжного провайдера.', plus: ['Платёжная логика изолирована'], minus: ['Своя БД: бронь и оплату не обернуть одной транзакцией', 'Внешний провайдер медленный: ~150 мс'] } },
-      hotelDB: { name: 'Hotel DB', icon: '🗄️', cat: 'db', pos: [915, 60], cap: 3000, lat: 10, cost: 300, cx: 1, db: true, tune: 'sql', repLabel: 'шард.', links: [['hotel', 'self']], tag: 'SQL: отели и цены',
-        overload: 'Почти всё здесь чтения: поставь кэш перед БД или добавь реплик в настройках блока.',
+      hotelDB: { name: 'Hotel DB', icon: '🗄️', cat: 'db', group: 'SQL', fit: SQL_FIT, pos: [915, 60], cap: 3000, lat: 10, cost: 300, cx: 1, db: true, tune: 'sql', repLabel: 'шард.', links: [['hotel', 'self']], tag: 'SQL: отели и цены',
         learn: { what: 'Реляционная БД с отелями, номерами и ценами.', plus: ['Чтения масштабируются репликами'], minus: ['Каждая реплика стоит как ещё одна БД: для горячих чтений дешевле кэш'] } },
-      resDB: { name: 'Reservation DB', icon: '🗃️', cat: 'db', pos: [915, 400], cap: 1500, lat: 15, cost: 400, cx: 1, db: true, tune: 'sql', repLabel: 'шард.', links: [['reservation', 'self']], tag: 'SQL: инвентарь и брони',
+      resDB: { name: 'Reservation DB', icon: '🗃️', cat: 'db', group: 'SQL', fit: SQL_FIT, pos: [915, 400], cap: 1500, lat: 15, cost: 400, cx: 1, db: true, tune: 'sql', repLabel: 'шард.', links: [['reservation', 'self']], tag: 'SQL: инвентарь и брони',
         shardKeys: [
           { v: 'hotel', label: 'hotel_id', note: 'Все данные отеля в одном шарде, поэтому бронь остаётся локальной транзакцией. Так в книге.' },
-          { v: 'date', label: 'дата', note: 'Бронь на несколько ночей попадает в разные шарды: нужна распределённая транзакция. Ловушка.' },
+          { v: 'date', label: 'дата', skew: 0.5, note: 'Бронь на несколько ночей попадает в разные шарды: нужна распределённая транзакция. А в распродажу все бронируют одни даты, и горячий шард берёт половину нагрузки. Ловушка.' },
         ],
-        overload: 'Один primary больше не вытянет: кэш инвентаря снимет чтения, шарды в настройках блока масштабируют запись.',
         learn: { what: 'Реляционная БД с room_type_inventory и reservation. Источник истины.', plus: ['ACID: инвентарь и бронь меняются вместе', 'Блокировки и CHECK прямо в БД'], minus: ['Запись упирается в один primary, пока нет шардов'] } },
-      payDB: { name: 'Payment DB', icon: '🧾', cat: 'db', pos: [915, 620], cap: 10000, lat: 15, cost: 300, cx: 1, db: true, tune: 'sql', repLabel: 'шард.', links: [['payment', 'self']], tag: 'SQL: платежи',
+      payDB: { name: 'Payment DB', icon: '🧾', cat: 'db', group: 'SQL', fit: SQL_FIT, pos: [915, 660], cap: 10000, lat: 15, cost: 300, cx: 1, db: true, tune: 'sql', repLabel: 'шард.', links: [['payment', 'self']], tag: 'SQL: платежи',
         learn: { what: 'БД платежей у Payment Service.', plus: ['У каждого сервиса своя БД'], minus: ['Нужна распределённая согласованность с бронью'] } },
-      cache: { name: 'Кэш (Redis)', icon: '⚡', cat: 'cache', pos: [685, 170], cap: 50000, lat: 1, cost: 200, cx: 1.5, maxRep: 6, cache: true, multi: true, at: 'db', absorb: { view: 0.95, search: 0.9 },
+      cache: { name: 'Кэш (Redis)', icon: '⚡', cat: 'cache', group: 'Кэширование',
+        fit: { use: 'Кэш с TTL и структурами данных: доступность по датам, счётчики, сессии. Заодно блокировки и pub/sub.', avoid: 'Источник истины для броней и денег: асинхронная репликация может потерять последние записи.', limits: 'Около 100 тыс. операций/с на инстанс (одно ядро), объём ограничен памятью, при отставании показывает устаревшие данные.' }, pos: [685, 170], cap: 50000, lat: 1, cost: 200, cx: 1.5, maxRep: 6, cache: true, multi: true, at: 'db', absorb: { view: 0.95, search: 0.9 },
         links: [[['hotel', 'reservation'], 'self']], tag: 'Чтения из памяти',
         learn: { what: 'Сервис сначала смотрит в кэш и идёт в БД только при промахе (cache-aside). Можно поставить два: для отелей и для инвентаря.', plus: ['Снимает с БД 90–95% чтений', 'Чтение за 1 мс'], minus: ['Может отставать от БД: показывает «есть места», которых уже нет', 'Для брони не используется: проверка всегда в БД'] } },
 
-      cdn: { name: 'CDN', icon: '🌍', cat: 'edge', extra: true, pos: [20, 130], cap: 500000, lat: 2, cost: 250, cx: 0.5, maxRep: 1, absorb: { view: 0.6 }, links: [['client', 'self']], tag: 'Страницы и фото ближе к пользователю',
+      cdn: { name: 'CDN', icon: '🌍', cat: 'edge', extra: true, group: 'Вход и защита',
+        fit: { use: 'Статика и страницы, одинаковые для всех: фото, описания отелей.', avoid: 'Персональные и быстро меняющиеся ответы: доступность, цены на даты, бронь.', limits: 'Инвалидация занимает секунды и минуты, платишь за трафик.' }, pos: [20, 130], cap: 500000, lat: 2, cost: 250, cx: 0.5, maxRep: 20, overload: 'кэшировать в браузере и приложении (HTTP-кэш), чтобы часть просмотров вообще не уходила в сеть', absorb: { view: 0.6 }, links: [['client', 'self']], tag: 'Страницы и фото ближе к пользователю',
         learn: { what: 'Сеть серверов по миру, отдаёт статику и закэшированные страницы отелей.', plus: ['Забирает ~60% просмотров ещё до Gateway', 'Быстрее для пользователя'], minus: ['Не помогает брони и доступности: они динамические', 'Нужна инвалидация при смене цен и фото'] } },
-      limiter: { name: 'Rate limiter', icon: '🚦', cat: 'edge', extra: true, pos: [235, 140], cap: 200000, lat: 1, cost: 100, cx: 1, maxRep: 2, absorb: { view: 0.15, search: 0.15 }, links: [['gateway', 'self']], tag: 'Отсекает ботов и парсеры',
+      limiter: { name: 'Rate limiter', icon: '🚦', cat: 'edge', extra: true, group: 'Вход и защита',
+        fit: { use: 'Защита от ботов, парсеров цен и всплесков от одного клиента.', avoid: 'Как способ выдержать честную нагрузку: живым пользователям он просто откажет.', limits: 'Срезает только трафик сверх лимита на клиента, общий поток почти не меняет.' }, pos: [235, 140], cap: 200000, lat: 1, cost: 100, cx: 1, maxRep: 20, overload: 'ограничивать прямо на CDN или балансировщике, до отдельного сервиса', absorb: { view: 0.15, search: 0.15 }, links: [['gateway', 'self']], tag: 'Отсекает ботов и парсеры',
         learn: { what: 'Ограничивает частоту запросов на пользователя или IP.', plus: ['В распродажу режет ~15% трафика от ботов и парсеров цен'], minus: ['Может задеть живых пользователей', 'Брони он не ускоряет'] } },
-      kafka: { name: 'Kafka', icon: '🧵', cat: 'async', extra: true, pos: [1070, 260], cap: 5000, lat: 5, cost: 500, cx: 2.5, tune: 'kafka', repLabel: 'партиц.', links: [['reservation', 'self'], ['self', 'notification']], bring: ['notification'], drop: [['reservation', 'notification']], tag: 'Очередь событий',
+      kafka: { name: 'Kafka', icon: '🧵', cat: 'async', extra: true, group: 'Очереди и брокеры', brokerCap: 20000,
+        fit: { use: 'Журнал событий: несколько подписчиков читают один поток, CDC, аналитика, Saga, сотни тысяч событий в секунду.', avoid: 'Нужны маршрутизация отдельных задач, приоритеты, отложенная доставка, или поток маленький: кластер дороже пользы.', limits: 'Порядок только внутри партиции, потребителей в группе не больше партиций, число партиций трудно уменьшить.' }, pos: [1070, 260], cap: 5000, lat: 5, cost: 500, cx: 2.5, tune: 'kafka', repLabel: 'партиц.', links: [['reservation', 'self'], ['self', 'notification']], bring: ['notification'], drop: [['reservation', 'notification']], tag: 'Очередь событий',
         learn: { what: 'Журнал событий: «бронь создана», «оплата прошла», изменения в БД (CDC).', plus: ['Письма и аналитика не тормозят бронь: Reservation → Kafka → Notification', 'CDC: Reservation DB → Kafka → кэш инвентаря, и кэш почти не отстаёт', 'Удобная основа для Saga'], minus: ['Ещё один кластер: +сложность и цена', 'Сама по себе ничего не ускоряет, если к ней не подключить потребителей'] } },
-      notification: { name: 'Notification Service', icon: '📨', cat: 'svc', extra: true, pos: [1070, 520], cap: 50, lat: 120, cost: 30, cx: 1, maxRep: 50,
-        overload: 'Если он читает из Kafka, потребителей в группе не больше, чем партиций: добавь партиций в настройках Kafka.', links: [[['kafka', 'reservation'], 'self']], tag: 'Письмо с подтверждением',
+      notification: { name: 'Notification Service', icon: '📨', cat: 'svc', extra: true, group: 'Сервисы', pos: [1070, 600],
+        fit: { use: 'Письма и пуши после брони.', avoid: 'Синхронный вызов из брони: бронь ждёт почту и падает вместе с ней.', limits: 'Медленный внешний провайдер (~120 мс), поэтому потребителей нужно много.' }, cap: 50, lat: 120, cost: 30, cx: 1, maxRep: 50,
+        overload: 'добавь партиций в Kafka (потребителей в группе не больше, чем партиций) или читай из RabbitMQ, где потребители конкурируют за очередь', links: [[['kafka', 'rabbit', 'reservation'], 'self']], tag: 'Письмо с подтверждением',
         learn: { what: 'Отправляет письма и пуши о брони.', plus: ['Пользователь получает подтверждение'], minus: ['Если звать его синхронно из Reservation Service, бронь ждёт почту (+120 мс) и падает вместе с ней. Лучше через Kafka.'] } },
-      lock: { name: 'Redis-блокировка', icon: '🔐', cat: 'cache', extra: true, pos: [685, 530], cap: 50000, lat: 2, cost: 150, cx: 2, maxRep: 3, links: [['reservation', 'self']], tag: 'Распределённый lock',
+      lock: { name: 'Redis-блокировка', icon: '🔐', cat: 'cache', extra: true, group: 'Координация',
+        fit: { use: 'Короткая взаимная блокировка между сервисами, когда в БД защиты нет.', avoid: 'Когда есть блокировки или CHECK в самой БД: они надёжнее.', limits: 'Lock с TTL истекает посреди долгой операции, падение Redis снимает все блокировки.' }, pos: [685, 530], cap: 50000, lat: 2, cost: 150, cx: 2, maxRep: 3, links: [['reservation', 'self']], tag: 'Распределённый lock',
         learn: { what: 'Перед бронью сервис берёт lock на «отель + тип + даты» в Redis.', plus: ['Сильно снижает гонки, даже если в БД нет защиты'], minus: ['Lock с TTL может истечь посреди операции, а Redis может упасть: перепродажи не исчезают полностью', 'Ещё одна точка отказа. Блокировка в самой БД надёжнее'] } },
-      search: { name: 'Elasticsearch', icon: '🔎', cat: 'db', extra: true, pos: [685, 20], cap: 5000, lat: 30, cost: 600, cx: 3, maxRep: 10, links: [['hotel', 'self']], tag: 'Полнотекстовый поиск',
+      search: { name: 'Elasticsearch', icon: '🔎', cat: 'db', extra: true, group: 'Поиск',
+        fit: { use: 'Полнотекстовый поиск и фасетные фильтры по каталогу.', avoid: 'Как основная БД: нет транзакций, данные отстают на секунды.', limits: 'Нужна синхронизация с источником, тяжёлый в эксплуатации кластер.' }, pos: [685, 20], cap: 5000, lat: 30, cost: 600, cx: 3, maxRep: 10, links: [['hotel', 'self']], tag: 'Полнотекстовый поиск',
         learn: { what: 'Поисковый движок: «отели в Париже у моря с бассейном».', plus: ['Мощный поиск и фильтры'], minus: ['Поиска нет в требованиях главы: платишь сложностью и ценой без пользы', 'Данные нужно синхронизировать с Hotel DB'] } },
-      nosql: { name: 'Cassandra', icon: '🪐', cat: 'db', extra: true, pos: [1070, 60], cap: 20000, lat: 8, cost: 500, cx: 2, maxRep: 30, db: true, repLabel: 'узл.', acid: 'none', links: [['reservation', 'self']], drop: [['reservation', 'resDB'], ['reservation', 'mongo'], ['reservation', 'dynamo']], tag: 'Wide-column NoSQL',
+      nosql: { name: 'Cassandra', icon: '🪐', cat: 'db', extra: true, group: 'NoSQL',
+        fit: { use: 'Огромный поток записи по известному ключу: события, ленты, метрики, IoT.', avoid: 'Транзакции на несколько строк и ограничения: брони, деньги.', limits: 'Нет JOIN и ACID на несколько строк, лёгкие транзакции (LWT) медленные, схема строится под запросы.' }, pos: [1070, 60], cap: 20000, lat: 8, cost: 500, cx: 2, maxRep: 30, db: true, repLabel: 'узл.', acid: 'none', links: [['reservation', 'self']], drop: [['reservation', 'resDB'], ['reservation', 'mongo'], ['reservation', 'dynamo']], tag: 'Wide-column NoSQL',
         learn: { what: 'Распределённая wide-column БД (как у Netflix и Discord). При добавлении брони сразу пойдут в неё.', plus: ['Запись масштабируется добавлением узлов', 'Нет единого primary'], minus: ['Нет ACID-транзакций на несколько строк: блокировки и CHECK не работают, двойные брони вернутся', 'Именно поэтому в книге выбрана реляционная БД'] } },
-      mongo: { name: 'MongoDB', icon: '🍃', cat: 'db', extra: true, pos: [1070, 60], cap: 8000, lat: 10, cost: 450, cx: 2, maxRep: 30, db: true, repLabel: 'шард.', acid: 'txn', links: [['reservation', 'self']], drop: [['reservation', 'resDB'], ['reservation', 'nosql'], ['reservation', 'dynamo']], tag: 'Документная NoSQL',
+      mongo: { name: 'MongoDB', icon: '🍃', cat: 'db', extra: true, group: 'NoSQL',
+        fit: { use: 'Документы с гибкой схемой: каталоги, профили, контент.', avoid: 'Много связей и JOIN, строгая финансовая отчётность.', limits: 'Транзакции на несколько документов медленнее SQL, ключ шардирования дорого менять.' }, pos: [1070, 60], cap: 8000, lat: 10, cost: 450, cx: 2, maxRep: 30, db: true, repLabel: 'шард.', acid: 'txn', links: [['reservation', 'self']], drop: [['reservation', 'resDB'], ['reservation', 'nosql'], ['reservation', 'dynamo']], tag: 'Документная NoSQL',
         learn: { what: 'Документная БД: бронь хранится JSON-документом. Шардируется встроенно. При добавлении брони сразу пойдут в неё.', plus: ['Гибкая схема и встроенное шардирование', 'С версии 4.0 есть транзакции на несколько документов: блокировки из карточек работают'], minus: ['Транзакции медленнее и капризнее, чем в SQL: +15 мс к брони', 'Для строгих связей и денег SQL всё равно проще'] } },
-      dynamo: { name: 'DynamoDB', icon: '⚡️', cat: 'db', extra: true, pos: [1070, 60], cap: 40000, lat: 5, cost: 500, cx: 1.5, maxRep: 50, db: true, repLabel: 'разд.', acid: 'cond', links: [['reservation', 'self']], drop: [['reservation', 'resDB'], ['reservation', 'nosql'], ['reservation', 'mongo']], tag: 'Key-value, управляемая AWS',
+      dynamo: { name: 'DynamoDB', icon: '⚡️', cat: 'db', extra: true, group: 'NoSQL',
+        fit: { use: 'Ключ-значение с заранее известными запросами и скачущей нагрузкой, без своей команды DBA.', avoid: 'Произвольные запросы и аналитика, нельзя привязываться к AWS.', limits: 'Элемент до 400 КБ, горячий ключ упирается в ~1000 записей/с на раздел, транзакция до 100 элементов.' }, pos: [1070, 60], cap: 40000, lat: 5, cost: 500, cx: 1.5, maxRep: 50, db: true, repLabel: 'разд.', acid: 'cond', links: [['reservation', 'self']], drop: [['reservation', 'resDB'], ['reservation', 'nosql'], ['reservation', 'mongo']], tag: 'Key-value, управляемая AWS',
         learn: { what: 'Управляемая key-value БД от AWS: масштабируется сама, платишь за запросы. При добавлении брони сразу пойдут в неё.', plus: ['Условная запись (ConditionExpression: total_reserved < лимит) сама не даёт продать лишнее', 'Масштаб и отказоустойчивость без своей команды DBA'], minus: ['Нет SQL-запросов и JOIN: запросы надо продумать заранее под ключи', 'Привязка к AWS, дорого на больших объёмах'] } },
+      rabbit: { name: 'RabbitMQ', icon: '🐇', cat: 'async', extra: true, group: 'Очереди и брокеры', pos: [1070, 240], cap: 8000, lat: 3, cost: 250, cx: 2, tune: 'rabbit', repLabel: 'очеред.',
+        links: [['reservation', 'self'], ['self', 'notification']], bring: ['notification'], drop: [['reservation', 'notification']], tag: 'Брокер: exchange → очереди',
+        learn: { what: 'Брокер сообщений. Reservation Service публикует в exchange, тот по ключу маршрутизации раскладывает сообщения по очередям, потребители забирают их и подтверждают (ack). После ack сообщение удаляется.', plus: ['Письмо уходит асинхронно и не тормозит бронь', 'Потребители конкурируют за очередь: их можно добавлять сколько угодно', 'Гибкая маршрутизация: direct, topic, fanout'], minus: ['Нет журнала: после ack сообщение удалено, перечитать историю или сделать CDC в кэш нельзя', 'Порядок теряется, когда очередь читают несколько потребителей'] },
+        fit: { use: 'Задачи и команды: письма, фоновые задания, RPC, маршрутизация по ключам, приоритеты и отложенная доставка.', avoid: 'Нужен журнал событий: перечитать историю, несколько независимых подписчиков, CDC, аналитика.', limits: 'Одна очередь живёт на одном узле и ядре (~10–20 тыс. сообщений/с), quorum примерно вдвое медленнее, длинная очередь давит на память брокера.' } },
+      memcached: { name: 'Memcached', icon: '🧊', cat: 'cache', extra: true, group: 'Кэширование', pos: [685, 170], cap: 80000, lat: 1, cost: 150, cx: 1, maxRep: 6, cache: true, multi: true, at: 'db', absorb: { view: 0.9, search: 0.85 },
+        links: [[['hotel', 'reservation'], 'self']], tag: 'Простой кэш ключ → значение',
+        learn: { what: 'Кэш в памяти: строки по ключу, многопоточный. Ставится вместо Redis перед БД.', plus: ['Многопоточный: одна машина держит больше запросов, чем Redis', 'Проще и дешевле'], minus: ['Нет репликации и записи на диск: после рестарта кэш пустой, и вся нагрузка разом падает на БД', 'Нет структур данных, блокировок и pub/sub'] },
+        fit: { use: 'Горячие чтения простых объектов (страница отеля, цены) на больших QPS.', avoid: 'Нужны структуры (списки, счётчики), блокировки, pub/sub или кэш должен пережить рестарт.', limits: 'Значение до 1 МБ, нет репликации и персистентности, вытеснение LRU.' } },
+      pgcache: { name: 'PostgreSQL как кэш', icon: '🐘', cat: 'cache', extra: true, group: 'Кэширование', pos: [685, 170], cap: 6000, lat: 4, cost: 200, cx: 0.5, maxRep: 4, cache: true, multi: true, at: 'db', absorb: { view: 0.85, search: 0.7 },
+        links: [[['hotel', 'reservation'], 'self']], tag: 'UNLOGGED-таблица или materialized view',
+        learn: { what: 'Готовые ответы лежат в отдельной таблице PostgreSQL: UNLOGGED-таблица «ключ → JSON» или materialized view, которую обновляют по расписанию. Новой технологии нет.', plus: ['Та же БД, что команда уже умеет: бэкапы, мониторинг, SQL', 'Можно кэшировать результат JOIN и фильтровать его SQL-запросом'], minus: ['В несколько раз медленнее Redis: диск, WAL, соединения', 'Частые перезаписи раздувают таблицу, нужен VACUUM', 'Соединений сотни, а не десятки тысяч'] },
+        fit: { use: 'PostgreSQL уже есть, нагрузка умеренная (тысячи rps), кэшу нужны SQL-запросы или он должен пережить рестарт, а ещё одну систему заводить не хочется.', avoid: 'Десятки тысяч чтений в секунду, нужна задержка меньше миллисекунды, одни и те же ключи перезаписываются постоянно.', limits: 'Около 5–10 тыс. простых чтений/с на инстанс, UNLOGGED-таблица очищается после сбоя, materialized view отстаёт до следующего REFRESH.' } },
     },
 
     flows: [
@@ -140,7 +178,7 @@
       { id: 'search', label: 'Доступность на даты', color: 'var(--f2)', rate: (d) => d.page * d.k, chain: ['client', 'gateway', 'reservation', ['resDB', 'nosql', 'mongo', 'dynamo']] },
       { id: 'book', label: 'Бронирование', color: 'var(--f3)', write: true, rate: (d) => d.tps * d.k, chain: ['client', 'gateway', 'reservation', ['resDB', 'nosql', 'mongo', 'dynamo']] },
       { id: 'pay', label: 'Оплата', color: 'var(--f4)', write: true, rate: (d) => d.tps * d.k, chain: ['client', 'gateway', 'reservation', 'payment', ['payDB', 'resDB']] },
-      { id: 'events', label: 'События брони', color: 'var(--f5)', optional: true, rate: (d) => d.tps * d.k, chain: ['reservation', 'kafka', 'notification'] },
+      { id: 'events', label: 'События брони', color: 'var(--f5)', optional: true, rate: (d) => d.tps * d.k, chain: ['reservation', ['kafka', 'rabbit'], 'notification'] },
       { id: 'notifySync', label: 'Письмо синхронно', color: 'var(--f5)', optional: true, rate: (d) => d.tps * d.k, chain: ['reservation', 'notification'] },
       { id: 'lock', label: 'Захват блокировки', color: 'var(--f3)', optional: true, rate: (d) => d.tps * d.k, chain: ['reservation', 'lock'] },
       { id: 'cdc', label: 'CDC в кэш', color: 'var(--f6)', optional: true, rate: (d) => d.tps * d.k * 2, chain: ['resDB', 'kafka', 'cache'] },
@@ -158,11 +196,13 @@
       base: {
         nodes: ['client', 'gateway', 'hotel', 'reservation', 'payment', 'hotelDB', 'resDB', 'payDB'],
         edges: [['client', 'gateway'], ['gateway', 'hotel'], ['gateway', 'reservation'], ['hotel', 'hotelDB'], ['reservation', 'resDB'], ['reservation', 'payment'], ['payment', 'payDB']],
+        adapt: ADAPT,
       },
       deep: {
         nodes: ['client', 'gateway', 'hotel', 'reservation', 'payment', 'hotelDB', 'resDB', 'payDB', 'cache', ['cache', 'cacheR', [685, 290]]],
         edges: [['client', 'gateway'], ['gateway', 'hotel'], ['gateway', 'reservation'], ['hotel', 'cache'], ['hotel', 'hotelDB'], ['reservation', 'cacheR'], ['reservation', 'resDB'], ['reservation', 'payment'], ['payment', 'payDB']],
         cfg: { resDB: { shards: 4, shardKey: 'hotel' }, hotelDB: { replicas: 3 } },
+        adapt: ADAPT,
       },
     },
 
@@ -188,8 +228,7 @@
         say: 'Конфликтов мало, поэтому оптимистичная блокировка или constraint в БД подходят лучше, чем дорогие блокировки.' },
       { id: 'scale', icon: '📈', title: 'Распродажа и рост', settings: 'resDB',
         problem: 'В распродажу трафик вырастает в десятки раз, а бизнес растёт. Одна БД становится узким местом и единой точкой отказа.',
-        params: [{ id: 'growth', label: 'Рост бизнеса', unit: '×', min: 1, max: 20, step: 1, value: 1 }],
-        hint: 'Пик распродажи крутится ползунком «Нагрузка» над картой. Чтения снимает кэш (по одному на Hotel и Reservation Service) или реплики, запись масштабируют шарды. Шарды, реплики и ключ шардирования настраиваются в самом блоке Reservation DB.',
+        hint: 'Пик распродажи и рост бизнеса задаются в сценарии над картой (те же, что на шаге оценки). Чтения снимает кэш (по одному на Hotel и Reservation Service) или реплики, запись масштабируют шарды. Шарды, реплики и ключ шардирования настраиваются в самом блоке Reservation DB.',
         say: 'Кэш для скорости чтения, а решающая проверка всегда в БД. Шардируем по отелю, чтобы бронь не стала распределённой транзакцией.' },
       { id: 'tx', icon: '🔗', title: 'Бронь и оплата в разных БД', key: 'txn',
         problem: 'Оплата прошла, а запись брони упала (или наоборот). Одной ACID-транзакции на две БД нет.',
@@ -221,15 +260,20 @@
       const linked = (a, b) => ctx.graph.edges.some((e) => nodes[e.from] && nodes[e.to] && nodes[e.from].type === a && nodes[e.to].type === b);
       const bookDb = book.ok && nodes[book.path[book.path.length - 1].id];
       const store = (bookDb && bookDb.def.acid) || 'sql', acid = store !== 'none', dbT = bookDb ? bookDb.type : 'resDB';
-      const rdb = of('resDB')[0], rc = rdb && rdb.cfg, kafka = of('kafka')[0];
+      const rdb = of('resDB')[0], rc = rdb && rdb.cfg, ev = flows.find((f) => f.id === 'events'), broker = ev.ok && nodes[ev.path[1].id];
 
       // Необязательные блоки: работают на обоих шагах
       if (ok('notifySync')) {
         book.extraLat += 120;
         ctx.warn('warn', 'Письмо отправляется синхронно: бронь ждёт почтовый сервис (+120 мс) и падает вместе с ним. Отправляй через Kafka.');
       }
-      if (ok('events')) ctx.warn('info', 'Бронь публикует событие в Kafka: письмо уходит асинхронно и не тормозит бронь.');
-      if (of('kafka').length && !ok('events') && !ok('cdc')) ctx.warn('info', 'У Kafka нет потребителей: подключи Kafka → Notification Service или Kafka → кэш инвентаря (CDC).');
+      if (broker && broker.type === 'kafka') ctx.warn('info', 'Бронь публикует событие в Kafka: письмо уходит асинхронно и не тормозит бронь.');
+      if (broker && broker.type === 'rabbit') {
+        ctx.warn('info', 'Бронь публикует сообщение в RabbitMQ: exchange → очередь → Notification Service, письмо не тормозит бронь. Но после ack сообщение удаляется: перечитать историю или сделать CDC в кэш не выйдет, для этого нужна Kafka.');
+        if (broker.cfg.qtype === 'classic') ctx.warn('warn', 'Classic-очередь RabbitMQ не реплицируется: падение узла потеряет письма. Quorum надёжнее, но медленнее.');
+      }
+      if (of('kafka').length && !(broker && broker.type === 'kafka') && !ok('cdc')) ctx.warn('info', 'У Kafka нет потребителей: подключи Kafka → Notification Service или Kafka → кэш инвентаря (CDC).');
+      if (of('rabbit').length && !(broker && broker.type === 'rabbit')) ctx.warn('info', 'У RabbitMQ нет потребителей: подключи RabbitMQ → Notification Service.');
       if (!acid) ctx.warn(stage === 'deep' ? 'bad' : 'warn', 'Брони пишутся в Cassandra: запись масштабируется легко, но нет ACID-транзакций. Блокировки и CHECK не работают, двойные брони вернутся.');
       if (store === 'txn') { book.extraLat += 15; ctx.cx += 1; ctx.warn('info', 'Брони в MongoDB: транзакции на несколько документов есть, блокировки работают, но бронь медленнее (+15 мс), чем в SQL.'); }
       if (store === 'cond') ctx.warn('info', 'Брони в DynamoDB: условная запись «total_reserved < лимит» сама защищает от перепродаж, но запросы придётся строить вокруг ключей.');
@@ -245,10 +289,9 @@
       }
       if (rc && rc.partition === 'date') ctx.warn('info', 'room_type_inventory разбита на партиции по дате: запросы читают только нужные дни, прошедшие даты легко архивировать.');
 
-      // Настройки Kafka: потребителей в группе не больше, чем партиций
-      if (kafka && ok('events')) {
-        const kc = kafka.cfg;
-        flows.find((f) => f.id === 'events').path.forEach((x) => nodes[x.id].type === 'notification' && (nodes[x.id].maxRep = kc.partitions));
+      // Надёжность Kafka (сколько потребителей можно, считает движок)
+      if (broker && broker.type === 'kafka') {
+        const kc = broker.cfg;
         if (kc.rf === 1) ctx.warn('warn', 'Kafka с RF=1: если брокер упадёт, события пропадут и письма не уйдут.');
         else if (kc.acks === '1') ctx.warn('info', 'acks=1: подтверждает только лидер. Если он упадёт до репликации, событие потеряется.');
       }

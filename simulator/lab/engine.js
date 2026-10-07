@@ -5,6 +5,7 @@
   const TARGET = 0.7; // автомасштаб держит загрузку около 70%
   const queue = (u) => (u >= 0.95 ? 12 : Math.min(12, 1 + (0.5 * u * u) / (1 - u)));
   const has = (spec, t) => [].concat(spec).includes(t);
+  const rps = (v) => (v >= 10 ? Math.round(v).toLocaleString('ru-RU') : String(+v.toFixed(1)));
 
   // Настройки «тяжёлых» блоков, общие для всех глав. book: так делают в книге (остальное эксперименты).
   // Блок включает их через def.tune: 'sql' или 'kafka'; варианты ключа шардирования задаёт глава (def.shardKeys).
@@ -21,13 +22,30 @@
         opts: [{ v: 'none', label: 'Нет' }, { v: 'date', label: 'По дате', note: 'Таблица делится на части внутри одной БД: запросы читают меньше данных (+20% к запасу), старые даты легко архивировать.' }] },
     ],
     kafka: [
+      { id: 'brokers', label: 'Брокеры', opts: [1, 3, 5, 9], value: 3,
+        hint: 'Серверы кластера. Партиции и их копии раскладываются по брокерам; каждый брокер пишет на диск ограниченный поток.' },
       { id: 'partitions', label: 'Партиции', opts: [1, 3, 6, 12, 24], value: 3,
         hint: 'Единица параллелизма: в группе потребителей на одну партицию работает один потребитель. Больше партиций, больше потребителей.' },
       { id: 'rf', label: 'Репликация (RF)', opts: [1, 2, 3], value: 3,
-        hint: 'Сколько брокеров хранят копию партиции. RF=1 дёшево, но падение брокера теряет события.' },
+        hint: 'Сколько брокеров хранят копию партиции. RF=1 дёшево, но падение брокера теряет события. Каждая копия это ещё одна запись на диск брокера.' },
       { id: 'acks', label: 'acks', value: 'all',
         opts: [{ v: '1', label: '1', note: 'Подтверждает только лидер: быстрее, но событие может потеряться при падении лидера.' }, { v: 'all', label: 'all', note: 'Ждём все синхронные реплики: надёжно, чуть медленнее.' }] },
     ],
+    rabbit: [
+      { id: 'queues', label: 'Очереди', opts: [1, 2, 4, 8], value: 1,
+        hint: 'Exchange раскладывает сообщения по очередям. Одна очередь живёт на одном узле и обрабатывается одним ядром, поэтому масштабируют числом очередей.' },
+      { id: 'qtype', label: 'Тип очереди', value: 'quorum',
+        opts: [{ v: 'classic', label: 'Classic', note: 'Быстрее, но без репликации: падение узла теряет сообщения.' }, { v: 'quorum', label: 'Quorum', note: 'Реплицируется на 3 узла через Raft: надёжно, но пропускная способность примерно вдвое ниже.' }] },
+      { id: 'prefetch', label: 'Prefetch', opts: [1, 10, 100], value: 10,
+        hint: 'Сколько неподтверждённых сообщений потребитель берёт за раз. 1: честно, но потребитель простаивает в ожидании. 100: быстро, но сообщения копятся у медленного потребителя.' },
+    ],
+  };
+  const PREFETCH = { 1: 0.6, 10: 1, 100: 1.1 };
+  // Шаги размеров для подбора под нагрузку (от дешёвых к дорогим).
+  const SIZES = {
+    sql: () => [1, 2, 4, 8, 16].flatMap((shards) => [0, 1, 2, 3, 5].map((replicas) => ({ shards, replicas, w: shards * (1 + 0.6 * replicas) }))),
+    kafka: () => [1, 3, 5, 9].flatMap((brokers) => [1, 3, 6, 12, 24].map((partitions) => ({ brokers, partitions, w: brokers * 3 + partitions * 0.1 }))),
+    rabbit: () => [1, 2, 4, 8].map((queues) => ({ queues, w: queues })),
   };
   const optsOf = (f, def) => (typeof f.opts === 'function' ? f.opts(def) : f.opts) || [];
   function tuneOf(def, cfg) {
@@ -88,6 +106,13 @@
       const [from, to] = f.missing;
       ctx.warn('bad', from ? `«${f.label}» не доходит: нужна стрелка ${lab.blocks[from].name} → ${names(to)}.` : `«${f.label}» не начинается: добавь блок «${names(to)}».`);
     });
+    // Потребители брокеров: за Kafka в группе не больше потребителей, чем партиций; у RabbitMQ темп задаёт prefetch.
+    flows.forEach((f) => f.ok && f.path.forEach((x, i) => {
+      const b = nodes[x.id], nx = f.path[i + 1] && nodes[f.path[i + 1].id];
+      if (!nx || nx.def.db || nx.def.cache) return;
+      if (b.def.tune === 'kafka') { nx.maxRep = Math.min(nx.maxRep, b.cfg.partitions); nx.consumerOf = b; }
+      if (b.def.tune === 'rabbit') { nx.capMult = PREFETCH[b.cfg.prefetch] || 1; nx.consumerOf = b; }
+    }));
     if (lab.model) lab.model(ctx);
 
     Object.values(nodes).forEach((n) => { if (!Object.keys(n.flows).length) n.why = idleWhy(lab, nodes, flows, n); });
@@ -98,29 +123,70 @@
       ctx.cx += def.cx || 0;
       n.rep = 1; n.util = 0; n.q = 1;
       if (!def.cap) return;
-      const cap = def.cap * n.capMult, c = n.cfg;
+      const cap = def.cap * n.capMult, c = n.cfg, W = n.wload, Rd = n.load - n.wload;
       if (def.tune === 'sql') {
-        // Размер задаёт ученик. Primary берёт всю запись и свою долю чтений, шарды делят всё поровну.
-        n.rep = c.shards;
-        n.capTotal = cap * c.shards * (c.partition !== 'none' ? 1.2 : 1);
-        n.util = ((n.load - n.wload) / (1 + c.replicas) + n.wload) / n.capTotal;
-        ctx.cost += (def.cost || 0) * c.shards * (1 + 0.6 * c.replicas);
-        ctx.cx += (c.shards > 1 ? 1 + 0.3 * Math.log2(c.shards) : 0) + 0.2 * c.replicas + (c.partition !== 'none' ? 0.5 : 0);
+        // Размер задаёт ученик. Запись идёт только в primary своего шарда, чтения делятся между primary и репликами.
+        // Неровный ключ шардирования (skew) отдаёт горячему шарду больше своей доли, считаем по нему.
+        const s = c.shards, R = c.replicas, key = s > 1 && def.shardKeys && def.shardKeys.find((k) => k.v === c.shardKey);
+        const hot = s > 1 ? Math.max(1 / s, (key && key.skew) || 0) : 1, one = cap * (c.partition !== 'none' ? 1.2 : 1);
+        const part = (sh) => ({ share: sh, pU: (Rd * sh / (1 + R) + W * sh) / one, rU: R ? (Rd * sh) / (1 + R) / one : 0 });
+        n.rep = s;
+        n.util = part(hot).pU;
+        n.capTotal = n.util ? n.load / n.util : one * s;
+        n.cluster = { shards: [hot].concat(Array(s - 1).fill(s > 1 ? (1 - hot) / (s - 1) : 0)).map(part), replicas: R, key: key && key.label, sync: c.sync };
+        n.explain = [
+          `Запись ${rps(W)} rps идёт только в primary${s > 1 ? ' своего шарда' : ''}: реплики её не снимают.`,
+          R ? `Чтение ${rps(Rd)} rps делится между primary и ${R} репл.: на каждую копию ${rps((Rd * hot) / (1 + R))} rps.` : `Чтение ${rps(Rd)} rps тоже идёт в primary: реплик нет.`,
+          s > 1 ? (hot > 1 / s + 1e-9 ? `Ключ «${key.label}» неровный: горячий шард получает ${Math.round(hot * 100)}% запросов вместо ${Math.round(100 / s)}%.` : `Каждый из ${s} шардов хранит 1/${s} данных и получает 1/${s} запросов.`) : 'Шард один: весь объём и вся запись на одном primary.',
+        ];
+        if (n.util > 0.9) {
+          const wr = W * hot >= (Rd * hot) / (1 + R);
+          n.limit = wr ? 'запись в primary' : 'чтения';
+          n.need = wr ? (s < 16 ? `больше шардов${hot > 1 / s + 1e-9 ? ' и ровный ключ шардирования' : ''}` : 'предел модели (16 шардов): нужна другая модель данных или очередь записи')
+            : (R < 5 ? 'кэш перед БД или больше реплик' : 'кэш перед БД: реплик уже 5');
+        }
+        ctx.cost += (def.cost || 0) * s * (1 + 0.6 * R);
+        ctx.cx += (s > 1 ? 1 + 0.3 * Math.log2(s) : 0) + 0.2 * R + (c.partition !== 'none' ? 0.5 : 0);
       } else if (def.tune === 'kafka') {
+        // Предел дают партиции (параллелизм) и диски брокеров: каждое событие пишется RF раз.
+        const rf = Math.min(c.rf, c.brokers), pcap = cap * c.partitions, bcap = ((def.brokerCap || 20000) * c.brokers) / rf;
         n.rep = c.partitions;
-        n.capTotal = cap * c.partitions;
+        n.capTotal = Math.min(pcap, bcap);
         n.util = n.load / n.capTotal;
-        ctx.cost += (def.cost || 0) * (c.rf / 3) * Math.max(1, c.partitions / 12);
+        n.cluster = { brokers: c.brokers, partitions: c.partitions, rf };
+        n.explain = [
+          `Поток ${rps(n.load)} rps делится по ${c.partitions} партициям, одна партиция ≈ ${rps(cap)} rps.`,
+          `Каждое событие пишется на ${rf} брокер${rf === 1 ? '' : 'а'}: ${c.brokers} брокер${c.brokers === 1 ? '' : c.brokers < 5 ? 'а' : 'ов'} вместе принимают ${rps(bcap)} rps.`,
+        ];
+        if (c.rf > c.brokers) ctx.warn('warn', `Kafka: RF=${c.rf} при ${c.brokers} брокер${c.brokers === 1 ? 'е' : 'ах'} невозможен, копий будет только ${rf}.`);
+        if (n.util > 0.9) { n.limit = pcap <= bcap ? 'партиции' : 'диски брокеров'; n.need = pcap <= bcap ? 'больше партиций' : 'больше брокеров'; }
+        ctx.cost += (def.cost || 0) * (c.brokers / 3) * (0.7 + 0.1 * rf);
+        ctx.cx += c.brokers > 3 ? 0.5 : 0;
+      } else if (def.tune === 'rabbit') {
+        const qc = cap * (c.qtype === 'quorum' ? 0.5 : 1);
+        n.rep = c.queues;
+        n.capTotal = qc * c.queues;
+        n.util = n.load / n.capTotal;
+        n.cluster = { queues: c.queues, qtype: c.qtype, prefetch: c.prefetch };
+        n.explain = [`Exchange раскладывает ${rps(n.load)} rps по ${c.queues} очеред${c.queues === 1 ? 'и' : 'ям'}. Одна очередь ≈ ${rps(qc)} rps${c.qtype === 'quorum' ? ': quorum реплицирует каждое сообщение, поэтому вдвое медленнее' : ''}.`];
+        if (n.util > 0.9) { n.limit = 'очереди'; n.need = c.queues < 8 ? 'больше очередей' : 'Kafka: у неё параллелизм выше'; }
+        ctx.cost += (def.cost || 0) * (c.qtype === 'quorum' ? 1.5 : 1) * (1 + 0.1 * (c.queues - 1));
       } else {
-        n.rep = Math.max(1, Math.min(n.maxRep, Math.ceil(n.load / (cap * TARGET))));
+        n.want = Math.ceil(n.load / (cap * TARGET));
+        n.rep = Math.max(1, Math.min(n.maxRep, n.want));
         n.capTotal = cap * n.rep;
         n.util = n.load / n.capTotal;
+        const P = n.consumerOf && n.consumerOf.def.tune === 'kafka' && n.consumerOf.cfg.partitions;
+        n.explain = n.load ? [`${rps(n.load)} rps ÷ ${rps(cap)} rps на копию: копий ${n.rep}${n.want > n.rep ? `, а нужно ${n.want}` : ', загрузка около 70%'}.`] : [];
+        if (P) n.explain.push(`Читает из Kafka: в группе потребителей не больше, чем партиций (${P}).`);
+        if (n.consumerOf && n.consumerOf.def.tune === 'rabbit') n.explain.push(`Читает из RabbitMQ: потребители конкурируют за очередь, их число не ограничено. Prefetch ${n.consumerOf.cfg.prefetch} даёт ${Math.round(n.capMult * 100)}% скорости.`);
+        if (n.util > 0.9) { n.limit = P ? `потребителей не больше, чем партиций (${P})` : `предел модели: ${n.maxRep} копий`; n.need = def.overload || 'снять нагрузку раньше (кэш, CDN, rate limiter) или делить систему по регионам, в модели этого нет'; }
         ctx.cost += (def.cost || 0) * n.rep;
         if (n.rep > 1 && (def.db || def.cache)) ctx.cx += 0.3 * Math.log2(n.rep); // stateless-реплики почти бесплатны по сложности
       }
       n.q = queue(n.util);
       if (n.util > maxU) { maxU = n.util; bottleneck = n; }
-      if (n.util > 1) ctx.warn('bad', `«${def.name}» перегружен: ${Math.round(n.util * 100)}% даже на ${n.rep} ${def.repLabel || 'репл.'}. ${def.overload || ''}`);
+      if (n.util > 1) ctx.warn('bad', `«${def.name}» перегружен: ${n.util < 10 ? Math.round(n.util * 100) + '%' : `в ${Math.round(n.util)} раз сверх мощности`}. Упёрся: ${n.limit}. Нужно: ${n.need}.`);
       else if (!n.load && n.why) ctx.warn(n.why.kind === 'useless' ? 'info' : 'warn', `«${def.name}» простаивает. ${n.why.text}`);
     });
     flows.forEach((f) => {
@@ -200,7 +266,63 @@
   const canLink = (lab, a, b) => linkPairs(lab).has(a + '>' + b);
   const linkTargets = (lab, a) => Object.keys(lab.blocks).filter((b) => canLink(lab, a, b));
 
-  const api = { analyze, addBlock, canLink, linkTargets, TUNE, optsOf, tuneOf, TARGET };
+  // Подбор размера блока с настройками: самый дешёвый, при котором он и те, кого он кормит, загружены не больше TARGET.
+  // Если не хватает даже максимума, возвращает максимум с ok: false.
+  function sizeFor(lab, graph, inputs, deep, stage, id) {
+    const g0 = graph.nodes.find((n) => n.id === id), def = lab.blocks[g0.type], base = tuneOf(def, g0.cfg);
+    const ids = [id].concat(graph.edges.filter((e) => e.from === id).map((e) => e.to));
+    let best = null;
+    for (const s of SIZES[def.tune]().sort((a, b) => a.w - b.w)) {
+      if (s.brokers && s.brokers < base.rf) continue; // не жертвуем надёжностью ради подбора
+      const cfg = Object.assign({}, base, s); delete cfg.w;
+      const r = analyze(lab, { nodes: graph.nodes.map((n) => (n.id === id ? Object.assign({}, n, { cfg }) : n)), edges: graph.edges }, inputs, deep, stage);
+      best = { cfg, r, ok: ids.every((x) => !r.nodes[x] || r.nodes[x].util <= TARGET + 0.001) };
+      if (best.ok) break;
+    }
+    return best;
+  }
+
+  // Эталон главы как граф: узел задаётся типом или [тип, id, [x, y]], cfg по id.
+  function refGraph(lab, stage) {
+    const R = lab.reference[stage];
+    return {
+      nodes: R.nodes.map((n) => { const [type, id, pos] = [].concat(n), p = pos || lab.blocks[type].pos, cfg = R.cfg && R.cfg[id || type];
+        return Object.assign({ id: id || type, type, x: p[0], y: p[1] }, cfg && { cfg: Object.assign({}, cfg) }); }),
+      edges: R.edges.map(([from, to]) => ({ from, to })),
+    };
+  }
+
+  // Эталон под текущий сценарий. Если оригинал из книги выдерживает (до 90%), он и возвращается.
+  // Иначе по порядку: типовые добавки главы (reference.adapt: кэши, CDN…), пока они снижают перегрузку,
+  // потом подбор размеров перегруженных БД и брокеров. Что не вытянуть, уходит в blockers с причиной.
+  function adapt(lab, stage, inputs, deep) {
+    const run = (g) => analyze(lab, g, inputs, deep, stage);
+    const over = (r) => Object.values(r.nodes).reduce((s, n) => s + Math.max(0, n.util - 0.9), 0);
+    let g = refGraph(lab, stage), r = run(g);
+    const before = r, changes = [];
+    (lab.reference[stage].adapt || []).forEach((a) => {
+      const id = a.id || a.add, from = g.nodes.find((n) => n.type === a.from);
+      if (r.m.maxU <= 0.9 || !from || g.nodes.some((n) => n.id === id)) return;
+      const p = a.pos || lab.blocks[a.add].pos, g2 = { nodes: g.nodes.concat({ id, type: a.add, x: p[0], y: p[1] }), edges: g.edges.concat({ from: from.id, to: id }) };
+      const r2 = run(g2);
+      if (over(r2) < over(r) - 0.01) { changes.push(`+ ${lab.blocks[a.add].name}: ${a.why}`); g = g2; r = r2; }
+    });
+    const maxed = new Set();
+    for (let i = 0; i < 20 && r.m.maxU > 0.9; i++) {
+      const hot = Object.values(r.nodes).filter((n) => n.def.tune && n.util > 0.9 && !maxed.has(n.id)).sort((a, b) => b.util - a.util)[0];
+      if (!hot) break;
+      const s = sizeFor(lab, g, inputs, deep, stage, hot.id), diff = TUNE[hot.def.tune].filter((f) => s.cfg[f.id] !== hot.cfg[f.id]);
+      maxed.add(hot.id);
+      if (!diff.length || over(s.r) >= over(r) - 0.01) continue;
+      changes.push(`${hot.def.name}: ${diff.map((f) => `${f.label.toLowerCase()} ${hot.cfg[f.id]} → ${s.cfg[f.id]}`).join(', ')}`);
+      g = { nodes: g.nodes.map((n) => (n.id === hot.id ? Object.assign({}, n, { cfg: s.cfg }) : n)), edges: g.edges };
+      r = s.r;
+    }
+    const blockers = Object.values(r.nodes).filter((n) => n.util > 0.9).sort((a, b) => b.util - a.util).map((n) => ({ name: n.def.name, util: n.util, limit: n.limit, need: n.need }));
+    return { graph: g, r, before, changes, original: !changes.length, ok: r.m.maxU <= 0.9, blockers };
+  }
+
+  const api = { analyze, addBlock, canLink, linkTargets, sizeFor, refGraph, adapt, TUNE, optsOf, tuneOf, TARGET };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.LabEngine = api;
 })(typeof window !== 'undefined' ? window : globalThis);
