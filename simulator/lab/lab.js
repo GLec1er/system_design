@@ -8,6 +8,8 @@
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const KEY = 'sd-lab-' + L.id;
   const W = L.board.w, H = L.board.h;
+  // Текущий размер доски: не меньше W×H, растёт под блоки и во весь экран заполняет рамку.
+  let BW = W, BH = H;
 
   function fmt(n) {
     if (!isFinite(n)) return '∞';
@@ -356,13 +358,28 @@
   // Доска рисуется в своих координатах W×H и вписывается в рамку (плюс ручной зум).
   // Во весь экран вписываем по обеим сторонам и разрешаем увеличение.
   function fit(refit) {
-    const wrap = $('#wrap'), board = $('#board'), full = $('#mapcard').classList.contains('full');
-    if (refit || autoS == null) autoS = full ? Math.max(0.45, Math.min(2, (wrap.clientWidth - 2) / W, (wrap.clientHeight - 2) / H)) : Math.max(0.45, Math.min(1, (wrap.clientWidth - 2) / W));
+    const wrap = $('#wrap'), full = $('#mapcard').classList.contains('full'), c = contentSize();
+    if (refit || autoS == null) autoS = full ? Math.max(0.45, Math.min(2, (wrap.clientWidth - 2) / c.w, (wrap.clientHeight - 2) / c.h)) : Math.max(0.45, Math.min(1, (wrap.clientWidth - 2) / c.w));
     scale = autoS * zoom;
-    board.style.transform = `scale(${scale})`;
-    board.style.marginBottom = `${H * scale - H}px`;
-    board.style.marginRight = `${W * scale - W}px`;
+    $('#board').style.transform = `scale(${scale})`;
+    sizeBoard();
     if (last) drawEdges();
+  }
+  // Где кончаются блоки: доска не должна их обрезать.
+  function contentSize() {
+    let w = W, h = H;
+    st.graph.nodes.forEach((n) => { const r = rectOf(n.id) || { x: n.x, y: n.y, w: 170, h: 110 }; w = Math.max(w, r.x + r.w + 20); h = Math.max(h, r.y + r.h + 20); });
+    return { w, h };
+  }
+  // Во весь экран доска занимает всю рамку, и блоки можно ставить на свободное место справа и снизу.
+  function sizeBoard() {
+    const wrap = $('#wrap'), board = $('#board'), full = $('#mapcard').classList.contains('full'), c = contentSize();
+    BW = Math.max(c.w, full ? Math.floor((wrap.clientWidth - 2) / scale) : 0);
+    BH = Math.max(c.h, full ? Math.floor((wrap.clientHeight - 2) / scale) : 0);
+    board.style.width = BW + 'px'; board.style.height = BH + 'px';
+    $('#edges').setAttribute('width', BW); $('#edges').setAttribute('height', BH);
+    board.style.marginBottom = `${BH * scale - BH}px`;
+    board.style.marginRight = `${BW * scale - BW}px`;
   }
 
   function loadRef(g) {
@@ -377,7 +394,7 @@
   function freePos([x, y]) {
     const rects = st.graph.nodes.map((n) => rectOf(n.id) || { x: n.x, y: n.y, w: 170, h: 110 });
     for (let i = 0; i < 400; i++) {
-      const c = { x: Math.max(0, Math.min(x + (i % 10) * 60 - 270, W - NEW.w)), y: Math.max(0, y + Math.floor(i / 10) * 40), w: NEW.w, h: NEW.h };
+      const c = { x: Math.max(0, Math.min(x + (i % 10) * 60 - 270, BW - NEW.w)), y: Math.max(0, y + Math.floor(i / 10) * 40), w: NEW.w, h: NEW.h };
       if (!rects.some((r) => hits(c, r))) return [Math.round(c.x / 10) * 10, Math.round(c.y / 10) * 10];
     }
     return [x, y];
@@ -396,8 +413,7 @@
       }));
       if (!any) break;
     }
-    const bottom = Math.max(H, ...st.graph.nodes.map((n) => (rectOf(n.id) || { y: 0, h: 0 }).y + (rectOf(n.id) || { h: 0 }).h + 20));
-    $('#board').style.height = bottom + 'px'; $('#edges').setAttribute('height', bottom);
+    sizeBoard();
     if (moved) save();
   }
 
@@ -671,8 +687,8 @@
         drag((ev) => {
           const [x, y] = pt(ev);
           if (Math.hypot(x - sx, y - sy) > 3) moved = true;
-          g.x = Math.max(0, Math.min(W - nodeEl.offsetWidth, Math.round((ox + x - sx) / 10) * 10));
-          g.y = Math.max(0, Math.min(H - nodeEl.offsetHeight, Math.round((oy + y - sy) / 10) * 10));
+          g.x = Math.max(0, Math.min(BW - nodeEl.offsetWidth, Math.round((ox + x - sx) / 10) * 10));
+          g.y = Math.max(0, Math.min(BH - nodeEl.offsetHeight, Math.round((oy + y - sy) / 10) * 10));
           nodeEl.style.left = g.x + 'px'; nodeEl.style.top = g.y + 'px';
           drawEdges();
         }, () => { nodeEl.classList.remove('drag'); if (moved) save(); select(g.id); });
