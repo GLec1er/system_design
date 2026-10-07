@@ -169,7 +169,7 @@
   // ---------- 4–5. Карта ----------
   const CAT = { edge: 'Вход', svc: 'Сервис', db: 'Хранилище', cache: 'В памяти', async: 'Асинхронно' };
   const reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let scale = 1, zoom = 1, prevKpi = null, toastT = null;
+  let scale = 1, zoom = 1, autoS = null, lastDpr = window.devicePixelRatio, prevKpi = null, toastT = null;
 
   function mapView() {
     const s = step(), deep = s.stage === 'deep', ld = L.load;
@@ -191,6 +191,7 @@
             </div>
           </div>
           <div class="legend" id="legend"></div>
+          <p class="lghelp">Стрелка значит «вызывает»: запрос идёт по стрелке, ответ возвращается обратно. Точки на стрелке это запросы, цвет показывает поток, число это запросов в секунду. Пунктир: по стрелке пока ничего не идёт. Нажми на стрелку, чтобы увидеть, что по ней идёт.</p>
           <div class="board-wrap" id="wrap">
             <div class="board" id="board" style="width:${W}px;height:${H}px">
               <svg id="edges" width="${W}" height="${H}" aria-hidden="true"><defs>
@@ -205,6 +206,7 @@
         </section>
       </div>
       ${deep ? '<h3 class="sec">Проблемы углубления</h3><div class="probs" id="probs"></div>' : ''}
+      <section class="card ai" id="ai"></section>
       <div class="below">
         <section class="card"><h3>Цели</h3><div id="goals"></div></section>
         <section class="card"><h3>Подсказки и предупреждения</h3><div class="warns" id="warns"></div></section>
@@ -217,23 +219,33 @@
     $('#clr').onclick = () => { if (confirm('Убрать все блоки и стрелки с карты?')) { st.graph = { nodes: [], edges: [] }; selNode = null; changed(); } };
     $('#edel').onclick = () => { if (selEdge != null) { st.graph.edges.splice(selEdge, 1); selEdge = null; changed(); } };
     $('#load').oninput = (e) => { st.deep.params[L.load.id] = +e.target.value; $('#loadOut').textContent = '×' + e.target.value; save(); update(); };
-    $$('[data-z]').forEach((b) => (b.onclick = () => { const z = +b.dataset.z; zoom = z ? Math.max(0.5, Math.min(1.8, zoom + z * 0.15)) : 1; fit(); drawEdges(); }));
-    $('#full').onclick = () => { $('#mapcard').classList.toggle('full'); document.body.classList.toggle('noscroll'); fit(); drawEdges(); };
+    $$('[data-z]').forEach((b) => (b.onclick = () => { const z = +b.dataset.z; zoom = z ? Math.max(0.5, Math.min(2.5, zoom + z * 0.15)) : 1; fit(!z); }));
+    $('#full').onclick = () => { $('#mapcard').classList.toggle('full'); document.body.classList.toggle('noscroll'); fit(true); };
     fit();
-    window.onresize = () => { if (step().kind === 'map') { fit(); drawEdges(); } };
+    // Зум браузера (Cmd +) меняет devicePixelRatio: тогда масштаб доски не трогаем, и карта растёт вместе со страницей.
+    window.onresize = () => {
+      if (step().kind !== 'map') return;
+      const dpr = window.devicePixelRatio;
+      fit(dpr === lastDpr);
+      lastDpr = dpr;
+    };
     bindBoard();
+    renderAi();
     if (step().stage === 'deep') renderProbs();
     prevKpi = null;
     update();
   }
 
-  // Доска рисуется в своих координатах W×H и масштабируется под ширину (плюс ручной зум).
-  function fit() {
-    const wrap = $('#wrap'), board = $('#board');
-    scale = Math.max(0.45, Math.min(1, (wrap.clientWidth - 2) / W)) * zoom;
+  // Доска рисуется в своих координатах W×H и вписывается в рамку (плюс ручной зум).
+  // Во весь экран вписываем по обеим сторонам и разрешаем увеличение.
+  function fit(refit) {
+    const wrap = $('#wrap'), board = $('#board'), full = $('#mapcard').classList.contains('full');
+    if (refit || autoS == null) autoS = full ? Math.max(0.45, Math.min(2, (wrap.clientWidth - 2) / W, (wrap.clientHeight - 2) / H)) : Math.max(0.45, Math.min(1, (wrap.clientWidth - 2) / W));
+    scale = autoS * zoom;
     board.style.transform = `scale(${scale})`;
     board.style.marginBottom = `${H * scale - H}px`;
     board.style.marginRight = `${W * scale - W}px`;
+    if (last) drawEdges();
   }
 
   function loadRef(stage) {
@@ -386,8 +398,9 @@
         const dots = reduceMotion ? '' : Array.from({ length: n }, (_, j) => `<circle r="4" fill="${f.color}"><animateMotion dur="${dur}s" begin="-${((j * dur) / n).toFixed(2)}s" repeatCount="indefinite"><mpath href="#${id}"/></animateMotion></circle>`).join('');
         return `<path id="${id}" class="fl" d="${d}" style="stroke:${f.color}"><title>${esc(f.label)}: ${fmt(v)} rps</title></path>${dots}`;
       }).join('');
-      const d = curve(x1, y1, x2, y2), sel = selEdge === i;
-      out.push(`<g class="edge ${sel ? 'sel' : ''} ${fl.length ? 'live' : ''}" data-e="${i}"><path class="hit" d="${d}"/><path class="base" d="${d}" marker-end="url(#${sel ? 'arrS' : 'arr'})"/>${lines}</g>`);
+      const d = curve(x1, y1, x2, y2), sel = selEdge === i, sum = fl.reduce((s, f) => s + loads[f.id], 0);
+      const lab = sum && len > 90 ? `<text class="elab" x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 8}">${fmt(sum)} rps</text>` : '';
+      out.push(`<g class="edge ${sel ? 'sel' : ''} ${fl.length ? 'live' : ''}" data-e="${i}"><path class="hit" d="${d}"><title>${esc(r ? edgeText(e) : '')}</title></path><path class="base" d="${d}" marker-end="url(#${sel ? 'arrS' : 'arr'})"/>${lines}${lab}</g>`);
       if (sel) delAt = [(x1 + x2) / 2, (y1 + y2) / 2];
     });
     if (temp) out.push(`<path class="temp" d="${curve(...temp)}"/>`);
@@ -409,8 +422,10 @@
     const board = $('#board');
     const pt = (e) => { const r = board.getBoundingClientRect(); return [(e.clientX - r.left) / scale, (e.clientY - r.top) / scale]; };
     const addEdge = (from, to) => {
-      if (from !== to && !st.graph.edges.some((e) => e.from === from && e.to === to)) st.graph.edges.push({ from, to });
-      pendingFrom = null; hint(null); changed();
+      pendingFrom = null; hint(null); marks(null);
+      const msg = link(from, to);
+      if (msg) toast(msg);
+      changed();
     };
     const drag = (onMove, onUp) => {
       const mv = (ev) => onMove(ev), up = (ev) => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); onUp(ev); };
@@ -427,12 +442,13 @@
         const id = nodeEl.dataset.id, a = rectOf(id), [sx, sy] = pt(e);
         let moved = false;
         $('#wrap').classList.add('linking');
+        marks(id);
         drag((ev) => { const [x, y] = pt(ev); if (Math.hypot(x - sx, y - sy) > 4) moved = true; drawEdges([a.x + a.w, a.y + a.h / 2, x, y]); }, (ev) => {
           $('#wrap').classList.remove('linking');
           const t = document.elementFromPoint(ev.clientX, ev.clientY), to = t && t.closest('.node');
           if (to && to.dataset.id !== id) addEdge(id, to.dataset.id);
-          else if (!moved) { pendingFrom = id; hint('Теперь нажми на блок, куда ведёт стрелка. Esc отменяет.'); drawEdges(); }
-          else drawEdges();
+          else if (!moved) { pendingFrom = id; hint('Теперь нажми на блок, куда ведёт стрелка. Подсвечены блоки, куда её можно провести. Esc отменяет.'); drawEdges(); }
+          else { marks(null); drawEdges(); }
         });
         return;
       }
@@ -454,7 +470,8 @@
       const ge = e.target.closest('.edge');
       selEdge = ge ? +ge.dataset.e : null;
       if (!ge) { selNode = null; renderInspector(); $$('.node.sel').forEach((n) => n.classList.remove('sel')); }
-      pendingFrom = null; hint(null);
+      pendingFrom = null; marks(null);
+      hint(ge ? edgeText(st.graph.edges[selEdge]) + ' Delete или × удаляет стрелку.' : null);
       drawEdges();
     };
     board.onclick = (e) => {
@@ -463,12 +480,44 @@
     };
     document.onkeydown = (e) => {
       if (step().kind !== 'map' || /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
-      if (e.key === 'Escape') { pendingFrom = null; selEdge = null; hint(null); if ($('#mapcard').classList.contains('full')) $('#full').click(); drawEdges(); }
+      if (e.key === 'Escape') { pendingFrom = null; selEdge = null; hint(null); marks(null); if ($('#mapcard').classList.contains('full')) $('#full').click(); drawEdges(); }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selEdge != null) { st.graph.edges.splice(selEdge, 1); selEdge = null; changed(); }
         else if (selNode) removeNode(selNode);
       }
     };
+  }
+
+  const typeOf = (id) => (st.graph.nodes.find((n) => n.id === id) || {}).type;
+  const bname = (type) => L.blocks[type].name;
+
+  // Проводит стрелку, если она осмысленна; иначе возвращает объяснение. Перевёрнутую стрелку разворачивает.
+  function link(from, to) {
+    const a = typeOf(from), b = typeOf(to);
+    if (from === to || !a || !b) return null;
+    if (!E.canLink(L, a, b)) {
+      if (E.canLink(L, b, a)) { [from, to] = [to, from]; link(from, to); return `Развернул стрелку: запрос идёт от «${bname(b)}» к «${bname(a)}».`; }
+      const ok = E.linkTargets(L, a).map(bname);
+      return `Стрелка «${bname(a)} → ${bname(b)}» не нужна. ${(L.linkWhy && L.linkWhy(a, b)) || ''} ${ok.length ? `Из «${bname(a)}» стрелка ведёт в: ${ok.join(', ')}.` : `«${bname(a)}» никого не вызывает, стрелки идут только к нему.`}`.replace(/  +/g, ' ');
+    }
+    if (!st.graph.edges.some((e) => e.from === from && e.to === to)) st.graph.edges.push({ from, to });
+    return null;
+  }
+
+  // Пока тянем стрелку, подсвечиваем блоки, куда её можно провести.
+  function marks(from) {
+    const a = from && typeOf(from);
+    $$('.node').forEach((n) => {
+      const t = typeOf(n.dataset.id), on = !!a && n.dataset.id !== from;
+      n.classList.toggle('can', on && E.canLink(L, a, t));
+      n.classList.toggle('cant', on && !E.canLink(L, a, t) && !E.canLink(L, t, a));
+    });
+  }
+
+  function edgeText(e) {
+    const loads = (last && last.edgeLoad[e.from + '>' + e.to]) || {}, fl = last.flows.filter((f) => loads[f.id] > 0);
+    const head = `«${bname(typeOf(e.from))}» вызывает «${bname(typeOf(e.to))}».`;
+    return fl.length ? `${head} По стрелке идёт: ${fl.map((f) => `${f.label} ${fmt(loads[f.id])} rps`).join(', ')}.` : `${head} Пока по ней не идёт ни один поток.`;
   }
 
   function removeNode(id) {
@@ -551,6 +600,80 @@
       const x = L.problems.flatMap((p) => p.params || []).find((q) => q.id === el.dataset.par);
       D.params[x.id] = +el.value; $('#out_' + x.id).textContent = fmt(+el.value) + ' ' + x.unit; save(); update();
     }));
+  }
+
+  // ---------- Разбор схемы от Claude ----------
+  // Страница статическая и без ключей: собираем запрос с картой и метриками, ученик отправляет его Claude,
+  // а ответ с JSON вставляет обратно, и предложения можно применить к карте.
+  let aiRes = null, aiErr = null;
+
+  function renderAi() {
+    const box = $('#ai');
+    const sug = aiRes && aiRes.suggestions.map((x, i) => `<article class="sug"><b>${esc(x.title)}</b><p>${esc(x.why)}</p>${x.tradeoff ? `<p class="muted">Чем платим: ${esc(x.tradeoff)}</p>` : ''}${(x.actions || []).length ? `<button class="btn sm" data-apply="${i}">Применить на карте</button>` : ''}</article>`).join('');
+    box.innerHTML = `<h3>🤖 Разбор от Claude</h3>
+      <p class="muted">1. Скопируй запрос: в нём твоя карта, метрики и решения. 2. Отправь его Claude. 3. Вставь ответ сюда: предложения можно применить к карте одной кнопкой.</p>
+      <div class="row-btns"><button class="btn primary" id="aiCopy">Скопировать запрос</button><a class="btn" href="https://claude.ai/new" target="_blank" rel="noopener">Открыть Claude ↗</a></div>
+      <textarea id="aiAns" rows="3" placeholder="Вставь сюда ответ Claude целиком"></textarea>
+      <button class="btn sm" id="aiRead">Разобрать ответ</button>
+      ${aiErr ? `<p class="aierr">${esc(aiErr)}</p>` : ''}
+      ${aiRes ? `<div class="aiout"><p class="verdict">${esc(aiRes.verdict)}</p>${(aiRes.issues || []).length ? `<ul>${aiRes.issues.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}<div class="sugs">${sug}</div></div>` : ''}`;
+    $('#aiCopy').onclick = async () => {
+      try { await navigator.clipboard.writeText(aiPrompt()); toast('Запрос скопирован. Вставь его в чат с Claude.'); }
+      catch (e) { $('#aiAns').value = aiPrompt(); $('#aiAns').select(); toast('Не удалось скопировать сам: запрос в поле ниже, скопируй его вручную.'); }
+    };
+    $('#aiRead').onclick = () => {
+      const t = $('#aiAns').value, a = t.indexOf('{'), b = t.lastIndexOf('}');
+      try { aiRes = JSON.parse(t.slice(a, b + 1)); if (!Array.isArray(aiRes.suggestions)) throw 0; aiErr = null; }
+      catch (e) { aiRes = null; aiErr = 'Не нашёл в ответе JSON с предложениями. Вставь ответ Claude целиком.'; }
+      renderAi();
+    };
+    $$('[data-apply]').forEach((b) => (b.onclick = () => applyAi(aiRes.suggestions[+b.dataset.apply])));
+  }
+
+  function aiContext() {
+    const r = last, s = step();
+    return {
+      chapter: `Глава ${L.n}. ${L.title}`,
+      stage: s.stage === 'deep' ? 'углубление: конкурентность, масштаб, транзакции' : 'высокоуровневый дизайн',
+      blocks: Object.fromEntries(Object.entries(L.blocks).map(([t, b]) => [t, { name: b.name, what: b.learn.what, plus: b.learn.plus, minus: b.learn.minus, can_call: E.linkTargets(L, t) }])),
+      map: { nodes: st.graph.nodes.map((g) => ({ id: g.id, type: g.type, load_rps: Math.round(r.nodes[g.id].load), util: +r.nodes[g.id].util.toFixed(2), replicas: r.nodes[g.id].rep })), edges: st.graph.edges },
+      flows: r.flows.map((f) => ({ id: f.id, label: f.label, optional: f.optional, rps: +f.rate.toFixed(1), reaches_data: f.ok, latency_ms: f.ok ? Math.round(f.lat) : null })),
+      metrics: { served: +r.m.served.toFixed(2), bottleneck: r.m.bottleneck && r.m.bottleneck.def.name, cost_month: Math.round(r.m.cost), complexity: +r.m.cx.toFixed(1), ...Object.fromEntries(L.metrics.map((x) => [x.label, Math.round(r.m[x.id] || 0)])) },
+      load_multiplier: st.deep.params[L.load.id],
+      decisions: s.stage === 'deep' ? L.problems.map((p) => ({ problem: p.title, chosen: p.options.find((o) => o.v === st.deep.choices[p.key]).label, options: p.options.map((o) => o.label) })) : null,
+      warnings: r.warnings.map((w) => w.text),
+    };
+  }
+
+  function aiPrompt() {
+    return `Ты наставник по system design. Я прохожу учебный симулятор по книге Алекса Сюя и собрал схему. Разбери её по-русски, коротко, как на собеседовании.
+Ответь одним JSON-блоком такого вида:
+{"verdict": "1–2 предложения: насколько схема хороша для этого этапа",
+ "issues": ["до 5 главных проблем со ссылкой на цифры из метрик"],
+ "suggestions": [{"title": "что сделать", "why": "что станет лучше", "tradeoff": "чем платим",
+   "actions": [{"op": "add|link|unlink|remove", "type": "тип блока для add", "from": "id узла или тип", "to": "id узла или тип"}]}]}
+Предложений до 3, самое полезное первым. Типы блоков бери из blocks, стрелки проводи только из can_call. Если правка карты не нужна (например, выбрать другое решение в карточке проблемы), оставь actions пустым и скажи это в why.
+
+Моя схема:
+${JSON.stringify(aiContext(), null, 1)}`;
+  }
+
+  function applyAi(sg) {
+    const made = {}, notes = [];
+    const idOf = (x) => made[x] || (st.graph.nodes.some((n) => n.id === x) ? x : (st.graph.nodes.find((n) => n.type === x) || {}).id);
+    sg.actions.filter((a) => a.op === 'add' && L.blocks[a.type]).forEach((a) => {
+      const res = E.addBlock(L, st.graph, a.type, freePos(L.blocks[a.type].pos));
+      st.graph = res.graph; made[a.type] = res.id;
+    });
+    sg.actions.forEach((a) => {
+      const f = idOf(a.from), t = idOf(a.to);
+      if (a.op === 'link' && f && t) { const m = link(f, t); if (m) notes.push(m); }
+      if (a.op === 'unlink') st.graph.edges = st.graph.edges.filter((e) => !(e.from === f && e.to === t));
+      if (a.op === 'remove' && f) { st.graph.nodes = st.graph.nodes.filter((n) => n.id !== f); st.graph.edges = st.graph.edges.filter((e) => e.from !== f && e.to !== f); }
+    });
+    selNode = null; selEdge = null;
+    changed();
+    toast(`Применил: «${sg.title}». Посмотри, как изменились метрики.` + (notes.length ? ' ' + notes.join(' ') : ''));
   }
 
   // ---------- 6. Итог ----------
