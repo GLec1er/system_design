@@ -301,3 +301,18 @@ h3.sec{margin:22px 0 10px;font-size:13px;letter-spacing:.04em;text-transform:upp
 .nwhy.useless,.nwhy.dup{color:var(--muted);background:var(--bg)}
 .why{border-radius:10px;padding:8px 10px;font-size:13px;background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 35%,transparent)}
 .why.useless,.why.dup{background:var(--bg);border-color:var(--line);color:var(--muted)}
+
+/* по книге / эксперименты, настройки блоков */
+.pgt small{display:block;font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:11.5px;margin-top:2px}
+.node.exp{border-style:dashed;border-top-style:solid}
+.bookline{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;font-size:12.5px}
+.bk,.xp{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.bk{color:var(--ok);background:var(--ok-soft)}
+.xp{color:var(--accent);background:var(--accent-soft)}
+.tune{display:flex;flex-direction:column;gap:10px;margin:6px 0 10px}
+.tfl{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:13px;font-weight:600;margin-bottom:4px}
+.tseg{display:flex;flex-wrap:wrap;gap:4px}
+.tseg button{min-width:34px;padding:4px 9px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-size:12.5px;cursor:pointer}
+.tseg button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:600}
+.tseg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tnote{margin:4px 0 0;font-size:12px;color:var(--muted);line-height:1.4}
