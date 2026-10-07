@@ -49,17 +49,28 @@ const bookLat = (g, deep) => E.analyze(L, g, est, deep, 'deep').flows.find((f) =
 let g2 = E.addBlock(L, ref('deep'), 'notification', [0, 0]).graph;
 assert(g2.edges.some((e) => e.from === 'reservation' && e.to === 'notification'), 'без Kafka письмо подключается к сервису');
 assert(bookLat(g2, good) > bookLat(ref('deep'), good) + 100, 'синхронное письмо тормозит бронь');
+// Kafka сама приводит Notification Service и подключает его через очередь
 let g3 = E.addBlock(L, ref('deep'), 'kafka', [0, 0]).graph;
-g3 = E.addBlock(L, g3, 'notification', [0, 0]).graph;
+assert(g3.nodes.filter((n) => n.type === 'notification').length === 1, 'Kafka приводит потребителя');
 assert(g3.edges.some((e) => e.from === 'kafka' && e.to === 'notification') && !g3.edges.some((e) => e.from === 'reservation' && e.to === 'notification'), 'с Kafka письмо идёт через очередь');
 r = E.analyze(L, g3, est, good, 'deep');
 assert(r.flows.find((f) => f.id === 'events').ok && Math.abs(r.flows.find((f) => f.id === 'book').lat - bookLat(ref('deep'), good)) < 1, 'асинхронное письмо не тормозит бронь');
-// Cassandra вместо SQL: оптимистичная блокировка больше не спасает
+// Kafka после синхронного письма заменяет стрелку Reservation → Notification
+const g3b = E.addBlock(L, g2, 'kafka', [0, 0]).graph;
+assert(!g3b.edges.some((e) => e.from === 'reservation' && e.to === 'notification') && g3b.edges.some((e) => e.from === 'kafka' && e.to === 'notification'), 'Kafka заменяет синхронное письмо');
+// Cassandra вместо SQL: при добавлении брони сразу идут в неё, оптимистичная блокировка больше не спасает
 const g4 = E.addBlock(L, ref('deep'), 'nosql', [0, 0]).graph;
-g4.edges = g4.edges.filter((e) => !(e.from === 'reservation' && e.to === 'resDB'));
 r = E.analyze(L, g4, est, good, 'deep');
 assert(r.m.routed && r.m.oversell > 0, 'NoSQL: перепродажи возвращаются');
 // CDN забирает часть просмотров до Gateway
 const g5 = E.addBlock(L, ref('base'), 'cdn', [0, 0]).graph;
 assert(E.analyze(L, g5, est, deep0, 'base').nodes.gateway.load < E.analyze(L, ref('base'), est, deep0, 'base').nodes.gateway.load * 0.6, 'CDN разгружает Gateway');
+// почему блок простаивает: не подключён, лишний дубль или не нужен в главе
+const g6 = E.addBlock(L, ref('base'), 'client', [0, 0]).graph;
+let g7 = E.addBlock(L, g6, 'search', [0, 0]).graph;
+g7.nodes.push({ id: 'k', type: 'kafka' }); g7.edges.push({ from: 'reservation', to: 'k' });
+r = E.analyze(L, g7, est, deep0, 'base');
+assert.equal(r.nodes.client2.why.kind, 'dup');
+assert.equal(r.nodes.search.why.kind, 'useless');
+assert(r.nodes.k.why.kind === 'off' && /Kafka → Notification/.test(r.nodes.k.why.text), r.nodes.k.why.text);
 console.log('extras ok');
