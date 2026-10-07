@@ -471,3 +471,4 @@ h3.sec{margin:22px 0 10px;font-size:13px;letter-spacing:.04em;text-transform:upp
 .card .tbl.api code{word-break:normal;white-space:nowrap}
 .tbl.api td:first-child{white-space:nowrap}
 .schema .tbl.api td:first-child,.card .schema .tbl.api code{white-space:normal}
+.mapcard.full .lghelp{display:none}
