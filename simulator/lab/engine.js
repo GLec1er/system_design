@@ -35,7 +35,7 @@
       { id: 'queues', label: 'Очереди', opts: [1, 2, 4, 8], value: 1,
         hint: 'Exchange раскладывает сообщения по очередям. Одна очередь живёт на одном узле и обрабатывается одним ядром, поэтому масштабируют числом очередей.' },
       { id: 'qtype', label: 'Тип очереди', value: 'quorum',
-        opts: [{ v: 'classic', label: 'Classic', note: 'Быстрее, но без репликации: падение узла теряет сообщения.' }, { v: 'quorum', label: 'Quorum', note: 'Реплицируется на 3 узла через Raft: надёжно, но пропускная способность примерно вдвое ниже.' }] },
+        opts: [{ v: 'classic', label: 'Classic', note: 'Быстрее, но без репликации. Durable-очередь и persistent-сообщения переживут перезапуск узла, но не потерю его диска.' }, { v: 'quorum', label: 'Quorum', note: 'Реплицируется на 3 узла через Raft: надёжно, но пропускная способность примерно вдвое ниже.' }] },
       { id: 'prefetch', label: 'Prefetch', opts: [1, 10, 100], value: 10,
         hint: 'Сколько неподтверждённых сообщений потребитель берёт за раз. 1: честно, но потребитель простаивает в ожидании. 100: быстро, но сообщения копятся у медленного потребителя.' },
     ],
@@ -84,7 +84,8 @@
         const nextId = out[cur.id].find((id) => has(f.chain[i], nodes[id].type));
         if (!nextId) { r.ok = false; r.missing = [cur.type, f.chain[i]]; break; }
         const nx = nodes[nextId];
-        out[cur.id].forEach((id) => {
+        // Порядок обращения к кэшам задаёт не порядок стрелок, а скорость: сначала самый быстрый (L1), потом остальные.
+        out[cur.id].slice().sort((x, y) => (nodes[x].def.lat || 0) - (nodes[y].def.lat || 0) || (x < y ? -1 : 1)).forEach((id) => {
           const a = nodes[id], h = a.def.absorb && a.def.absorb[f.id];
           if (!h || used.has(id) || (a.def.at === 'db' && !nx.def.db)) return;
           used.add(id); edge(cur.id, id, p); touch(a, p); p *= 1 - h;
@@ -117,7 +118,7 @@
 
     Object.values(nodes).forEach((n) => { if (!Object.keys(n.flows).length) n.why = idleWhy(lab, nodes, flows, n); });
 
-    let maxU = 0, bottleneck = null;
+    let maxU = 0, bottleneck = null, bgU = 0;
     Object.values(nodes).forEach((n) => {
       const def = n.def;
       ctx.cx += def.cx || 0;
@@ -149,7 +150,8 @@
         ctx.cx += (s > 1 ? 1 + 0.3 * Math.log2(s) : 0) + 0.2 * R + (c.partition !== 'none' ? 0.5 : 0);
       } else if (def.tune === 'kafka') {
         // Предел дают партиции (параллелизм) и диски брокеров: каждое событие пишется RF раз.
-        const rf = Math.min(c.rf, c.brokers), pcap = cap * c.partitions, bcap = ((def.brokerCap || 20000) * c.brokers) / rf;
+        // acks=all ждёт копии на других брокерах: событие подтверждается позже (+5 мс), партиция пропускает меньше.
+        const rf = Math.min(c.rf, c.brokers), pcap = cap * c.partitions * (c.acks === '1' ? 1.2 : 1), bcap = ((def.brokerCap || 20000) * c.brokers) / rf;
         n.rep = c.partitions;
         n.capTotal = Math.min(pcap, bcap);
         n.util = n.load / n.capTotal;
@@ -158,7 +160,8 @@
           `Поток ${rps(n.load)} rps делится по ${c.partitions} партициям, одна партиция ≈ ${rps(cap)} rps.`,
           `Каждое событие пишется на ${rf} брокер${rf === 1 ? '' : 'а'}: ${c.brokers} брокер${c.brokers === 1 ? '' : c.brokers < 5 ? 'а' : 'ов'} вместе принимают ${rps(bcap)} rps.`,
         ];
-        if (c.rf > c.brokers) ctx.warn('warn', `Kafka: RF=${c.rf} при ${c.brokers} брокер${c.brokers === 1 ? 'е' : 'ах'} невозможен, копий будет только ${rf}.`);
+        n.latAdd = c.acks === 'all' && rf > 1 ? 5 : 0;
+        if (c.rf > c.brokers) ctx.warn('bad', `Kafka: RF=${c.rf} при ${c.brokers} брокер${c.brokers === 1 ? 'е' : 'ах'} невозможен, копий будет только ${rf}.`);
         if (n.util > 0.9) { n.limit = pcap <= bcap ? 'партиции' : 'диски брокеров'; n.need = pcap <= bcap ? 'больше партиций' : 'больше брокеров'; }
         ctx.cost += (def.cost || 0) * (c.brokers / 3) * (0.7 + 0.1 * rf);
         ctx.cx += c.brokers > 3 ? 0.5 : 0;
@@ -185,16 +188,26 @@
         if (n.rep > 1 && (def.db || def.cache)) ctx.cx += 0.3 * Math.log2(n.rep); // stateless-реплики почти бесплатны по сложности
       }
       n.q = queue(n.util);
+      // Фоновые узлы (только необязательные асинхронные потоки) не решают, выдерживает ли система запросы пользователя:
+      // их перегрузка это растущая очередь и задержка доставки, а не отказ брони.
+      n.bg = Object.keys(n.flows).length > 0 && Object.keys(n.flows).every((id) => flows.find((f) => f.id === id).optional);
+      if (n.bg) {
+        if (n.util > bgU) bgU = n.util;
+        if (n.util > 1) ctx.warn('warn', `Фоновая обработка в «${def.name}» не успевает: очередь растёт на ${rps(n.load - n.capTotal)} событий/с, доставка отстаёт всё сильнее. Бронь это не тормозит. Упёрся: ${n.limit}. Нужно: ${n.need}.`);
+        return;
+      }
       if (n.util > maxU) { maxU = n.util; bottleneck = n; }
       if (n.util > 1) ctx.warn('bad', `«${def.name}» перегружен: ${n.util < 10 ? Math.round(n.util * 100) + '%' : `в ${Math.round(n.util)} раз сверх мощности`}. Упёрся: ${n.limit}. Нужно: ${n.need}.`);
       else if (!n.load && n.why) ctx.warn(n.why.kind === 'useless' ? 'info' : 'warn', `«${def.name}» простаивает. ${n.why.text}`);
     });
     flows.forEach((f) => {
-      f.lat = f.extraLat + f.path.reduce((s, x) => s + (nodes[x.id].def.lat || 0) * nodes[x.id].q * x.p, 0);
+      f.lat = f.extraLat + f.path.reduce((s, x) => s + ((nodes[x.id].def.lat || 0) + (nodes[x.id].latAdd || 0)) * nodes[x.id].q * x.p, 0);
     });
     if (lab.rules) lab.rules(ctx);
 
-    const m = Object.assign({ maxU, bottleneck, served: maxU > 1 ? 1 / maxU : 1, cost: ctx.cost, cx: ctx.cx, routed: flows.every((f) => f.ok || f.optional) }, ctx.metrics);
+    // served считается только для достроенной схемы: недостроенная не «выдерживает 100%», у неё нет ответа на часть запросов.
+    const routed = Object.keys(nodes).length > 0 && flows.every((f) => f.ok || f.optional);
+    const m = Object.assign({ maxU, bottleneck, bgU, routed, served: !routed ? 0 : maxU > 1 ? 1 / maxU : 1, cost: ctx.cost, cx: ctx.cx }, ctx.metrics);
     return { d, graph, nodes, flows, edgeLoad, warnings: ctx.warnings, m };
   }
 
@@ -329,7 +342,7 @@
       g = { nodes: g.nodes.map((n) => (n.id === hot.id ? Object.assign({}, n, { cfg: s.cfg }) : n)), edges: g.edges };
       r = s.r;
     }
-    const blockers = Object.values(r.nodes).filter((n) => n.util > 0.9).sort((a, b) => b.util - a.util).map((n) => ({ name: n.def.name, util: n.util, limit: n.limit, need: n.need }));
+    const blockers = Object.values(r.nodes).filter((n) => n.util > 0.9 && !n.bg).sort((a, b) => b.util - a.util).map((n) => ({ name: n.def.name, util: n.util, limit: n.limit, need: n.need }));
     return { graph: g, r, before, changes, original: !changes.length, ok: r.m.maxU <= 0.9, blockers };
   }
 

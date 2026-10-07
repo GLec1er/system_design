@@ -125,3 +125,24 @@ ad = E.adapt(L, 'deep', est, huge);
 assert(!ad.ok && ad.blockers.length && ad.blockers[0].need, 'под ×1000×20 эталон не вытягивает и говорит почему');
 assert(ad.changes.some((c) => /Redis\) у Hotel Service → Memcached/.test(c)), 'эталон меняет упёршийся Redis на Memcached: ' + ad.changes.join('; '));
 console.log('scenario ok:', E.adapt(L, 'base', est, x100).changes.join('; '), '|', ad.changes.join('; '), '| blockers:', ad.blockers.map((b) => b.name + ' ' + Math.round(b.util * 100) + '%').join(', '));
+
+// аудит: пустая карта не «выдерживает», недостроенная бронь не даёт бизнес-ошибок
+r = E.analyze(L, { nodes: [], edges: [] }, est, hard, 'deep');
+assert(!r.m.routed && r.m.served === 0 && r.m.dup === 0 && r.m.oversell === 0, 'пустая карта: нет ложного успеха');
+assert(!L.goals.base[2].check(E.analyze(L, { nodes: [], edges: [] }, est, deep0, 'base')), 'цель по нагрузке не засчитана на пустой карте');
+// ошибки «в день» зависят от длительности пика
+const day = (h) => E.analyze(L, ref('base'), est, { params: Object.assign({}, hard.params, { hours: h }), choices: hard.choices }, 'deep').m.dup;
+assert(day(8) > day(2) * 1.5, 'длиннее пик, больше дублей за день');
+// фоновый потребитель не роняет «выдерживаем», но виден как очередь
+const gq = E.addBlock(L, ref('deep'), 'kafka', [0, 0]).graph, dq = { params: Object.assign({}, deep0.params, { flash: 1000 }), choices: good.choices };
+r = E.analyze(L, gq, est, dq, 'deep');
+const r0 = E.analyze(L, ref('deep'), est, dq, 'deep');
+assert(Math.abs(r.m.served - r0.m.served) < 1e-9 && r.m.bgU > 1 && r.warnings.some((w) => /очередь растёт/.test(w.text)), 'фон отдельно от брони');
+// acks меняет задержку и пропускную способность Kafka
+const ack = (a) => { gq.nodes.find((n) => n.type === 'kafka').cfg = { acks: a }; const x = E.analyze(L, gq, est, dq, 'deep'); return [x.nodes.kafka.capTotal, x.flows.find((f) => f.id === 'events').lat]; };
+assert(ack('1')[0] > ack('all')[0] && ack('1')[1] < ack('all')[1], 'acks влияет на расчёт');
+// порядок стрелок к кэшам не меняет расчёт
+const gc = ref('base'); gc.nodes.push({ id: 'c1', type: 'cache' }, { id: 'c2', type: 'pgcache' }); gc.edges.push({ from: 'hotel', to: 'c1' }, { from: 'hotel', to: 'c2' });
+const ca = E.analyze(L, gc, est, deep0, 'base'), cb = E.analyze(L, { nodes: gc.nodes, edges: gc.edges.slice().reverse() }, est, deep0, 'base');
+assert(ca.nodes.c1.load === cb.nodes.c1.load && ca.nodes.c1.load > ca.nodes.c2.load, 'быстрый кэш первым при любом порядке стрелок');
+console.log('audit ok');

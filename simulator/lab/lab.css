@@ -379,3 +379,4 @@ h3.sec{margin:22px 0 10px;font-size:13px;letter-spacing:.04em;text-transform:upp
 .node[style*="--c"]{background:linear-gradient(180deg,color-mix(in srgb,var(--c) 10%,var(--card)),var(--card) 60px)}
 .pi[style*="--c"]{border-left:3px solid var(--c)}
 .dragghost .pic{width:24px;height:24px;display:grid;place-items:center}
+.tseg button:disabled{opacity:.35;cursor:not-allowed}
