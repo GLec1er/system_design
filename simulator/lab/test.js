@@ -7,10 +7,8 @@ const L = global.LAB;
 const est = {}; L.estimate.inputs.forEach((i) => (est[i.id] = i.value));
 const deep0 = { params: {}, choices: {} };
 L.problems.forEach((p) => { (p.params || []).forEach((x) => (deep0.params[x.id] = x.value)); if (p.options) deep0.choices[p.key] = p.options[0].v; });
-const ref = (k) => ({
-  nodes: L.reference[k].nodes.map((n) => { const [type, id] = [].concat(n); return { id: id || type, type, cfg: (L.reference[k].cfg || {})[id || type] }; }),
-  edges: L.reference[k].edges.map(([from, to]) => ({ from, to })),
-});
+L.scenario.forEach((x) => (deep0.params[x.id] = x.value));
+const ref = (k) => E.refGraph(L, k);
 
 // стрелки эталонов разрешены, а клиент напрямую в БД нет
 ['base', 'deep'].forEach((k) => ref(k).edges.forEach((e) => {
@@ -93,3 +91,36 @@ const gm = E.addBlock(L, ref('deep'), 'mongo', [0, 0]).graph;
 r = E.analyze(L, gm, est, good, 'deep');
 assert(r.m.oversell === 0 && r.flows.find((f) => f.id === 'book').lat > bookLat(ref('deep'), good), 'MongoDB: транзакции есть, но медленнее');
 console.log('extras ok');
+
+// сценарий: ×1000 при росте ×20 кладёт даже сервисы, причина и что нужно названы
+const huge = { params: Object.assign({}, deep0.params, { flash: 1000, growth: 20 }), choices: good.choices };
+r = E.analyze(L, ref('deep'), est, huge, 'deep');
+assert(r.m.served < 1 && r.nodes.hotel.util > 1 && /предел/.test(r.nodes.hotel.limit) && r.nodes.hotel.need, '×1000×20: Hotel Service упёрся в предел реплик');
+assert(r.warnings.some((w) => w.lvl === 'bad' && /Упёрся/.test(w.text)), 'перегрузка объяснена');
+// шарды по дате: горячий шард берёт половину, по отелю ровно
+const shard = (key) => { const g = ref('base'); g.nodes.find((n) => n.id === 'resDB').cfg = { shards: 4, shardKey: key }; return E.analyze(L, g, est, x100, 'base').nodes.resDB; };
+assert(shard('date').util > shard('hotel').util * 1.9 && shard('date').cluster.shards[0].share === 0.5, 'ключ по дате перекошен');
+assert.equal(shard('hotel').cluster.shards.length, 4);
+// Kafka: RF больше брокеров предупреждает, диски брокеров ограничивают поток
+const gkb = E.addBlock(L, ref('deep'), 'kafka', [0, 0]).graph;
+gkb.nodes.find((n) => n.type === 'kafka').cfg = { brokers: 1, rf: 3, partitions: 24 };
+r = E.analyze(L, gkb, est, huge, 'deep');
+assert(r.warnings.some((w) => /RF=3 при 1/.test(w.text)) && r.nodes.kafka.cluster.rf === 1, 'RF ограничен числом брокеров');
+// RabbitMQ: письма идут через очередь, потребители не ограничены партициями, CDC через неё нельзя
+const gr = E.addBlock(L, ref('deep'), 'rabbit', [0, 0]).graph;
+r = E.analyze(L, gr, est, x100, 'deep');
+assert(r.flows.find((f) => f.id === 'events').ok && r.nodes.notification.maxRep === L.blocks.notification.maxRep && r.nodes.notification.consumerOf.type === 'rabbit', 'RabbitMQ: конкурирующие потребители');
+assert(!E.canLink(L, 'resDB', 'rabbit'), 'CDC только через Kafka');
+// Memcached и PostgreSQL как кэш снимают чтения с Hotel DB
+['memcached', 'pgcache'].forEach((t) => {
+  const g = ref('base'); const a = E.addBlock(L, g, t, [0, 0]).graph;
+  assert(E.analyze(L, a, est, x100, 'base').nodes.hotelDB.load < E.analyze(L, g, est, x100, 'base').nodes.hotelDB.load * 0.3, t + ' разгружает Hotel DB');
+});
+// эталон: при книжной нагрузке оригинал, под ×100 адаптация выдерживает, под ×1000×20 нет и объясняет почему
+let ad = E.adapt(L, 'base', est, deep0);
+assert(ad.original && ad.ok, 'книжная нагрузка: оригинал');
+ad = E.adapt(L, 'base', est, x100);
+assert(!ad.original && ad.ok && ad.changes.some((c) => /Кэш/.test(c)), 'адаптация под ×100: ' + ad.changes.join('; '));
+ad = E.adapt(L, 'deep', est, huge);
+assert(!ad.ok && ad.blockers.length && ad.blockers[0].need, 'под ×1000×20 эталон не вытягивает и говорит почему');
+console.log('scenario ok:', E.adapt(L, 'base', est, x100).changes.join('; '), '|', ad.changes.join('; '), '| blockers:', ad.blockers.map((b) => b.name + ' ' + Math.round(b.util * 100) + '%').join(', '));
