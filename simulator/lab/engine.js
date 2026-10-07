@@ -107,7 +107,18 @@
     return { graph: g, id };
   }
 
-  const api = { analyze, addBlock, TARGET };
+  // Какие стрелки осмысленны: соседние шаги в цепочках потоков и типовые связи блоков (def.links).
+  function linkPairs(lab) {
+    if (lab._pairs) return lab._pairs;
+    const ok = new Set(), add = (a, b) => [].concat(a).forEach((x) => [].concat(b).forEach((y) => ok.add(x + '>' + y)));
+    lab.flows.forEach((f) => f.chain.slice(1).forEach((t, i) => add(f.chain[i], t)));
+    Object.entries(lab.blocks).forEach(([type, def]) => (def.links || []).forEach(([a, b]) => add(a === 'self' ? type : a, b === 'self' ? type : b)));
+    return (lab._pairs = ok);
+  }
+  const canLink = (lab, a, b) => linkPairs(lab).has(a + '>' + b);
+  const linkTargets = (lab, a) => Object.keys(lab.blocks).filter((b) => canLink(lab, a, b));
+
+  const api = { analyze, addBlock, canLink, linkTargets, TARGET };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.LabEngine = api;
 })(typeof window !== 'undefined' ? window : globalThis);
