@@ -59,6 +59,7 @@
       rows: (d) => [
         // peak: величина в секунду, в пике умножается на ×распродажи
         { label: 'Броней в день', formula: 'номера × заполняемость ÷ срок × рост', v: d.B },
+        { label: 'Броней в день распродажи', formula: 'брони в день × (1 + (пик − 1) × часы пика ÷ 24)', v: d.Bday },
         { label: 'Броней в секунду (запись)', formula: 'брони в день ÷ 86 400', v: d.tps, peak: true },
         { label: 'Страница бронирования, QPS', formula: 'TPS ÷ конверсия', v: d.page, peak: true },
         { label: 'Просмотр отелей, QPS', formula: 'страница брони ÷ конверсия', v: d.view, peak: true },
@@ -98,6 +99,7 @@
     // Сценарий нагрузки общий для оценки, карты и эталона. stops: значения ползунка.
     scenario: [
       { id: 'flash', label: 'Пик распродажи', unit: '×', stops: [1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20, 30, 40, 50, 70, 100, 150, 200, 300, 400, 500, 700, 1000], value: 1, hint: 'Во сколько раз трафик в пик выше обычного дня' },
+      { id: 'hours', label: 'Длительность пика', unit: 'ч', stops: [1, 2, 4, 8, 12, 24], value: 4, hint: 'Сколько часов в сутки держится пик. От этого зависят ошибки «в день», а не скорость запросов' },
       { id: 'growth', label: 'Рост бизнеса', unit: '×', stops: [1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20], value: 1, hint: 'Во сколько раз больше номеров и броней, чем сейчас' },
     ],
     // Порядок тематических групп в палитре (block.group).
@@ -170,7 +172,7 @@
         fit: { use: 'Горячие чтения простых объектов (страница отеля, цены) на больших QPS.', avoid: 'Нужны структуры (списки, счётчики), блокировки, pub/sub или кэш должен пережить рестарт.', limits: 'Значение до 1 МБ, нет репликации и персистентности, вытеснение LRU.' } },
       pgcache: { name: 'PostgreSQL как кэш', logo: 'postgresql', icon: '🐘', cat: 'cache', extra: true, group: 'Кэширование', pos: [685, 170], cap: 6000, lat: 4, cost: 200, cx: 0.5, maxRep: 4, cache: true, multi: true, at: 'db', absorb: { view: 0.85, search: 0.7 },
         links: [[['hotel', 'reservation'], 'self']], tag: 'UNLOGGED-таблица или materialized view',
-        learn: { what: 'Готовые ответы лежат в отдельной таблице PostgreSQL: UNLOGGED-таблица «ключ → JSON» или materialized view, которую обновляют по расписанию. Новой технологии нет.', plus: ['Та же БД, что команда уже умеет: бэкапы, мониторинг, SQL', 'Можно кэшировать результат JOIN и фильтровать его SQL-запросом'], minus: ['В несколько раз медленнее Redis: диск, WAL, соединения', 'Частые перезаписи раздувают таблицу, нужен VACUUM', 'Соединений сотни, а не десятки тысяч'] },
+        learn: { what: 'Готовые ответы лежат в отдельной таблице PostgreSQL: UNLOGGED-таблица «ключ → JSON» или materialized view, которую обновляют по расписанию. Новой технологии нет.', plus: ['Та же БД, что команда уже умеет: бэкапы, мониторинг, SQL', 'Можно кэшировать результат JOIN и фильтровать его SQL-запросом'], minus: ['Медленнее Redis: страницы с диска через буферы, разбор SQL, соединения. UNLOGGED-таблица не пишет WAL и не уходит на реплики, зато очищается после сбоя; materialized view пишет WAL как обычная таблица', 'Частые перезаписи раздувают таблицу, нужен VACUUM', 'Соединений сотни, а не десятки тысяч'] },
         fit: { use: 'PostgreSQL уже есть, нагрузка умеренная (тысячи rps), кэшу нужны SQL-запросы или он должен пережить рестарт, а ещё одну систему заводить не хочется.', avoid: 'Десятки тысяч чтений в секунду, нужна задержка меньше миллисекунды, одни и те же ключи перезаписываются постоянно.', limits: 'Около 5–10 тыс. простых чтений/с на инстанс, UNLOGGED-таблица очищается после сбоя, materialized view отстаёт до следующего REFRESH.' } },
     },
 
@@ -190,7 +192,9 @@
       const growth = p.growth || 1, flash = p.flash || 1;
       const B = (i.rooms * (i.occ / 100)) / i.stay * growth;
       const tps = B / 86400, page = tps / (i.conv / 100), view = page / (i.conv / 100);
-      return { B, tps, page, view, k: flash, flash, growth, invRows: (i.rooms * growth / 200) * 20 * 730 };
+      // Bday: броней за день сценария. Пик длится hours часов с интенсивностью ×flash, остальное время обычный поток.
+      const hours = p.hours || 4, Bday = B * (1 + ((flash - 1) * hours) / 24);
+      return { B, Bday, hours, tps, page, view, k: flash, flash, growth, invRows: (i.rooms * growth / 200) * 20 * 730 };
     },
 
     reference: {
@@ -251,7 +255,8 @@
     ],
 
     model(ctx) {
-      const { d, deep, nodes, flows, stage } = ctx, c = deep.choices, p = deep.params, B = d.B;
+      // Ошибки считаем за день сценария (с пиком) и только для операций, которые реально доходят до данных.
+      const { d, deep, nodes, flows, stage } = ctx, c = deep.choices, p = deep.params, B = d.Bday;
       const all = Object.values(nodes), of = (t) => all.filter((n) => n.type === t);
       const badge = (t, icon, title) => of(t).forEach((n) => n.badges.push({ icon, title }));
       const book = flows.find((f) => f.id === 'book'), pay = flows.find((f) => f.id === 'pay');
@@ -271,7 +276,7 @@
       if (broker && broker.type === 'kafka') ctx.warn('info', 'Бронь публикует событие в Kafka: письмо уходит асинхронно и не тормозит бронь.');
       if (broker && broker.type === 'rabbit') {
         ctx.warn('info', 'Бронь публикует сообщение в RabbitMQ: exchange → очередь → Notification Service, письмо не тормозит бронь. Но после ack сообщение удаляется: перечитать историю или сделать CDC в кэш не выйдет, для этого нужна Kafka.');
-        if (broker.cfg.qtype === 'classic') ctx.warn('warn', 'Classic-очередь RabbitMQ не реплицируется: падение узла потеряет письма. Quorum надёжнее, но медленнее.');
+        if (broker.cfg.qtype === 'classic') ctx.warn('warn', 'Classic-очередь RabbitMQ не реплицируется. Durable-очередь с persistent-сообщениями переживёт перезапуск узла, но при потере его диска или долгом отказе письма пропадут или задержатся. Quorum хранит копии на 3 узлах, но медленнее.');
       }
       if (of('kafka').length && !(broker && broker.type === 'kafka') && !ok('cdc')) ctx.warn('info', 'У Kafka нет потребителей: подключи Kafka → Notification Service или Kafka → кэш инвентаря (CDC).');
       if (of('rabbit').length && !(broker && broker.type === 'rabbit')) ctx.warn('info', 'У RabbitMQ нет потребителей: подключи RabbitMQ → Notification Service.');
@@ -302,6 +307,7 @@
         return;
       }
 
+      if (!book.ok) return; // бронь не доходит до БД: ни дублей, ни перепродаж ещё нет, есть только недостроенная схема
       // 1. Повторные запросы
       M.dup = c.idem === 'key' ? 0 : (B * p.dup) / 100 * (c.idem === 'button' ? 0.3 : 1);
       if (c.idem === 'button') { ctx.cx += 0.3; badge('client', '🖱️', 'Кнопка блокируется после клика'); }

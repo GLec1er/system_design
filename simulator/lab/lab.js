@@ -57,7 +57,8 @@
   // На шаге дизайна решения углубления не действуют, но сценарий нагрузки (пик и рост) общий для всех шагов.
   const scn = () => Object.fromEntries(L.scenario.map((x) => [x.id, st.deep.params[x.id]]));
   const deepFor = (stage) => (stage === 'deep' ? st.deep : { params: Object.assign({}, defaults.deep.params, scn()), choices: defaults.deep.choices });
-  const scnText = () => L.scenario.map((x) => `${x.label.toLowerCase()} ${x.unit}${st.deep.params[x.id]}`).join(', ');
+  const scnVal = (x, v) => (x.unit === '×' ? '×' + v : `${v} ${x.unit}`);
+  const scnText = () => L.scenario.map((x) => `${x.label.toLowerCase()} ${scnVal(x, st.deep.params[x.id])}`).join(', ');
   // Эталон под тот же сценарий и те же решения, что у ученика; считается только при их изменении.
   let refMemo = {};
   const refFor = (stage) => { const k = JSON.stringify([stage, st.est, deepFor(stage)]); return refMemo[k] || (refMemo = { [k]: E.adapt(L, stage, st.est, deepFor(stage)) })[k]; };
@@ -153,12 +154,12 @@
   // Ползунок сценария ходит по stops (1, 2, 5, 10 …), чтобы и ×2, и ×1000 были под рукой.
   function scnHtml(x) {
     const v = st.deep.params[x.id], i = Math.max(0, x.stops.indexOf(v));
-    return `<label class="load" title="${esc(x.hint)}"><span>${esc(x.label)}</span><input type="range" data-scn="${x.id}" min="0" max="${x.stops.length - 1}" step="1" value="${i}" aria-label="${esc(x.label)}"><output id="scn_${x.id}">${esc(x.unit)}${v}</output></label>`;
+    return `<label class="load" title="${esc(x.hint)}"><span>${esc(x.label)}</span><input type="range" data-scn="${x.id}" min="0" max="${x.stops.length - 1}" step="1" value="${i}" aria-label="${esc(x.label)}"><output id="scn_${x.id}">${esc(scnVal(x, v))}</output></label>`;
   }
   function bindScn(then) {
     $$('[data-scn]').forEach((el) => (el.oninput = () => {
       const x = L.scenario.find((q) => q.id === el.dataset.scn), v = x.stops[+el.value];
-      st.deep.params[x.id] = v; $('#scn_' + x.id).textContent = x.unit + v; save(); then();
+      st.deep.params[x.id] = v; $('#scn_' + x.id).textContent = scnVal(x, v); save(); then();
     }));
   }
   function estView() {
@@ -288,9 +289,34 @@
     changed();
   }
 
+  // Свободное место по настоящим прямоугольникам блоков (раскрытый кластер выше обычного блока).
+  const GAP = 14, NEW = { w: 230, h: 230 };
+  const hits = (a, b) => a.x < b.x + b.w + GAP && b.x < a.x + a.w + GAP && a.y < b.y + b.h + GAP && b.y < a.y + a.h + GAP;
   function freePos([x, y]) {
-    while (st.graph.nodes.some((n) => Math.abs(n.x - x) < 30 && Math.abs(n.y - y) < 30)) { x += 28; y += 28; }
-    return [Math.max(0, Math.min(x, W - 180)), Math.max(0, Math.min(y, H - 120))];
+    const rects = st.graph.nodes.map((n) => rectOf(n.id) || { x: n.x, y: n.y, w: 170, h: 110 });
+    for (let i = 0; i < 400; i++) {
+      const c = { x: Math.max(0, Math.min(x + (i % 10) * 60 - 270, W - NEW.w)), y: Math.max(0, y + Math.floor(i / 10) * 40), w: NEW.w, h: NEW.h };
+      if (!rects.some((r) => hits(c, r))) return [Math.round(c.x / 10) * 10, Math.round(c.y / 10) * 10];
+    }
+    return [x, y];
+  }
+  // После отрисовки раскрытые блоки могли наехать на соседей: сдвигаем нижний вниз. Ручную раскладку без пересечений не трогаем.
+  function unclutter() {
+    let moved = false;
+    for (let pass = 0; pass < 5; pass++) {
+      const list = st.graph.nodes.map((n) => ({ n, r: rectOf(n.id) })).filter((x) => x.r).sort((a, b) => a.r.y - b.r.y);
+      let any = false;
+      list.forEach((a, i) => list.slice(i + 1).forEach((b) => {
+        if (!hits(a.r, b.r)) return;
+        b.n.y = b.r.y = Math.round((a.r.y + a.r.h + GAP + 6) / 10) * 10;
+        const el = $(`.node[data-id="${b.n.id}"]`); el.style.top = b.n.y + 'px';
+        any = moved = true;
+      }));
+      if (!any) break;
+    }
+    const bottom = Math.max(H, ...st.graph.nodes.map((n) => (rectOf(n.id) || { y: 0, h: 0 }).y + (rectOf(n.id) || { h: 0 }).h + 20));
+    $('#board').style.height = bottom + 'px'; $('#edges').setAttribute('height', bottom);
+    if (moved) save();
   }
 
   // Блок добавляется сразу рабочим: с типовыми стрелками, нужными соседями (bring) и без стрелок, которые он заменяет (drop).
@@ -324,6 +350,7 @@
     last = analyzeG(st.graph, step().stage);
     $('#emptyMap').hidden = st.graph.nodes.length > 0;
     renderNodes(last);
+    unclutter();
     drawEdges();
     renderPanels(last);
     renderPalette(last);
@@ -350,7 +377,7 @@
     return chips;
   }
 
-  const fitHtml = (f) => `<p><b class="fy">Хорош для:</b> ${esc(f.use)}</p><p><b class="fn">Не стоит:</b> ${esc(f.avoid)}</p><p><b>Ограничения:</b> ${esc(f.limits)}</p>`;
+  const fitHtml = (f) => `<p><b class="fy">Хорош для:</b> ${esc(f.use)}</p><p><b class="fn">Не стоит:</b> ${esc(f.avoid)}</p><p><b>Ограничения:</b> ${esc(f.limits)}</p><p class="muted">Числа ориентировочные; в расчёте карты используются учебные коэффициенты.</p>`;
   const infoOpen = new Set();
 
   // Две палитры: слева блоки из книги, справа эксперименты; внутри тематические группы, которые можно свернуть.
@@ -642,10 +669,11 @@
     const m = r.m, deep = step().stage === 'deep';
     const lat = (id) => { const f = r.flows.find((x) => x.id === id); return f && f.ok ? f.lat : null; };
     const tiles = [
-      { k: 'served', label: 'Выдерживаем', v: m.served, show: Math.round(m.served * 100) + '%', cls: m.served >= 1 ? (m.maxU > 0.9 ? 'warn' : 'ok') : 'bad', sub: m.bottleneck ? 'узкое место: ' + m.bottleneck.def.name : 'нет нагрузки', better: 1 },
+      { k: 'served', label: 'Выдерживаем', v: m.served, show: m.routed ? Math.round(m.served * 100) + '%' : '—', cls: !m.routed ? 'bad' : m.served >= 1 ? (m.maxU > 0.9 ? 'warn' : 'ok') : 'bad', sub: !m.routed ? 'схема не достроена' : m.bottleneck ? 'узкое место: ' + m.bottleneck.def.name : 'нет нагрузки', better: 1 },
+      ...(m.bgU ? [{ k: 'bg', label: 'Фоновая очередь', v: m.bgU, show: pct(m.bgU), cls: m.bgU > 1 ? 'warn' : 'ok', sub: m.bgU > 1 ? 'не успевает, очередь растёт' : 'успевает', better: -1 }] : []),
       { k: 'view', label: 'Просмотр', v: lat('view'), show: lat('view') == null ? '—' : ms(lat('view')), sub: 'задержка p50', better: -1 },
       { k: 'book', label: 'Бронь', v: lat('book'), show: lat('book') == null ? '—' : ms(lat('book')), sub: 'задержка p50', better: -1 },
-      ...(deep ? L.metrics.map((x) => ({ k: x.id, label: x.label, v: m[x.id] || 0, show: fmt(m[x.id] || 0), cls: m[x.id] > 0 ? (x.bad ? 'bad' : 'warn') : 'ok', sub: 'в день', better: -1 })) : []),
+      ...(deep ? L.metrics.map((x) => ({ k: x.id, label: x.label, v: m[x.id] || 0, show: fmt(m[x.id] || 0), cls: m[x.id] > 0 ? (x.bad ? 'bad' : 'warn') : 'ok', sub: 'за день сценария', better: -1 })) : []),
       { k: 'cost', label: 'Стоимость', v: m.cost, show: money(m.cost).replace('/мес', ''), sub: 'в месяц, условно', better: -1 },
       { k: 'cx', label: 'Сложность', v: m.cx, show: m.cx.toFixed(1), cls: m.cx > 20 ? 'bad' : m.cx > 14 ? 'warn' : '', sub: 'условных баллов', better: -1 },
     ];
@@ -691,6 +719,7 @@
   function renderCmp(r) {
     const A = refFor(step().stage);
     const k = (x) => { const b = x.flows.find((f) => f.id === 'book');
+      if (!x.m.routed) return '<span class="bad">схема не достроена: часть потоков не доходит до данных</span>';
       return `<span class="${x.m.served >= 1 && x.m.maxU <= 0.9 ? 'ok' : 'bad'}">выдерживает ${pct(x.m.served)}, пик загрузки ${pct(x.m.maxU)}</span> · бронь ${b && b.ok ? ms(b.lat) : '—'} · ${money(x.m.cost)} · сложность ${x.m.cx.toFixed(1)}`; };
     $('#cmp').innerHTML = `<div class="cref ${A.ok ? '' : 'nok'}"><div class="ct"><b>${A.original ? '📘 Эталон: оригинал из книги' : `🔧 Эталон: адаптация под ${esc(scnText())}`}</b><small>${k(A.r)}</small></div>
       ${A.original ? '<p class="muted">При этом сценарии схема из книги выдерживает нагрузку без изменений.</p>'
@@ -733,7 +762,8 @@
     return `<h5>⚙️ Настройки</h5><div class="tune">${fields.map((f) => {
       const opts = tuneOpts(f, def), cur = opts.find((o) => o.v === n.cfg[f.id]);
       return `<div class="tf"><div class="tfl">${esc(f.label)}<span class="${f.book ? 'bk' : 'xp'}">${f.book ? '📘 по книге' : '🧪 эксперимент'}</span></div>
-        <div class="tseg">${opts.map((o) => `<button class="${o === cur ? 'on' : ''}" data-tf="${f.id}" data-v="${esc(o.v)}">${esc(o.label)}</button>`).join('')}</div>
+        <div class="tseg">${opts.map((o) => { const no = f.id === 'rf' && o.v > n.cfg.brokers;
+          return `<button class="${o === cur ? 'on' : ''}" data-tf="${f.id}" data-v="${esc(o.v)}" ${no ? `disabled title="Копий не может быть больше, чем брокеров (${n.cfg.brokers})"` : ''}>${esc(o.label)}</button>`; }).join('')}</div>
         <p class="tnote">${esc((cur && cur.note) || f.hint || '')}</p></div>`;
     }).join('')}</div>
     <button class="btn sm" id="autoTune">✨ Подобрать под нагрузку</button>`;
@@ -741,6 +771,8 @@
   function setCfg(g, id, raw) {
     const def = L.blocks[g.type], f = E.TUNE[def.tune].find((x) => x.id === id), o = tuneOpts(f, def).find((x) => String(x.v) === raw);
     g.cfg = Object.assign({}, g.cfg, { [id]: o.v });
+    const c = E.tuneOf(def, g.cfg);
+    if (def.tune === 'kafka' && c.rf > c.brokers) { g.cfg.rf = c.brokers; toast(`RF снижен до ${c.brokers}: копий партиции не может быть больше, чем брокеров.`); }
     changed();
   }
   // Самый дешёвый размер, при котором блок и те, кого он кормит, загружены не больше чем на 70% (подбирает движок).
@@ -796,11 +828,29 @@
     };
     $('#aiRead').onclick = () => {
       const t = $('#aiAns').value, a = t.indexOf('{'), b = t.lastIndexOf('}');
-      try { aiRes = JSON.parse(t.slice(a, b + 1)); if (!Array.isArray(aiRes.suggestions)) throw 0; aiErr = null; }
+      try { aiRes = JSON.parse(t.slice(a, b + 1)); aiErr = aiCheck(aiRes); if (aiErr) aiRes = null; }
       catch (e) { aiRes = null; aiErr = 'Не нашёл в ответе JSON с предложениями. Вставь ответ Claude целиком.'; }
       renderAi();
     };
     $$('[data-apply]').forEach((b) => (b.onclick = () => applyAi(aiRes.suggestions[+b.dataset.apply])));
+  }
+
+  // Ответ модели это внешние данные: проверяем форму целиком, прежде чем рисовать и применять.
+  function aiCheck(x) {
+    const str = (v) => typeof v === 'string', ids = new Set(st.graph.nodes.map((n) => n.id));
+    if (!x || typeof x !== 'object' || !str(x.verdict) || !Array.isArray(x.suggestions)) return 'В ответе нет полей verdict и suggestions.';
+    if (x.issues != null && !(Array.isArray(x.issues) && x.issues.every(str))) return 'Поле issues должно быть списком строк.';
+    for (const [i, sg] of x.suggestions.entries()) {
+      if (!sg || typeof sg !== 'object' || !str(sg.title) || !str(sg.why)) return `Предложение ${i + 1}: нужны строки title и why.`;
+      if (sg.tradeoff != null && !str(sg.tradeoff)) return `Предложение ${i + 1}: tradeoff должен быть строкой.`;
+      for (const a of sg.actions || []) {
+        if (!a || !['add', 'link', 'unlink', 'remove'].includes(a.op)) return `Предложение ${i + 1}: неизвестное действие ${a && a.op}.`;
+        if (a.op === 'add' && !L.blocks[a.type]) return `Предложение ${i + 1}: нет блока типа ${a.type}.`;
+        const ok = (v) => ids.has(v) || L.blocks[v];
+        if (a.op !== 'add' && (!ok(a.from) || (a.op !== 'remove' && !ok(a.to)))) return `Предложение ${i + 1}: ссылка на блок, которого нет на карте.`;
+      }
+    }
+    return null;
   }
 
   function aiContext() {
@@ -836,11 +886,11 @@ ${JSON.stringify(aiContext(), null, 1)}`;
   function applyAi(sg) {
     const made = {}, notes = [];
     const idOf = (x) => made[x] || (st.graph.nodes.some((n) => n.id === x) ? x : (st.graph.nodes.find((n) => n.type === x) || {}).id);
-    sg.actions.filter((a) => a.op === 'add' && L.blocks[a.type]).forEach((a) => {
+    (sg.actions || []).filter((a) => a.op === 'add' && L.blocks[a.type]).forEach((a) => {
       const res = E.addBlock(L, st.graph, a.type, freePos(L.blocks[a.type].pos));
       st.graph = res.graph; made[a.type] = res.id;
     });
-    sg.actions.forEach((a) => {
+    (sg.actions || []).forEach((a) => {
       const f = idOf(a.from), t = idOf(a.to);
       if (a.op === 'link' && f && t) { const m = link(f, t); if (m) notes.push(m); }
       if (a.op === 'unlink') st.graph.edges = st.graph.edges.filter((e) => !(e.from === f && e.to === t));
