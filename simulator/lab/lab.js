@@ -1000,22 +1000,71 @@ ${JSON.stringify(aiContext(), null, 1)}`;
   }
 
   // ---------- 6. Итог ----------
+  // Итог собирается из того, что ученик сделал: схема, решения, сценарий.
+  function sumData() {
+    const S = L.summary, r = analyze('deep'), ref = refFor('deep'), c = st.deep.choices, d = r.d;
+    const has = (t) => st.graph.nodes.some((n) => n.type === t);
+    const resDB = st.graph.nodes.find((n) => n.type === 'resDB'), book = r.flows.find((f) => f.id === 'book');
+    const choice = (key) => { const p = L.problems.find((q) => q.key === key), o = p.options.find((x) => x.v === c[key]) || p.options[0];
+      return { p, o, ok: (p.best || []).includes(o.v), say: (S.says[key] || {})[o.v] || p.say }; };
+    const names = (g) => [...new Set(g.nodes.map((n) => L.blocks[n.type].name))];
+    const mine = names(st.graph), theirs = names(ref.graph);
+    const x = { d, r, choice, has, fmt, shards: (resDB && resDB.cfg && resDB.cfg.shards) || 1, bookLat: book && book.ok ? book.lat : 0,
+      extras: mine.filter((n) => !['Клиент', 'API Gateway', 'Hotel Service', 'Reservation Service', 'Payment Service', 'Hotel DB', 'Reservation DB', 'Payment DB'].includes(n)) };
+    return { S, r, ref, x, script: S.script(x), mine, theirs, onlyMine: mine.filter((n) => !theirs.includes(n)), onlyRef: theirs.filter((n) => !mine.includes(n)) };
+  }
   function sumView() {
-    const S = L.summary, sc = reqScore();
-    const res = { base: analyze('base'), deep: analyze('deep') };
-    const goals = (k) => L.goals[k].map((g) => { const ok = g.check(res[k]); return `<li><span class="${ok ? 'y' : 'n'}">${ok ? '✔' : '○'}</span><span>${esc(g.text)}</span></li>`; }).join('');
-    return `${head(step(), 'Собери всё вместе: короткий рассказ для интервью, твой прогресс и вопросы для повторения.')}<section class="card">
-      <h4 class="grp first">Рассказ на интервью по шагам</h4><ol class="script">${S.script.map((t) => `<li>${esc(t)}</li>`).join('')}</ol>
+    const D = sumData(), { S, r, ref, x } = D, sc = reqScore(), base = analyze('base');
+    const goalsOk = (k, res) => (st.graph.nodes.length ? L.goals[k].filter((g) => g.check(res)).length : 0);
+    const stepIdx = (kind, stage) => L.steps.findIndex((q) => q.kind === kind && (!stage || q.stage === stage));
+    const card = (i, title, val, sub, ok) => `<button class="sstep ${ok === true ? 'ok' : ok === false ? 'no' : ''}" data-go="${i}"><small>${esc(title)}</small><b>${val}</b><span>${sub}</span></button>`;
+    const m = r.m, rm = ref.r.m, lat = (res) => { const f = res.flows.find((q) => q.id === 'book'); return f && f.ok ? Math.round(f.lat) + ' мс' : '—'; };
+    const row = (label, a, b, better) => `<tr><td>${label}</td><td class="num ${better === true ? 'good' : better === false ? 'badc' : ''}">${a}</td><td class="num">${b}</td></tr>`;
+    const pct = (v, routed) => (routed ? Math.round(v * 100) + '%' : '—');
+    const probs = L.problems.filter((p) => p.options);
+    return `${head(step(), 'Итог собран из того, что ты сделал на предыдущих шагах: твоя схема против эталона, твои решения против книги и рассказ для интервью с твоими цифрами.')}
+      <section class="card"><h4 class="grp first">Твой результат</h4><div class="ssteps">
+        ${card(stepIdx('req'), 'Требования', st.reqChecked ? `${sc.ok} из ${sc.total}` : '—', st.reqChecked ? 'верных ответов' : 'не проверены', st.reqChecked ? sc.ok === sc.total : null)}
+        ${card(stepIdx('est'), 'Оценка нагрузки', `${fmt(x.d.tps * x.d.k)} броней/с`, esc(scnText()), null)}
+        ${card(stepIdx('map', 'base'), 'Дизайн', `${goalsOk('base', base)} из ${L.goals.base.length}`, 'целей выполнено', goalsOk('base', base) === L.goals.base.length)}
+        ${card(stepIdx('map', 'deep'), 'Углубление', `${goalsOk('deep', r)} из ${L.goals.deep.length}`, 'целей выполнено', goalsOk('deep', r) === L.goals.deep.length)}
+        ${card(stepIdx('map', 'deep'), 'Решения', `${probs.filter((p) => x.choice(p.key).ok).length} из ${probs.length}`, 'совпадают с книгой', probs.every((p) => x.choice(p.key).ok))}
+      </div></section>
       <div class="sum-grid">
-        <div><h4 class="grp">Твой прогресс</h4><p>Требования: ${st.reqChecked ? `верно ${sc.ok} из ${sc.total}` : 'ещё не проверены'}.</p>
-          <p class="muted">Высокоуровневый дизайн</p><ul class="goals">${goals('base')}</ul>
-          <p class="muted">Углубление</p><ul class="goals">${goals('deep')}</ul></div>
-        <div><h4 class="grp">Вопросы для повторения</h4><div class="quiz">${S.questions.map((q) => `<details><summary>${esc(q.q)}</summary><p>${esc(q.a)}</p></details>`).join('')}</div></div>
+        <section class="card"><h4 class="grp first">Схема против эталона</h4>${m.routed ? '' : '<p class="w bad">Схема не достроена: часть потоков не доходит до данных, поэтому метрики не считаются.</p>'}
+          <p class="muted small">Эталон под тот же сценарий: ${esc(scnText())}.</p>
+          <table class="tbl"><thead><tr><th></th><th>Твоя</th><th>Эталон</th></tr></thead><tbody>
+          ${row('Выдерживает нагрузку', pct(m.served, m.routed), pct(rm.served, rm.routed), m.routed ? m.served >= rm.served : null)}
+          ${row('Бронь, задержка', lat(r), lat(ref.r), null)}
+          ${row('Дубли и перепродажи за день', m.routed ? fmt((m.dup || 0) + (m.oversell || 0)) : '—', fmt((rm.dup || 0) + (rm.oversell || 0)), m.routed ? (m.dup || 0) + (m.oversell || 0) <= (rm.dup || 0) + (rm.oversell || 0) : null)}
+          ${row('Стоимость в месяц', money(m.cost).replace('/мес', ''), money(rm.cost).replace('/мес', ''), m.cost <= rm.cost * 1.05)}
+          ${row('Сложность', m.cx.toFixed(1), rm.cx.toFixed(1), m.cx <= rm.cx + 0.5)}
+          ${row('Блоков', D.mine.length, D.theirs.length, null)}</tbody></table>
+          ${D.onlyMine.length ? `<p class="small">🧪 Есть только у тебя: ${D.onlyMine.map(esc).join(', ')}.</p>` : ''}
+          ${D.onlyRef.length ? `<p class="small">📘 Есть в эталоне, но нет у тебя: ${D.onlyRef.map(esc).join(', ')}.</p>` : ''}
+          ${!D.onlyMine.length && !D.onlyRef.length ? '<p class="small">Набор блоков совпадает с эталоном.</p>' : ''}</section>
+        <section class="card"><h4 class="grp first">Твои решения против книги</h4><div class="decs">${probs.map((p) => { const q = x.choice(p.key);
+          return `<div class="dec ${q.ok ? 'ok' : 'no'}"><b>${p.icon} ${esc(p.title)}</b><span>Ты: <em>${esc(q.o.label)}</em> ${q.ok ? '✔' : `· в книге: ${esc(p.options.filter((o) => (p.best || []).includes(o.v)).map((o) => o.label).join(' или '))}`}</span><small>${esc(q.say)}</small></div>`; }).join('')}</div></section>
       </div>
-      <div class="row-btns"><button class="btn" id="reset">Начать главу заново</button></div></section>`;
+      <section class="card"><h4 class="grp first">Рассказ на интервью с твоими цифрами</h4><p class="muted small">Около ${S.script(x).reduce((a, s) => a + s.min, 0)} минут: столько обычно и есть на дизайн-секцию. Рассказ меняется вместе со схемой и решениями.</p>
+        <ol class="script2">${D.script.map((s) => `<li><span class="sst">${esc(s.step)}<small>~${s.min} мин</small></span><span>${esc(s.text)}</span></li>`).join('')}</ol>
+        <div class="row-btns"><button class="btn primary" id="copySum">📋 Скопировать конспект</button></div></section>
+      <section class="card"><h4 class="grp first">Ключевые компромиссы</h4><div class="tscroll"><table class="tbl"><thead><tr><th>Выбрали</th><th>Вместо</th><th>Почему</th></tr></thead><tbody>
+        ${S.tradeoffs.map((t) => `<tr><td><b>${esc(t.pick)}</b></td><td class="muted">${esc(t.alt)}</td><td>${esc(t.why)}</td></tr>`).join('')}</tbody></table></div></section>
+      <div class="sum-grid">
+        <section class="card"><h4 class="grp first">Частые ошибки на интервью</h4><ul class="pits">${S.pitfalls.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></section>
+        <section class="card"><h4 class="grp first">Вопросы для повторения</h4><div class="quiz">${S.questions.map((q) => `<details><summary>${esc(q.q)}</summary><p>${esc(q.a)}</p></details>`).join('')}</div></section>
+      </div>
+      <div class="row-btns"><button class="btn ghost" id="reset">Начать главу заново</button></div><div class="toast" id="toast" role="status" hidden></div>`;
+  }
+  function sumText() {
+    const D = sumData(), S = D.S;
+    return [`# Глава ${L.n}. ${L.title}`, '', '## Рассказ', ...D.script.map((s, i) => `${i + 1}. **${s.step}.** ${s.text}`), '',
+      '## Компромиссы', ...S.tradeoffs.map((t) => `- **${t.pick}** вместо ${t.alt}: ${t.why}`), '', '## Частые ошибки', ...S.pitfalls.map((t) => `- ${t}`)].join('\n');
   }
   function bindSum() {
     $('#reset').onclick = () => { if (confirm('Сбросить ответы, карту и решения этой главы?')) { st = fresh(); save(); go(0); } };
+    $('#copySum').onclick = async () => { try { await navigator.clipboard.writeText(sumText()); toast('Конспект скопирован в Markdown.'); } catch (e) { toast('Не удалось скопировать: браузер не дал доступ к буферу.'); } };
   }
 
   init();
