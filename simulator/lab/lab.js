@@ -23,6 +23,10 @@
   const ms = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + ' с' : Math.round(n) + ' мс');
   const money = (n) => '$' + (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : Math.round(n)) + '/мес';
   const pct = (u) => (u < 10 ? Math.round(u * 100) + '%' : '×' + fmt(u)); // ×1800 читается легче, чем 180 000%
+  // Логотип технологии (lab/logos.js) вместо эмодзи и её фирменный цвет для рамки и подложки.
+  const LOGO = window.LOGOS || {};
+  const icon = (b) => (LOGO[b.logo] ? `<svg viewBox="0 0 24 24" fill="${LOGO[b.logo].color}" role="img" aria-label="${esc(b.name)}"><path d="${LOGO[b.logo].d}"/></svg>` : b.icon);
+  const brand = (b) => { const c = b.brand || (LOGO[b.logo] && LOGO[b.logo].color); return c ? ` style="--c:${c}"` : ''; };
   const cls = (u) => (u > 0.9 ? 'bad' : u > 0.7 ? 'warn' : '');
 
   // ---------- состояние ----------
@@ -355,8 +359,8 @@
     const item = ([t, b]) => {
       const onMap = st.graph.nodes.some((n) => n.type === t);
       const done = onMap && !b.multi, chips = done ? [] : effects(r, analyzeG(E.addBlock(L, st.graph, t, [0, 0]).graph, step().stage));
-      return `<div class="pwrap"><button class="pi cat-${b.cat}" data-t="${t}" title="Перетащи на карту или нажми">
-        <span class="pic">${b.icon}</span><span class="pin"><b>${esc(b.name)}</b><span class="pmeta"><span class="ptag ${b.extra ? 'xp' : 'bk'}">${b.extra ? '🧪 эксперимент' : '📘 книга'}</span>${onMap ? '<em>на карте</em>' : ''}</span><small>${esc(b.tag || '')}</small>
+      return `<div class="pwrap"><button class="pi cat-${b.cat}"${brand(b)} data-t="${t}" title="Перетащи на карту или нажми">
+        <span class="pic">${icon(b)}</span><span class="pin"><b>${esc(b.name)}</b><span class="pmeta"><span class="ptag ${b.extra ? 'xp' : 'bk'}">${b.extra ? '🧪 эксперимент' : '📘 книга'}</span>${onMap ? '<em>на карте</em>' : ''}</span><small>${esc(b.tag || '')}</small>
         ${done ? '' : `<span class="chips">${chips.length ? chips.slice(0, 4).map(([t, good]) => `<span class="chip ${good ? 'good' : 'bad'}">${esc(t)}</span>`).join('') : '<span class="chip">сейчас без эффекта</span>'}</span>`}</span></button>
         ${b.fit ? `<button class="pinfo" data-info="${t}" aria-expanded="${infoOpen.has(t)}" title="Для чего подходит, когда не стоит, ограничения">ⓘ</button>${infoOpen.has(t) ? `<div class="pfit">${fitHtml(b.fit)}</div>` : ''}` : ''}</div>`;
     };
@@ -383,7 +387,7 @@
       let ghost = null;
       const mv = (ev) => {
         if (!ghost && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return;
-        if (!ghost) { ghost = document.createElement('div'); ghost.className = 'dragghost cat-' + L.blocks[el.dataset.t].cat; ghost.innerHTML = `<span>${L.blocks[el.dataset.t].icon}</span>${esc(L.blocks[el.dataset.t].name)}`; document.body.appendChild(ghost); $('#wrap').classList.add('drop'); }
+        if (!ghost) { ghost = document.createElement('div'); ghost.className = 'dragghost cat-' + L.blocks[el.dataset.t].cat; ghost.style.cssText = brand(L.blocks[el.dataset.t]).slice(8, -1); ghost.innerHTML = `<span class="pic">${icon(L.blocks[el.dataset.t])}</span>${esc(L.blocks[el.dataset.t].name)}`; document.body.appendChild(ghost); $('#wrap').classList.add('drop'); }
         ghost.style.left = ev.clientX + 'px'; ghost.style.top = ev.clientY + 'px';
       };
       const up = (ev) => {
@@ -409,8 +413,8 @@
            <div class="nf">${sizePills(b, n)}<span class="pill">${ms(b.lat * n.q)}</span>${n.badges.map((x) => `<span class="pill bd" title="${esc(x.title)}">${x.icon}</span>`).join('')}</div>`
         : `<div class="nf"><span class="pill">${fmt(Object.values(n.flows).reduce((s, v) => s + v, 0))} rps</span></div>`;
       const cl = clusterHtml(b, n, r);
-      return `<div class="node cat-${b.cat} ${b.extra ? 'exp' : ''} ${cl ? 'wide' : ''} ${hot ? 'hot' : ''} ${n.load || !b.cap ? '' : 'idle'} ${selNode === g.id ? 'sel' : ''}" data-id="${g.id}" style="left:${g.x}px;top:${g.y}px">
-        <div class="nh"><span class="ni">${b.icon}</span><span class="nt"><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''}${b.extra ? ' · 🧪 эксперимент' : ''}</small></span><button class="nx" data-del aria-label="Удалить ${esc(b.name)}" title="Удалить">×</button></div>
+      return `<div class="node cat-${b.cat} ${b.extra ? 'exp' : ''} ${cl ? 'wide' : ''} ${hot ? 'hot' : ''} ${n.load || !b.cap ? '' : 'idle'} ${selNode === g.id ? 'sel' : ''}" data-id="${g.id}" style="left:${g.x}px;top:${g.y}px;${brand(b).slice(8, -1)}">
+        <div class="nh"><span class="ni">${icon(b)}</span><span class="nt"><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''}${b.extra ? ' · 🧪 эксперимент' : ''}</small></span><button class="nx" data-del aria-label="Удалить ${esc(b.name)}" title="Удалить">×</button></div>
         ${body}${cl}
         ${n.why ? `<div class="nwhy ${n.why.kind}">${n.why.kind === 'useless' ? '💤 Не нужен в этой главе' : n.why.kind === 'dup' ? '💤 Лишний дубль' : '🔌 Не подключён'}</div>` : ''}
         <button class="port" data-port aria-label="Провести стрелку от «${esc(b.name)}»" title="Потяни к другому блоку"></button></div>`;
@@ -704,7 +708,7 @@
     const n = last.nodes[g.id], b = L.blocks[g.type];
     const flows = last.flows.filter((f) => n.flows[f.id] > 0), max = Math.max(...flows.map((f) => n.flows[f.id]), 1);
     const li = (a) => (a && a.length ? '<ul>' + a.map((t) => `<li>${esc(t)}</li>`).join('') + '</ul>' : '');
-    box.innerHTML = `<div class="ih cat-${b.cat}"><span class="ni">${b.icon}</span><div><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''} · ${b.extra ? '🧪 эксперимент, в книге его нет' : '📘 по книге'}</small></div><button class="nx" id="inspX" aria-label="Закрыть">×</button></div>
+    box.innerHTML = `<div class="ih cat-${b.cat}"${brand(b)}><span class="ni">${icon(b)}</span><div><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''} · ${b.extra ? '🧪 эксперимент, в книге его нет' : '📘 по книге'}</small></div><button class="nx" id="inspX" aria-label="Закрыть">×</button></div>
       <p>${esc(b.learn.what)}</p>
       ${b.cap ? `<div class="istats"><div><span>Нагрузка</span><b>${fmt(n.load)} / ${fmt(n.capTotal)} rps</b></div><div><span>Загрузка</span><b class="${cls(n.util)}">${pct(n.util)}</b></div><div><span>${esc(b.repLabel || 'Реплик')}</span><b>${n.rep}${!b.tune && n.rep >= n.maxRep ? ' (макс.)' : ''}</b></div><div><span>Задержка</span><b>${ms(b.lat * n.q)}</b></div></div>` : ''}
       ${n.explain && n.explain.length ? `<h5>Почему такая нагрузка</h5><ul class="expl">${n.explain.map((t) => `<li>${esc(t)}</li>`).join('')}${n.limit ? `<li class="lim">Упёрся: ${esc(n.limit)}. Нужно: ${esc(n.need)}.</li>` : ''}</ul>` : ''}
