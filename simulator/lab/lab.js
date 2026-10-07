@@ -115,7 +115,7 @@
     const body = ({ req: reqView, est: estView, api: apiView, map: mapView, sum: sumView }[s.kind])() + nav();
     box.innerHTML = s.kind === 'map' ? body : `<div class="page"><div class="main">${body}</div>${guide()}</div>`;
     $$('[data-go]', box).forEach((b) => (b.onclick = () => go(+b.dataset.go)));
-    ({ req: bindReq, est: bindEst, api: () => {}, map: bindMap, sum: bindSum }[s.kind])();
+    ({ req: bindReq, est: bindEst, api: bindApi, map: bindMap, sum: bindSum }[s.kind])();
   }
 
   // ---------- 1. Требования ----------
@@ -230,12 +230,49 @@
   }
 
   // ---------- 3. API и данные ----------
+  // JSON с подсветкой: ключи, строки, числа.
+  const jsonHtml = (o) => esc(JSON.stringify(o, null, 2)).replace(/(&quot;(?:[^&]|&(?!quot;))*?&quot;)(\s*:)?|\b(-?\d+(?:\.\d+)?|true|false|null)\b/g, (m, str, colon, lit) => str ? `<span class="${colon ? 'jk' : 'js'}">${str}</span>${colon || ''}` : `<span class="jn">${lit}</span>`);
+  const sqlHtml = (q) => esc(q).replace(/(--[^\n]*)/g, '<span class="jc">$1</span>').replace(/\b(BEGIN|COMMIT|ROLLBACK|UPDATE|SET|WHERE|AND|INSERT INTO|VALUES|IN|SELECT|FROM)\b/g, '<span class="jk">$1</span>');
   function apiView() {
-    const A = L.api;
-    return `${head(step(), A.intro)}<section class="card">
-      <h4 class="grp first">Эндпоинты</h4><table class="tbl"><tbody>${A.endpoints.map(([m, p, t]) => `<tr><td><code>${esc(m)}</code></td><td><code>${esc(p)}</code></td><td>${esc(t)}</td></tr>`).join('')}</tbody></table>
-      <h4 class="grp">Таблицы</h4><div class="tables">${A.tables.map((t) => `<div class="tcard"><b><code>${esc(t.name)}</code></b><div class="muted">${esc(t.fields)}</div><p>${esc(t.why)}</p></div>`).join('')}</div>
-      <h4 class="grp">Проверь себя</h4><div class="quiz">${A.quiz.map((q) => `<details><summary>${esc(q.q)}</summary><p>${esc(q.a)}</p></details>`).join('')}</div></section>`;
+    const A = L.api, fc = Object.fromEntries(L.flows.map((f) => [f.id, f])), byId = Object.fromEntries(A.endpoints.map((e) => [e.id, e]));
+    const path = (p) => esc(p).replace(/\{(\w+)\}/g, '<i>{$1}</i>');
+    const ep = (e) => `<span class="mth m-${e.method.toLowerCase()}">${e.method}</span><code class="path">${path(e.path)}</code>`;
+    const tbl = (head, rows) => `<div class="tscroll"><table class="tbl api">${head ? `<thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead>` : ''}<tbody>${rows.join('')}</tbody></table></div>`;
+    const usage = (t) => A.endpoints.flatMap((e) => [...(e.writes.includes(t) ? [[e, 'w']] : []), ...(e.reads.includes(t) ? [[e, 'r']] : [])]);
+    const tname = (n) => A.tables.find((t) => t.name.split(', ').includes(n)) || {};
+    const epHtml = (e) => {
+      const f = fc[e.flow];
+      return `<details class="ep ${e.key ? 'key' : ''}" id="ep-${e.id}" ${e.key ? 'open' : ''}><summary>${ep(e)}<span class="ept">${esc(e.title)}</span>${f ? `<span class="epf" title="Поток на карте"><i style="background:${f.color}"></i>${esc(f.label)}</span>` : ''}<span class="epw">${esc(e.who)}</span></summary>
+        <p>${esc(e.about)}</p>${e.extra ? `<p class="muted small">📎 ${esc(e.extra)}</p>` : ''}
+        <div class="rr"><div><h5>Запрос</h5>
+          ${e.example ? `<pre class="code">${esc(e.example)}</pre>` : ''}
+          ${e.headers ? `<div class="hdrs">${e.headers.map((h) => `<code>${esc(h)}</code>`).join('')}</div>` : ''}
+          ${e.params ? tbl(['Параметр', 'Где', 'Тип', 'Описание'], e.params.map(([n, w, t, r, d]) => `<tr><td><code>${esc(n)}</code>${r ? '<b class="req" title="обязательный">*</b>' : ''}</td><td class="muted">${w}</td><td class="muted">${t}</td><td>${esc(d)}</td></tr>`)) : ''}
+          ${e.body ? `<pre class="code">${jsonHtml(e.body)}</pre>` : ''}
+          ${e.bodyFields ? tbl(['Поле', 'Тип', 'Зачем'], e.bodyFields.map(([n, t, r, d]) => `<tr><td><code>${esc(n)}</code>${r ? '<b class="req" title="обязательный">*</b>' : ''}</td><td class="muted">${t}</td><td>${esc(d)}</td></tr>`)) : ''}
+          ${!e.params && !e.body ? '<p class="muted">Без параметров.</p>' : ''}</div>
+        <div><h5>Ответ <span class="st ok">${esc(e.ok.status)}</span></h5>
+          ${e.ok.headers ? `<div class="hdrs">${e.ok.headers.map((h) => `<code>${esc(h)}</code>`).join('')}</div>` : ''}
+          <pre class="code">${jsonHtml(e.ok.body)}</pre>
+          ${e.fields ? tbl(null, e.fields.map(([n, d]) => `<tr><td><code>${esc(n)}</code></td><td>${esc(d)}</td></tr>`)) : ''}</div></div>
+        <h5>Ошибки</h5>${tbl(['HTTP', 'code', 'Когда'], e.errors.map(([h, c, d]) => `<tr><td><span class="st ${h < 400 ? 'ok' : h < 500 ? 'bad' : 'warn'}">${h}</span></td><td><code>${esc(c)}</code></td><td>${esc(d)}</td></tr>`))}
+        ${e.sql ? `<h5>Что происходит в БД</h5><pre class="code sql">${sqlHtml(e.sql)}</pre>` : ''}
+        <div class="rw">${e.writes.map((t) => `<button class="tchip w" data-tbl="${esc(tname(t).name || t)}">✏️ пишет ${esc(t)}</button>`).join('')}${e.reads.map((t) => `<button class="tchip" data-tbl="${esc(tname(t).name || t)}">👁 читает ${esc(t)}</button>`).join('')}</div></details>`;
+    };
+    return `${head(step(), A.intro)}
+      <section class="card"><h4 class="grp first">Общие правила</h4><dl class="conv">${A.conventions.map((c) => `<div><dt>${esc(c.k)}</dt><dd>${esc(c.v)}</dd></div>`).join('')}</dl></section>
+      <section class="card"><h4 class="grp first">Путь гостя по ручкам</h4><ol class="jour">${A.journey.map((j) => `<li>${j.ep ? `<button class="jbtn" data-ep="${j.ep}">${ep(byId[j.ep])}</button>` : '<span class="mth m-int">внутри</span>'}<span>${esc(j.text)}</span></li>`).join('')}</ol></section>
+      <section class="card"><h4 class="grp first">Эндпоинты</h4><p class="muted small">Нажми на ручку, чтобы раскрыть контракт. <b class="req">*</b> обязательный параметр. Цветная метка показывает поток на карте, который создаёт эта ручка.</p><div class="eps">${A.endpoints.map(epHtml).join('')}</div></section>
+      <section class="card"><h4 class="grp first">Таблицы</h4><div class="schemas">${A.tables.map((t) => `<div class="schema" id="tbl-${esc(t.name)}"><div class="sh2"><code>${esc(t.name)}</code><span class="muted small">${esc(t.rows || '')}</span></div><p>${esc(t.why)}</p>
+        ${tbl(['Колонка', 'Тип', 'Ограничение', ''], t.cols.map(([n, ty, c, d]) => `<tr><td><code>${esc(n)}</code></td><td class="muted">${esc(ty)}</td><td>${c ? `<span class="cons">${esc(c)}</span>` : ''}</td><td>${esc(d)}</td></tr>`))}
+        ${t.extra ? `<ul class="small">${t.extra.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        <div class="rw">${t.name.split(', ').flatMap(usage).filter(([e, m], i, a) => a.findIndex(([e2, m2]) => e2 === e && m2 === m) === i).map(([e, m]) => `<button class="tchip ${m}" data-ep="${e.id}">${m === 'w' ? '✏️' : '👁'} ${e.method} ${esc(e.path)}</button>`).join('')}</div></div>`).join('')}</div></section>
+      <section class="card"><h4 class="grp first">Проверь себя</h4><div class="quiz">${A.quiz.map((q) => `<details><summary>${esc(q.q)}</summary><p>${esc(q.a)}</p></details>`).join('')}</div></section>`;
+  }
+  function bindApi() {
+    const jump = (el) => { if (!el) return; if (el.tagName === 'DETAILS') el.open = true; el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); };
+    $$('[data-ep]').forEach((b) => (b.onclick = () => jump(document.getElementById('ep-' + b.dataset.ep))));
+    $$('[data-tbl]').forEach((b) => (b.onclick = () => jump(document.getElementById('tbl-' + b.dataset.tbl))));
   }
 
   // ---------- 4–5. Карта ----------

@@ -421,3 +421,53 @@ h3.sec{margin:22px 0 10px;font-size:13px;letter-spacing:.04em;text-transform:upp
 .ach.later{opacity:.6;border-style:dashed}
 .tbl .to.m{display:none}
 @media (max-width:600px){#estOut .tbl th:nth-child(2),#estOut .tbl td:nth-child(2){display:none}#estOut .tbl .to.m{display:block}}
+
+/* API: контракты ручек */
+.conv{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:10px;margin:0}
+.conv div{border:1px solid var(--line);border-radius:10px;padding:9px 12px}
+.conv dt{font-size:12px;color:var(--muted);font-weight:600}
+.conv dd{margin:3px 0 0;font-size:13.5px}
+.mth{display:inline-block;min-width:58px;text-align:center;font:700 11.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;padding:5px 7px;border-radius:6px;color:#0d0e11}
+.m-get{background:var(--f1)}.m-post{background:var(--f4)}.m-put{background:var(--c-db)}.m-delete{background:var(--bad);color:#fff}.m-int{background:var(--card2);color:var(--muted);border:1px solid var(--line)}
+.lab code.path{background:none;border:0;padding:0;font-size:13.5px;font-weight:600;word-break:break-all}
+.lab code.path i{font-style:normal;color:var(--f2)}
+.jour{list-style:none;counter-reset:j;padding:0;margin:0;display:flex;flex-direction:column;gap:6px}
+.jour li{counter-increment:j;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.jour li::before{content:counter(j);width:22px;height:22px;border-radius:50%;background:var(--card2);border:1px solid var(--line);display:grid;place-items:center;font-size:12px;color:var(--muted);flex:none}
+.jbtn{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;padding:3px 8px 3px 3px}
+.jbtn:hover{border-color:var(--accent)}
+.eps{display:flex;flex-direction:column;gap:8px}
+.ep{border:1px solid var(--line);border-radius:12px;padding:0 14px;transition:border-color .15s}
+.ep[open]{padding-bottom:14px;border-color:var(--accent)}
+.ep.key{border-left:3px solid var(--f4)}
+.ep>summary{cursor:pointer;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 0;list-style:none}
+.ep>summary::-webkit-details-marker{display:none}
+.ept{font-weight:600}
+.epf,.epw{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:5px}
+.epw{margin-left:auto}
+.epf i{width:8px;height:8px;border-radius:50%}
+.ep h5{margin:14px 0 6px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);display:flex;gap:8px;align-items:center}
+.rr{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:16px}
+.rr>div{min-width:0}
+.code{background:#0f1014;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0;overflow-x:auto;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink)}
+.jk{color:var(--f1)}.js{color:var(--f4)}.jn{color:var(--c-db)}.jc{color:var(--muted)}
+.hdrs{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
+.req{color:var(--bad);margin-left:2px}
+.st{font:700 11.5px/1 ui-monospace,monospace;padding:3px 7px;border-radius:6px;border:1px solid}
+.st.ok{color:var(--ok);border-color:var(--ok)}.st.bad{color:var(--bad);border-color:var(--bad)}.st.warn{color:var(--warn);border-color:var(--warn)}
+.tscroll{overflow-x:auto}
+.tbl.api{font-size:13px;margin:6px 0}
+.tbl.api td{padding:6px}
+.rw{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.tchip{font:inherit;font-size:12px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);background:var(--card2);color:var(--ink);cursor:pointer}
+.tchip.w{border-color:var(--c-db)}
+.tchip:hover{border-color:var(--accent)}
+.schemas{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr));gap:12px}
+.schema{border:1px solid var(--line);border-top:3px solid var(--c-db);border-radius:12px;padding:11px 13px;min-width:0}
+.sh2{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline}
+.sh2 code{font-size:14px;font-weight:700}
+.cons{font:600 11px/1.4 ui-monospace,monospace;color:var(--c-db);white-space:nowrap}
+.ep.flash,.schema.flash{animation:nflash 1.2s}
+.card .tbl.api code{word-break:normal;white-space:nowrap}
+.tbl.api td:first-child{white-space:nowrap}
+.schema .tbl.api td:first-child,.card .schema .tbl.api code{white-space:normal}
