@@ -75,7 +75,8 @@
   }
 
   function renderSteps() {
-    $('#steps').innerHTML = L.steps.map((s, i) => `<button class="stp ${st.visited[s.id] && i !== st.step ? 'done' : ''}" data-i="${i}" aria-current="${i === st.step ? 'step' : 'false'}"><span class="num">${st.visited[s.id] && i !== st.step ? '✓' : i + 1}</span><span class="stt">${esc(s.title)}</span></button>`).join('<span class="sline" aria-hidden="true"></span>');
+    $('#steps').innerHTML = L.steps.map((s, i) => { const done = st.visited[s.id] && i !== st.step;
+      return `<button class="stp ${done ? 'done' : ''}" data-i="${i}" aria-current="${i === st.step ? 'step' : 'false'}"><span class="num">${done ? '✓' : i + 1}</span><span class="stt"><b>${esc(s.title)}</b><small>${esc(s.sub || '')}</small></span></button>`; }).join('<span class="sline" aria-hidden="true"></span>');
     $$('#steps .stp').forEach((b) => (b.onclick = () => go(+b.dataset.i)));
   }
 
@@ -85,13 +86,22 @@
   }
 
   function head(s, intro, tips) {
-    return `<section class="stage-head"><div class="eyebrow">Шаг ${st.step + 1} из ${L.steps.length}</div><h2>${esc(s.title)}</h2>${st.step === 0 ? `<p class="lead">${esc(L.intro)}</p>` : ''}<p>${esc(intro)}</p>
+    return `<section class="stage-head"><div class="sh"><span class="snum">${st.step + 1}</span><h2>${esc(s.title)}</h2><span class="spill">${esc(s.sub || '')}</span><span class="muted">шаг ${st.step + 1} из ${L.steps.length}</span></div>
+      ${st.step === 0 ? `<p class="lead">${esc(L.intro)}</p>` : ''}<p>${esc(intro)}</p>
       ${tips ? `<div class="tips">${tips.map((t) => `<span>${esc(t)}</span>`).join('')}</div>` : ''}</section>`;
+  }
+
+  // Боковая панель: вся глава по шагам, текущий подсвечен
+  function guide() {
+    return `<aside class="side card"><h3 class="side-t">🧭 Как пройти главу</h3><div class="side-sub">ГЛАВА ПО ШАГАМ</div>
+      <ol class="tl">${L.steps.map((s, i) => `<li class="${i === st.step ? 'cur' : st.visited[s.id] ? 'done' : ''}"><span class="tn">${st.visited[s.id] && i !== st.step ? '✓' : i + 1}</span><div>
+        <span class="tag">${esc(s.tag || '')}</span><b data-go="${i}" role="link" tabindex="0">${esc(s.title)}</b><p>${esc(s.guide || '')}</p></div></li>`).join('')}</ol></aside>`;
   }
 
   function renderStep() {
     const s = step(), box = $('#app');
-    box.innerHTML = ({ req: reqView, est: estView, api: apiView, map: mapView, sum: sumView }[s.kind])() + nav();
+    const body = ({ req: reqView, est: estView, api: apiView, map: mapView, sum: sumView }[s.kind])() + nav();
+    box.innerHTML = s.kind === 'map' ? body : `<div class="page"><div class="main">${body}</div>${guide()}</div>`;
     $$('[data-go]', box).forEach((b) => (b.onclick = () => go(+b.dataset.go)));
     ({ req: bindReq, est: bindEst, api: () => {}, map: bindMap, sum: bindSum }[s.kind])();
   }
@@ -168,6 +178,7 @@
       : 'Собери архитектуру. Каждый поток должен дойти от клиента до своих данных. Попробуй и необязательные блоки: у каждого в палитре видно, что изменится, если его добавить.';
     return `${head(s, intro, ['Перетащи блок из палитры на карту или нажми на него', 'Тяни стрелку от кружка на краю блока', 'Нажми на блок, чтобы увидеть детали', 'Нажми на стрелку, чтобы удалить её'])}
       <div class="kpis" id="kpis"></div>
+      <section class="broken" id="broken" hidden></section>
       <div class="lab-grid">
         <aside class="card pal-card"><h3>Палитра</h3><div id="pal"></div></aside>
         <section class="card mapcard" id="mapcard">
@@ -196,7 +207,7 @@
       ${deep ? '<h3 class="sec">Проблемы углубления</h3><div class="probs" id="probs"></div>' : ''}
       <div class="below">
         <section class="card"><h3>Цели</h3><div id="goals"></div></section>
-        <section class="card"><h3>Подсказки</h3><div class="warns" id="warns"></div></section>
+        <section class="card"><h3>Подсказки и предупреждения</h3><div class="warns" id="warns"></div></section>
       </div>
       <div class="toast" id="toast" role="status" hidden></div>`;
   }
@@ -485,7 +496,7 @@
       const p = prevKpi && prevKpi[t.k], dv = p != null && t.v != null ? t.v - p : 0;
       const rel = p ? Math.abs(dv / p) : Math.abs(dv);
       const delta = rel > 0.01 ? `<span class="dlt ${dv * t.better > 0 ? 'up' : 'down'}">${dv > 0 ? '▲' : '▼'}</span>` : '';
-      return `<div class="kpi ${t.cls || ''}"><div class="k">${esc(t.label)}</div><div class="v">${esc(t.show)}${delta}</div><div class="s">${esc(t.sub)}</div></div>`;
+      return `<div class="kpi t-${t.cls || 'acc'}"><div class="k"><i></i>${esc(t.label)}</div><div class="v">${esc(t.show)}${delta}</div><div class="s">${esc(t.sub)}</div></div>`;
     }).join('');
     prevKpi = kp;
 
@@ -496,8 +507,10 @@
     $('#goals').innerHTML = `<div class="gprog"><i style="width:${(done / goals.length) * 100}%"></i></div><p class="muted">Выполнено ${done} из ${goals.length}${done === goals.length ? ' 🎉' : ''}</p>
       <ul class="goals">${goals.map((g) => { const ok = g.check(r); return `<li class="${ok ? 'done' : ''}"><span class="${ok ? 'y' : 'n'}">${ok ? '✔' : '○'}</span><span>${esc(g.text)}</span></li>`; }).join('')}</ul>`;
     const order = { bad: 0, warn: 1, info: 2 }, icon = { bad: '⛔', warn: '⚠️', info: '💡' };
-    const ws = r.warnings.slice().sort((a, b) => order[a.lvl] - order[b.lvl]);
-    $('#warns').innerHTML = ws.length ? ws.map((w) => `<div class="w ${w.lvl}"><span>${icon[w.lvl]}</span><span>${esc(w.text)}</span></div>`).join('') : '<div class="note">Пока всё спокойно.</div>';
+    const ws = r.warnings.slice().sort((a, b) => order[a.lvl] - order[b.lvl]), bad = ws.filter((w) => w.lvl === 'bad'), rest = ws.filter((w) => w.lvl !== 'bad');
+    $('#broken').hidden = !bad.length;
+    $('#broken').innerHTML = `<h4><span>❗</span> Что сломалось</h4><ul>${bad.map((w) => `<li>${esc(w.text)}</li>`).join('')}</ul>`;
+    $('#warns').innerHTML = rest.length ? rest.map((w) => `<div class="w ${w.lvl}"><span>${icon[w.lvl]}</span><span>${esc(w.text)}</span></div>`).join('') : '<div class="note">Пока всё спокойно.</div>';
     renderInspector();
   }
 
