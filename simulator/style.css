@@ -107,3 +107,9 @@ input[type=range]{width:100%;accent-color:var(--accent);margin:4px 0 0}
 .learn .empty{color:var(--muted)}
 .learn .meta{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 0}
 .stale{opacity:.6}
+
+/* переключатель языка (lang.js) */
+.lang{position:fixed;right:14px;bottom:14px;z-index:50;font:600 13px/1 system-ui,sans-serif;padding:9px 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.lang:hover{border-color:var(--accent)}
+body>.skiptranslate,.goog-te-banner-frame,#goog-gt-tt{display:none!important}
+body{top:0!important}
