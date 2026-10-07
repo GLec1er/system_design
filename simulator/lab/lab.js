@@ -167,24 +167,65 @@
     }));
   }
   function estView() {
+    const aff = (id) => `<div class="aff" id="aff_${id}"></div>`;
     return `${head(step(), L.estimate.intro)}<section class="card">
-      <div class="est"><div>${L.estimate.inputs.map((i) => sliderHtml(i, st.est[i.id], 'data-est')).join('')}
-        <div class="scn"><h4 class="grp">📐 Сценарий нагрузки</h4><p class="muted">Один на всю главу: по этим цифрам считаются карта, узкие места и эталон.</p>${L.scenario.map(scnHtml).join('')}</div></div>
+      <div class="est"><div><p class="muted small">Наведи на ползунок или потяни его: в таблице подсветятся строки, которые он меняет. ↑ растёт вместе с ползунком, ↓ падает.</p>${L.estimate.inputs.map((i) => `<div class="dep" data-dep="${i.id}">${sliderHtml(i, st.est[i.id], 'data-est')}${aff(i.id)}</div>`).join('')}
+        <div class="scn"><h4 class="grp">📐 Сценарий нагрузки</h4><p class="muted">Один на всю главу: по этим цифрам считаются карта, узкие места и эталон.</p>${L.scenario.map((x) => `<div class="dep" data-dep="${x.id}">${scnHtml(x)}<small class="muted shint">${esc(x.hint)}</small>${aff(x.id)}</div>`).join('')}</div>
+</div>
       <div id="estOut"></div></div></section>`;
   }
+  // Значения строк таблицы: «Сейчас» без сценария, «Сценарий» с пиком и ростом.
+  const estVals = (est, params) => { const d = L.derive(est, { params }); return L.estimate.rows(d).map((r) => r.v * (r.peak ? d.k : 1)); };
+  // Что двигает ползунок: сдвигаем его на одно деление и смотрим, какие строки поменялись и куда.
+  function estDeps() {
+    const p = scn(), v0 = estVals(st.est, p), out = {};
+    const diff = (v1, sign) => v0.map((v, i) => ({ i, dv: (v1[i] - v) * sign })).filter((x) => Math.abs(x.dv) > 1e-9 * Math.max(1, Math.abs(v0[x.i]))).map((x) => ({ i: x.i, up: x.dv > 0 }));
+    L.estimate.inputs.forEach((i) => {
+      const v = st.est[i.id], up = v + i.step <= i.max, nv = up ? v + i.step : v - i.step;
+      out[i.id] = diff(estVals(Object.assign({}, st.est, { [i.id]: nv }), p), up ? 1 : -1);
+    });
+    L.scenario.forEach((x) => {
+      const k = x.stops.indexOf(p[x.id]), up = k < x.stops.length - 1, nv = x.stops[up ? k + 1 : k - 1];
+      out[x.id] = diff(estVals(st.est, Object.assign({}, p, { [x.id]: nv })), up ? 1 : -1);
+      if (out[x.id].length) return;
+      // Сейчас ни на что не влияет (например, длительность пика при пике ×1): проверяем при максимуме остальных ползунков.
+      const q = {}; L.scenario.forEach((y) => (q[y.id] = y.stops[y.stops.length - 1])); q[x.id] = p[x.id];
+      const w0 = estVals(st.est, q), w1 = estVals(st.est, Object.assign({}, q, { [x.id]: nv }));
+      out[x.id] = w0.map((v, i) => ({ i, dv: (w1[i] - v) * (up ? 1 : -1) })).filter((y) => Math.abs(y.dv) > 1e-9 * Math.max(1, Math.abs(w0[y.i]))).map((y) => ({ i: y.i, up: y.dv > 0, later: true }));
+    });
+    return out;
+  }
+  let estHl = null, estPrev = null, estDep = {};
+  function estHighlight(id) {
+    estHl = id;
+    const on = new Set((estDep[id] || []).filter((x) => !x.later).map((x) => x.i));
+    $$('#estOut tr[data-row]').forEach((tr) => { tr.classList.toggle('hl', !!id && on.has(+tr.dataset.row)); tr.classList.toggle('dim', !!id && !on.has(+tr.dataset.row)); });
+    $$('.dep').forEach((el) => el.classList.toggle('on', el.dataset.dep === id));
+  }
   function renderEst() {
-    const now = L.derive(st.est, { params: {} }), d = L.derive(st.est, { params: scn() });
-    $('#estOut').innerHTML = `<table class="tbl"><thead><tr><th>Что считаем</th><th>Как</th><th>Сейчас</th><th>Сценарий</th></tr></thead><tbody>
-      ${L.estimate.rows(now).map((r, i) => { const v = L.estimate.rows(d)[i].v * (r.peak ? d.k : 1);
-        return `<tr><td>${esc(r.label)}</td><td class="muted">${esc(r.formula)}${r.peak && d.k > 1 ? ` × пик ${d.k}` : ''}</td><td class="num">${fmt(r.v)}</td><td class="num ${v > r.v ? 'up' : ''}">${fmt(v)}</td></tr>`; }).join('')}</tbody></table>
+    const now = L.derive(st.est, { params: {} }), d = L.derive(st.est, { params: scn() }), vals = estVals(st.est, scn()), rows = L.estimate.rows(now);
+    estDep = estDeps();
+    Object.keys(estDep).forEach((id) => { const el = $('#aff_' + id); if (el) el.innerHTML = estDep[id].length ? (estDep[id][0].later ? '<span>сейчас не влияет, заработает при другом пике или росте →</span>' : '→ ') + estDep[id].map((x) => `<span class="ach ${x.up ? 'up' : 'down'} ${x.later ? 'later' : ''}">${esc(rows[x.i].short || rows[x.i].label)} ${x.up ? '↑' : '↓'}</span>`).join('') : '<span class="muted">на таблицу не влияет</span>'; });
+    $('#estOut').innerHTML = `<table class="tbl"><thead><tr><th>Что считаем</th><th>Как и куда идёт</th><th>Сейчас</th><th>Сценарий</th></tr></thead><tbody>
+      ${rows.map((r, i) => { const v = vals[i], chg = estPrev && Math.abs(estPrev[i] - v) > 1e-9 * Math.max(1, Math.abs(v));
+        return `<tr data-row="${i}"><td>${esc(r.label)}${r.to ? `<div class="to m">→ ${esc(r.to)}</div>` : ''}</td><td class="muted">${esc(r.formula)}${r.peak && d.k > 1 ? ` × пик ${d.k}` : ''}${r.to ? `<div class="to">→ ${esc(r.to)}</div>` : ''}</td><td class="num">${fmt(r.v)}</td><td class="num ${v > r.v ? 'up' : ''} ${chg ? 'chg' : ''}">${fmt(v)}</td></tr>`; }).join('')}</tbody></table>
       <div class="w info">${esc(L.estimate.conclusion(d))}</div>`;
+    estPrev = vals;
+    estHighlight(estHl);
   }
   function bindEst() {
+    estPrev = null; estHl = null;
     $$('[data-est]').forEach((el) => (el.oninput = () => {
       const i = L.estimate.inputs.find((x) => x.id === el.dataset.est);
-      st.est[i.id] = +el.value; $('#out_' + i.id).textContent = fmt(+el.value) + ' ' + i.unit; save(); renderEst();
+      st.est[i.id] = +el.value; $('#out_' + i.id).textContent = fmt(+el.value) + ' ' + i.unit; save(); estHl = i.id; renderEst();
     }));
-    bindScn(renderEst);
+    bindScn(() => { estHl = document.activeElement && document.activeElement.dataset.scn || estHl; renderEst(); });
+    $$('.dep').forEach((el) => {
+      el.addEventListener('pointerenter', () => estHighlight(el.dataset.dep));
+      el.addEventListener('focusin', () => estHighlight(el.dataset.dep));
+      el.addEventListener('pointerleave', () => estHighlight(null));
+      el.addEventListener('focusout', () => estHighlight(null));
+    });
     renderEst();
   }
 
@@ -703,7 +744,7 @@
       $('[data-open]', box).onclick = () => { select(g.id); $('#mapcard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
     });
     const d = r.d;
-    $('#scnsrc').innerHTML = `📐 Из оценки: ${fmt(d.tps)} броней/с, в пике ${fmt(d.tps * d.k)}/с, просмотров ${fmt(d.view * d.k)}/с <button class="lnk" data-go="${L.steps.findIndex((x) => x.kind === 'est')}">изменить</button>`;
+    $('#scnsrc').innerHTML = `📐 На входе из оценки: ${L.flows.filter((f) => !f.optional).map((f) => `<span class="fr"><i style="background:${f.color}"></i>${esc(f.label)} ${fmt(f.rate(d))}/с</span>`).join('')} <button class="lnk" data-go="${L.steps.findIndex((x) => x.kind === 'est')}">изменить</button>`;
     $('[data-go]', $('#scnsrc')).onclick = (e) => go(+e.target.dataset.go);
     renderCmp(r);
     const nb = st.graph.nodes.filter((g) => !L.blocks[g.type].extra).length, nx = st.graph.nodes.length - nb;
