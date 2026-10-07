@@ -28,7 +28,7 @@
   function fresh() {
     const est = {}, params = {}, choices = {};
     L.estimate.inputs.forEach((i) => (est[i.id] = i.value));
-    L.problems.forEach((p) => { (p.params || []).forEach((x) => (params[x.id] = x.value)); choices[p.key] = p.options[0].v; });
+    L.problems.forEach((p) => { (p.params || []).forEach((x) => (params[x.id] = x.value)); if (p.options) choices[p.key] = p.options[0].v; });
     params[L.load.id] = L.load.value;
     return { step: 0, visited: {}, req: {}, reqChecked: false, est, graph: { nodes: [], edges: [] }, deep: { params, choices }, show: null };
   }
@@ -190,6 +190,7 @@
               <button class="btn sm" id="ref">✨ Эталон</button><button class="btn sm ghost" id="clr">Очистить</button>
             </div>
           </div>
+          <div class="bookline" id="bookline"></div>
           <div class="legend" id="legend"></div>
           <p class="lghelp">Стрелка значит «вызывает»: запрос идёт по стрелке, ответ возвращается обратно. Точки на стрелке это запросы, цвет показывает поток, число это запросов в секунду. Серый пунктир: по стрелке ничего не идёт, а на блоке написано почему: 🔌 не подключён (не хватает стрелки) или 💤 не нужен в этой схеме. Нажми на стрелку или блок, чтобы увидеть подробности.</p>
           <div class="board-wrap" id="wrap">
@@ -251,7 +252,7 @@
   function loadRef(stage) {
     const R = L.reference[stage];
     st.graph = {
-      nodes: R.nodes.map((n) => { const [type, id, pos] = [].concat(n); const p = pos || L.blocks[type].pos; return { id: id || type, type, x: p[0], y: p[1] }; }),
+      nodes: R.nodes.map((n) => { const [type, id, pos] = [].concat(n); const p = pos || L.blocks[type].pos; const cfg = R.cfg && R.cfg[id || type]; return Object.assign({ id: id || type, type, x: p[0], y: p[1] }, cfg && { cfg: Object.assign({}, cfg) }); }),
       edges: R.edges.map(([from, to]) => ({ from, to })),
     };
     selNode = null;
@@ -321,8 +322,8 @@
   }
 
   function renderPalette(r) {
-    const groups = [['Основные блоки', (b) => !b.extra], ['Попробовать', (b) => b.extra]];
-    $('#pal').innerHTML = groups.map(([title, f]) => `<div class="pgroup"><div class="pgt">${title}</div>${Object.entries(L.blocks).filter(([, b]) => f(b)).map(([t, b]) => {
+    const groups = [['📘 По книге', 'Этих блоков хватает для ответа на интервью.', (b) => !b.extra], ['🧪 Эксперименты', 'В книге их нет. Добавь и посмотри, что станет лучше, а что хуже.', (b) => b.extra]];
+    $('#pal').innerHTML = groups.map(([title, sub, f]) => `<div class="pgroup"><div class="pgt">${title}<small>${sub}</small></div>${Object.entries(L.blocks).filter(([, b]) => f(b)).map(([t, b]) => {
       const onMap = st.graph.nodes.some((n) => n.type === t);
       const done = onMap && !b.multi, chips = done ? [] : effects(r, analyzeG(E.addBlock(L, st.graph, t, [0, 0]).graph, step().stage));
       return `<button class="pi cat-${b.cat}" data-t="${t}" title="Перетащи на карту или нажми">
@@ -364,14 +365,21 @@
       const body = b.cap
         ? `<div class="meter"><i class="${cls(n.util)}" style="width:${Math.min(100, n.util * 100)}%"></i></div>
            <div class="nmx"><span>${fmt(n.load)} rps</span><b class="${cls(n.util)}">${Math.round(n.util * 100)}%</b></div>
-           <div class="nf"><span class="pill" title="${esc(b.repLabel || 'реплик')}">×${n.rep}</span><span class="pill">${ms(b.lat * n.q)}</span>${n.badges.map((x) => `<span class="pill bd" title="${esc(x.title)}">${x.icon}</span>`).join('')}</div>`
+           <div class="nf">${sizePills(b, n)}<span class="pill">${ms(b.lat * n.q)}</span>${n.badges.map((x) => `<span class="pill bd" title="${esc(x.title)}">${x.icon}</span>`).join('')}</div>`
         : `<div class="nf"><span class="pill">${fmt(Object.values(n.flows).reduce((s, v) => s + v, 0))} rps</span></div>`;
-      return `<div class="node cat-${b.cat} ${hot ? 'hot' : ''} ${n.load || !b.cap ? '' : 'idle'} ${selNode === g.id ? 'sel' : ''}" data-id="${g.id}" style="left:${g.x}px;top:${g.y}px">
-        <div class="nh"><span class="ni">${b.icon}</span><span class="nt"><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''}${b.extra ? ' · необязательный' : ''}</small></span><button class="nx" data-del aria-label="Удалить ${esc(b.name)}" title="Удалить">×</button></div>
+      return `<div class="node cat-${b.cat} ${b.extra ? 'exp' : ''} ${hot ? 'hot' : ''} ${n.load || !b.cap ? '' : 'idle'} ${selNode === g.id ? 'sel' : ''}" data-id="${g.id}" style="left:${g.x}px;top:${g.y}px">
+        <div class="nh"><span class="ni">${b.icon}</span><span class="nt"><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''}${b.extra ? ' · 🧪 эксперимент' : ''}</small></span><button class="nx" data-del aria-label="Удалить ${esc(b.name)}" title="Удалить">×</button></div>
         ${body}
         ${n.why ? `<div class="nwhy ${n.why.kind}">${n.why.kind === 'useless' ? '💤 Не нужен в этой главе' : n.why.kind === 'dup' ? '💤 Лишний дубль' : '🔌 Не подключён'}</div>` : ''}
         <button class="port" data-port aria-label="Провести стрелку от «${esc(b.name)}»" title="Потяни к другому блоку"></button></div>`;
     }).join('');
+  }
+
+  function sizePills(b, n) {
+    const c = n.cfg;
+    if (b.tune === 'sql') return `<span class="pill" title="Шарды">${c.shards} шард.</span>${c.replicas ? `<span class="pill" title="Реплики для чтения">+${c.replicas} репл.</span>` : ''}`;
+    if (b.tune === 'kafka') return `<span class="pill" title="Партиции и репликация">${c.partitions} парт. · RF${c.rf}</span>`;
+    return `<span class="pill" title="${esc(b.repLabel || 'реплик')}, подбираются сами">×${n.rep}</span>`;
   }
 
   function rectOf(id) {
@@ -568,6 +576,16 @@
     $('#legend').innerHTML = r.flows.filter((f) => !f.optional || f.ok).map((f) => `<button class="lg ${st.show === f.id ? 'on' : ''} ${f.ok ? '' : 'off'}" data-f="${f.id}" title="Показать только этот поток"><i style="background:${f.color}"></i>${esc(f.label)}<span>${fmt(f.rate)} rps · ${f.ok ? ms(f.lat) : 'не доходит'}</span></button>`).join('');
     $$('#legend .lg').forEach((b) => (b.onclick = () => { st.show = st.show === b.dataset.f ? null : b.dataset.f; save(); renderPanels(last); drawEdges(); }));
 
+    $$('[data-pset]').forEach((box) => {
+      const t = box.dataset.pset, g = st.graph.nodes.find((x) => x.type === t), n = g && r.nodes[g.id], def = L.blocks[t];
+      if (!n) { box.innerHTML = `<p class="onote">«${esc(def.name)}» нет на карте.</p>`; return; }
+      const c = n.cfg, key = c.shards > 1 && def.shardKeys ? `, ключ ${def.shardKeys.find((k) => k.v === c.shardKey).label}` : '';
+      box.closest('.prob').classList.toggle('solved', n.util <= 0.9 && c.shardKey !== 'date');
+      box.innerHTML = `<p class="onote">Сейчас: ${c.shards} шард.${key}, реплик ${c.replicas}. Загрузка ${Math.round(n.util * 100)}%.</p><button class="btn sm" data-open="${g.id}">⚙️ Настроить ${esc(def.name)}</button>`;
+      $('[data-open]', box).onclick = () => { select(g.id); $('#mapcard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+    });
+    const nb = st.graph.nodes.filter((g) => !L.blocks[g.type].extra).length, nx = st.graph.nodes.length - nb;
+    $('#bookline').innerHTML = `<span class="bk">📘 По книге: ${nb}</span><span class="xp">🧪 Эксперименты: ${nx}</span><span class="muted">Блоки-эксперименты на карте с пунктирной рамкой.</span>`;
     const goals = L.goals[step().stage], done = goals.filter((g) => g.check(r)).length;
     $('#goals').innerHTML = `<div class="gprog"><i style="width:${(done / goals.length) * 100}%"></i></div><p class="muted">Выполнено ${done} из ${goals.length}${done === goals.length ? ' 🎉' : ''}</p>
       <ul class="goals">${goals.map((g) => { const ok = g.check(r); return `<li class="${ok ? 'done' : ''}"><span class="${ok ? 'y' : 'n'}">${ok ? '✔' : '○'}</span><span>${esc(g.text)}</span></li>`; }).join('')}</ul>`;
@@ -589,20 +607,67 @@
     const n = last.nodes[g.id], b = L.blocks[g.type];
     const flows = last.flows.filter((f) => n.flows[f.id] > 0), max = Math.max(...flows.map((f) => n.flows[f.id]), 1);
     const li = (a) => (a && a.length ? '<ul>' + a.map((t) => `<li>${esc(t)}</li>`).join('') + '</ul>' : '');
-    box.innerHTML = `<div class="ih cat-${b.cat}"><span class="ni">${b.icon}</span><div><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''}${b.extra ? ' · необязательный' : ''}</small></div><button class="nx" id="inspX" aria-label="Закрыть">×</button></div>
+    box.innerHTML = `<div class="ih cat-${b.cat}"><span class="ni">${b.icon}</span><div><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''} · ${b.extra ? '🧪 эксперимент, в книге его нет' : '📘 по книге'}</small></div><button class="nx" id="inspX" aria-label="Закрыть">×</button></div>
       <p>${esc(b.learn.what)}</p>
       ${b.cap ? `<div class="istats"><div><span>Нагрузка</span><b>${fmt(n.load)} / ${fmt(n.capTotal)} rps</b></div><div><span>Загрузка</span><b class="${cls(n.util)}">${Math.round(n.util * 100)}%</b></div><div><span>${esc(b.repLabel || 'Реплик')}</span><b>${n.rep}${n.rep >= n.maxRep ? ' (макс.)' : ''}</b></div><div><span>Задержка</span><b>${ms(b.lat * n.q)}</b></div></div>` : ''}
+      ${tuneHtml(b, n)}
       ${flows.length ? `<h5>Какие потоки идут</h5>${flows.map((f) => `<div class="fbar"><span>${esc(f.label)}</span><i style="width:${(n.flows[f.id] / max) * 100}%;background:${f.color}"></i><b>${fmt(n.flows[f.id])}</b></div>`).join('')}` : `<p class="why ${n.why ? n.why.kind : ''}">${n.why ? (n.why.kind === 'useless' ? '💤 ' : '🔌 ') + esc(n.why.text) : 'Через блок не идёт ни один поток.'}</p>`}
       ${b.learn.plus && b.learn.plus.length ? `<h5 class="plus">Что даёт</h5>${li(b.learn.plus)}` : ''}
       ${b.learn.minus && b.learn.minus.length ? `<h5 class="minus">Чем платим</h5>${li(b.learn.minus)}` : ''}
       <button class="btn sm ghost danger" id="inspDel">Убрать с карты</button>`;
+    $$('#insp [data-tf]').forEach((el) => (el.onclick = () => setCfg(g, el.dataset.tf, el.dataset.v)));
+    if ($('#autoTune')) $('#autoTune').onclick = () => autoTune(g);
     $('#inspX').onclick = () => select(null);
     $('#inspDel').onclick = () => removeNode(g.id);
+  }
+
+  // ----- настройки БД и Kafka -----
+  const tuneOpts = (f, def) => E.optsOf(f, def).map((o) => (typeof o === 'object' ? o : { v: o, label: String(o) }));
+  function tuneHtml(def, n) {
+    if (!def.tune) return '';
+    const fields = E.TUNE[def.tune].filter((f) => !f.when || f.when(n.cfg, def));
+    return `<h5>⚙️ Настройки</h5><div class="tune">${fields.map((f) => {
+      const opts = tuneOpts(f, def), cur = opts.find((o) => o.v === n.cfg[f.id]);
+      return `<div class="tf"><div class="tfl">${esc(f.label)}<span class="${f.book ? 'bk' : 'xp'}">${f.book ? '📘 по книге' : '🧪 эксперимент'}</span></div>
+        <div class="tseg">${opts.map((o) => `<button class="${o === cur ? 'on' : ''}" data-tf="${f.id}" data-v="${esc(o.v)}">${esc(o.label)}</button>`).join('')}</div>
+        <p class="tnote">${esc((cur && cur.note) || f.hint || '')}</p></div>`;
+    }).join('')}</div>
+    <button class="btn sm" id="autoTune">✨ Подобрать под нагрузку</button>`;
+  }
+  function setCfg(g, id, raw) {
+    const def = L.blocks[g.type], f = E.TUNE[def.tune].find((x) => x.id === id), o = tuneOpts(f, def).find((x) => String(x.v) === raw);
+    g.cfg = Object.assign({}, g.cfg, { [id]: o.v });
+    changed();
+  }
+  // Перебираем размеры от дешёвых к дорогим и берём первый, где блок и те, кого он кормит, загружены не больше чем на 70%.
+  function autoTune(g) {
+    const def = L.blocks[g.type], base = last.nodes[g.id].cfg, cands = [];
+    if (def.tune === 'sql') [1, 2, 4, 8, 16].forEach((sh) => [0, 1, 2, 3, 5].forEach((rp) => cands.push({ shards: sh, replicas: rp, cost: sh * (1 + 0.6 * rp) })));
+    else [1, 3, 6, 12, 24].forEach((pt) => cands.push({ partitions: pt, cost: pt }));
+    cands.sort((a, b) => a.cost - b.cost);
+    const ids = [g.id].concat(st.graph.edges.filter((e) => e.from === g.id).map((e) => e.to));
+    const old = g.cfg;
+    let pick = null, r = null;
+    for (const c of cands) {
+      g.cfg = Object.assign({}, base, c); delete g.cfg.cost;
+      r = analyzeG(st.graph, step().stage);
+      if (ids.every((id) => r.nodes[id].util <= E.TARGET + 0.001)) { pick = g.cfg; break; }
+    }
+    g.cfg = pick || g.cfg || old;
+    const c = g.cfg, u = Math.round(r.nodes[g.id].util * 100);
+    const what = def.tune === 'sql' ? `${c.shards} шард., реплик ${c.replicas}` : `${c.partitions} партиций`;
+    const reads = def.tune === 'sql' && r.nodes[g.id].wload < 0.2 * r.nodes[g.id].load ? ' Почти всё здесь чтения: кэш перед БД обойдётся дешевле реплик.' : '';
+    toast(pick ? `Подобрал: ${what}. Загрузка ${u}%.${reads}` : `Даже ${what} не хватает (${u}%). ${def.tune === 'sql' ? 'Сними чтения кэшем перед БД.' : 'Добавь потребителей.'}`);
+    changed();
   }
 
   function renderProbs() {
     const D = st.deep;
     $('#probs').innerHTML = L.problems.map((p, i) => {
+      if (!p.options) return `<article class="card prob"><div class="ph"><span class="pnum">${i + 1}</span><h4>${p.icon} ${esc(p.title)}</h4></div><p class="pr">${esc(p.problem)}</p>
+        ${(p.params || []).map((x) => sliderHtml(x, D.params[x.id], 'data-par')).join('')}
+        ${p.hint ? `<p class="note">${esc(p.hint)}</p>` : ''}<div class="pset" data-pset="${p.settings}"></div>
+        <details><summary>🗣️ Как сказать на интервью</summary><p>${esc(p.say)}</p></details></article>`;
       const cur = p.options.find((o) => o.v === D.choices[p.key]), solved = cur !== p.options[0];
       return `<article class="card prob ${solved ? 'solved' : ''}"><div class="ph"><span class="pnum">${i + 1}</span><h4>${p.icon} ${esc(p.title)}</h4></div><p class="pr">${esc(p.problem)}</p>
         ${(p.params || []).map((x) => sliderHtml(x, D.params[x.id], 'data-par')).join('')}
@@ -656,7 +721,8 @@
       flows: r.flows.map((f) => ({ id: f.id, label: f.label, optional: f.optional, rps: +f.rate.toFixed(1), reaches_data: f.ok, latency_ms: f.ok ? Math.round(f.lat) : null })),
       metrics: { served: +r.m.served.toFixed(2), bottleneck: r.m.bottleneck && r.m.bottleneck.def.name, cost_month: Math.round(r.m.cost), complexity: +r.m.cx.toFixed(1), ...Object.fromEntries(L.metrics.map((x) => [x.label, Math.round(r.m[x.id] || 0)])) },
       load_multiplier: st.deep.params[L.load.id],
-      decisions: s.stage === 'deep' ? L.problems.map((p) => ({ problem: p.title, chosen: p.options.find((o) => o.v === st.deep.choices[p.key]).label, options: p.options.map((o) => o.label) })) : null,
+      decisions: s.stage === 'deep' ? L.problems.filter((p) => p.options).map((p) => ({ problem: p.title, chosen: p.options.find((o) => o.v === st.deep.choices[p.key]).label, options: p.options.map((o) => o.label) })) : null,
+      db_settings: Object.fromEntries(st.graph.nodes.filter((g) => L.blocks[g.type].tune).map((g) => [g.id, last.nodes[g.id].cfg])),
       warnings: r.warnings.map((w) => w.text),
     };
   }
