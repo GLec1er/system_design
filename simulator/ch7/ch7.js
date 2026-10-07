@@ -278,6 +278,16 @@
       }
     },
 
+    // Почему стрелку провести нельзя (для частых ошибок; остальное объясняет общий текст).
+    linkWhy(a, b) {
+      const B = this.blocks;
+      if (a === 'client' && B[b].db) return 'Клиент не ходит в базу напрямую: данные отдают только сервисы, иначе нет ни проверки прав, ни масштабирования.';
+      if (a === 'client') return 'Все запросы клиента идут через API Gateway: там авторизация, лимиты и маршрутизация.';
+      if (B[a].db) return 'База отвечает на запросы, но сама никого не вызывает.';
+      if (a === 'hotel' && b === 'resDB') return 'У каждого сервиса своя база: Hotel Service спрашивает брони у Reservation Service.';
+      return '';
+    },
+
     rules(ctx) {
       const { graph, nodes, metrics: M, stage, d, flows } = ctx;
       graph.edges.forEach((e) => {

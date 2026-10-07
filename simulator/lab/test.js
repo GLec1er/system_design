@@ -12,6 +12,14 @@ const ref = (k) => ({
   edges: L.reference[k].edges.map(([from, to]) => ({ from, to })),
 });
 
+// стрелки эталонов разрешены, а клиент напрямую в БД нет
+['base', 'deep'].forEach((k) => ref(k).edges.forEach((e) => {
+  const t = (id) => ref(k).nodes.find((n) => n.id === id).type;
+  assert(E.canLink(L, t(e.from), t(e.to)), `${k}: стрелка ${e.from} → ${e.to} разрешена`);
+}));
+assert(!E.canLink(L, 'client', 'resDB') && !E.canLink(L, 'hotelDB', 'hotel'), 'бессмысленные стрелки запрещены');
+assert(E.linkTargets(L, 'client').includes('gateway'), 'клиент → gateway');
+
 // эталон базового дизайна: все потоки доходят, нагрузка ~3 TPS влезает
 let r = E.analyze(L, ref('base'), est, deep0, 'base');
 assert(r.m.routed, 'base: все потоки доходят');
