@@ -472,3 +472,27 @@ h3.sec{margin:22px 0 10px;font-size:13px;letter-spacing:.04em;text-transform:upp
 .tbl.api td:first-child{white-space:nowrap}
 .schema .tbl.api td:first-child,.card .schema .tbl.api code{white-space:normal}
 .mapcard.full .lghelp{display:none}
+
+/* Итог */
+.ssteps{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:10px}
+.sstep{all:unset;cursor:pointer;display:flex;flex-direction:column;gap:3px;border:1px solid var(--line);border-top:3px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card2)}
+.sstep:hover{border-color:var(--accent)}
+.sstep small{font-size:12px;color:var(--muted)}
+.sstep b{font-size:20px;font-variant-numeric:tabular-nums}
+.sstep span{font-size:12px;color:var(--muted)}
+.sstep.ok{border-top-color:var(--ok)}.sstep.no{border-top-color:var(--warn)}
+.tbl .num.good{color:var(--ok)}.tbl .num.badc{color:var(--bad)}
+.decs{display:flex;flex-direction:column;gap:8px}
+.dec{border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:10px;padding:9px 12px;display:flex;flex-direction:column;gap:3px;font-size:13.5px}
+.dec.ok{border-left-color:var(--ok)}
+.dec em{font-style:normal;font-weight:600}
+.dec small{color:var(--muted);font-size:12.5px}
+.script2{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px;counter-reset:s}
+.script2 li{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:start;counter-increment:s;border-bottom:1px solid var(--line);padding-bottom:8px}
+.script2 .sst{font-weight:700;display:block}
+.script2 .sst::before{content:counter(s) ". ";color:var(--accent)}
+.script2 .sst small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+@media (max-width:600px){.script2 li{grid-template-columns:1fr;gap:4px}}
+.pits{margin:0;padding-left:18px}.pits li{margin:5px 0}
+.sum-grid>.card{margin:0}
+.sum-grid{margin-bottom:14px}
