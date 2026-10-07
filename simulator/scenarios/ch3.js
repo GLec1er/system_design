@@ -1,0 +1,78 @@
+(function (g) {
+  (g.SIM_SCENARIOS = g.SIM_SCENARIOS || []).push({
+    id: 'ch3', n: 3, title: 'Google Maps', subtitle: 'Тайлы, маршруты и ETA',
+    intro: 'Три задачи в одной: показать карту (тайлы), построить маршрут по огромному графу дорог и учитывать пробки по потоку локаций. У каждой свой профиль нагрузки.',
+    flows: [{ id: 'tiles', label: 'Карта (тайлы)' }, { id: 'route', label: 'Маршрут и ETA' }, { id: 'loc', label: 'Поток локаций' }],
+    inputs: [
+      { id: 'dau', label: 'DAU', unit: 'млн', min: 10, max: 1000, step: 10, value: 200 },
+      { id: 'tiles', label: 'Тайлов на пользователя в день', unit: '', min: 10, max: 300, step: 10, value: 100 },
+      { id: 'routes', label: 'Маршрутов на пользователя в день', unit: '', min: 0.1, max: 3, step: 0.1, value: 0.5 },
+      { id: 'nav', label: 'Одновременно в навигации', unit: '%', min: 0.1, max: 5, step: 0.1, value: 1 },
+    ],
+    baseQuality: 30, qualityLabel: 'Свежесть и точность ETA', qualityHint: 'Учитываем ли пробки в реальном времени и насколько точно строим путь.',
+    derive: (i) => ({
+      tileQps: ((i.dau * 1e6 * i.tiles) / 86400) * 2,
+      routeQps: ((i.dau * 1e6 * i.routes) / 86400) * 2,
+      locQps: (i.dau * 1e6 * (i.nav / 100)) / 15,
+    }),
+    load: (d) => ({ tiles: d.tileQps, bw: d.tileQps * 0.0008, cdn: d.tileQps, route: d.routeQps, eta: d.routeQps * 3, loc: d.locQps, kafka: d.locQps, traffic: d.locQps }),
+    stages: [
+      { id: 'cdn', name: 'CDN', icon: '🌐', unit: 'req/s', cap: 3000000, lat: 15, avail: 0.9999, cost: 15000, flow: 'tiles', hidden: true, scalable: false },
+      { id: 'tiles', name: 'Рендер тайлов на лету', icon: '🧱', unit: 'tiles/s', cap: 300, lat: 250, avail: 0.995, cost: 300, flow: 'tiles', note: 'Наивно: каждый тайл рисуем по запросу' },
+      { id: 'bw', name: 'Исходящий трафик', icon: '📶', unit: 'Гбит/с', cap: 400, lat: 0, avail: 0.9999, cost: 4000, flow: 'tiles', path: false, note: 'Растровый тайл ≈ 100 КБ' },
+      { id: 'route', name: 'Routing: Dijkstra по всему графу', icon: '🛣️', unit: 'req/s', cap: 4, lat: 2500, avail: 0.995, cost: 400, flow: 'route' },
+      { id: 'eta', name: 'ETA service', icon: '⏱️', unit: 'req/s', cap: 2000, lat: 30, avail: 0.995, cost: 300, flow: 'route', note: 'Считает время по статичным скоростям на дорогах' },
+      { id: 'loc', name: 'Приём локаций', icon: '📍', unit: 'msg/s', cap: 40000, lat: 8, avail: 0.995, cost: 300, flow: 'loc', path: false },
+      { id: 'kafka', name: 'Kafka (поток локаций)', icon: '🧵', unit: 'msg/s', cap: 200000, lat: 3, avail: 0.999, cost: 600, flow: 'loc', path: false, hidden: true },
+      { id: 'traffic', name: 'Обработка трафика (stream)', icon: '🚦', unit: 'msg/s', cap: 30000, lat: 0, avail: 0.995, cost: 700, flow: 'loc', path: false, hidden: true, critical: false },
+    ],
+    components: [
+      { id: 'pretile', name: 'Предрасчитанные тайлы (S3)', icon: '🧊', at: 'tiles', cx: 2, cost: 30000, q: 5,
+        apply: (s) => { const x = s.stages.tiles; x.name = 'Тайлы из объектного хранилища'; x.cap = 20000; x.lat = 40; x.note = 'Тайлы заранее нарезаны для всех уровней zoom'; },
+        learn: { what: 'Заранее рендерим карту на всех уровнях масштаба (zoom) и кладём плитки в объектное хранилище.',
+          why: 'Карта меняется редко, поэтому зачем рисовать её на каждый запрос. Раздача статики на порядки дешевле.',
+          must: ['Уровней zoom ~21; на каждом уровне плиток в 4 раза больше, чем на предыдущем. Всего сотни ТБ и больше.', 'Клиент по координатам и zoom вычисляет URL плитки (geohash/номер тайла), запрос идёт сразу на статику.'],
+          risks: ['Дорого хранить. Обновление карты это перерасчёт затронутых плиток.'] } },
+      { id: 'cdn', name: 'CDN перед тайлами', icon: '🌐', at: 'cdn', cx: 1, q: 0, requires: ['pretile'],
+        apply: (s) => { s.stages.cdn.hidden = false; s.stages.tiles.load *= 0.05; s.stages.bw.load *= 0.05; },
+        learn: { what: 'Плитки отдаются с узлов CDN, близких к пользователю.', why: 'Популярные плитки (центры городов) отдаются из кэша на границе сети. Хит-рейт ≈ 95%.',
+          must: ['Правильные заголовки кэширования и версионирование URL плитки.', 'Плитка статична, значит кэшируется почти навсегда.'], risks: ['Плата за трафик CDN.'] } },
+      { id: 'vector', name: 'Векторные тайлы (WebGL на клиенте)', icon: '🧬', at: 'bw', cx: 2, q: 0, requires: ['pretile'],
+        apply: (s) => { s.stages.bw.load *= 0.25; },
+        learn: { what: 'Вместо картинок отдаём геометрию и стили, а карту рисует клиент через WebGL.', why: 'Размер плитки в разы меньше, плавное масштабирование и вращение.',
+          must: ['Клиент должен уметь рендерить (WebGL).', 'Стили и данные отделены, их можно менять независимо.'], risks: ['Нагрузка на устройство пользователя.'] } },
+      { id: 'astar', group: 'algo', name: 'A* / двунаправленный поиск', icon: '🧭', at: 'route', cx: 2, q: 0,
+        apply: (s) => { const x = s.stages.route; x.name = 'Routing: A*'; x.cap = 25; x.lat = 800; },
+        learn: { what: 'Эвристика направляет поиск к цели вместо обхода всего графа.', why: 'Выигрыш в разы, но всё ещё поиск по огромному графу на лету.',
+          must: ['Эвристика: расстояние по прямой. Если она «неправильная», путь может быть неоптимальным.'], risks: ['Всё ещё медленно на континентальных маршрутах.'] } },
+      { id: 'hier', group: 'algo', name: 'Иерархические routing-тайлы', icon: '🏔️', at: 'route', cx: 4, cost: 3000, q: 10,
+        apply: (s) => { const x = s.stages.route; x.name = 'Routing: иерархические тайлы'; x.cap = 240; x.lat = 90; x.note = 'Граф разбит на тайлы: локальные, магистральные, скоростные'; },
+        learn: { what: 'Граф дорог нарезан на тайлы трёх уровней детализации. Поиск быстро поднимается на крупные дороги и подгружает нужные тайлы лениво.',
+          why: 'Не держим весь граф в памяти и не обходим всё: для дальнего маршрута почти не смотрим на мелкие улицы.',
+          must: ['Есть офлайн-конвейер: данные о дорогах, затем routing-тайлы в хранилище.', 'Тайлы загружаются по требованию (lazy), поэтому важен кэш горячих тайлов.'], risks: ['Конвейер подготовки данных и сложность отладки маршрутов.'] } },
+      { id: 'kafka', name: 'Kafka для потока локаций', icon: '🧵', at: 'kafka', cx: 3, q: 0,
+        apply: (s) => { s.stages.kafka.hidden = false; },
+        learn: { what: 'Клиенты батчами шлют локации, сервис складывает их в Kafka.', why: 'Поток читают несколько потребителей: пробки, обновление routing-тайлов, ML для ETA, аналитика.',
+          must: ['Партиционирование по user_id/сегменту.', 'Потребители должны быть идемпотентны (at-least-once).'], risks: ['Ещё один кластер для эксплуатации.'] } },
+      { id: 'live', name: 'Пробки в реальном времени → ETA', icon: '🚦', at: 'traffic', cx: 4, cost: 2500, q: 40, requires: ['kafka'],
+        apply: (s) => { s.stages.traffic.hidden = false; s.stages.eta.name = 'ETA service (ML + live traffic)'; s.stages.eta.cap = 1500; s.stages.eta.lat = 45; },
+        learn: { what: 'Из потока локаций вычисляем реальную скорость на участках и обновляем данные для ETA и routing-тайлов.',
+          why: 'Без этого ETA считается по «идеальным» скоростям и часто врёт.',
+          must: ['Агрегация локаций по сегментам дорог (map matching).', 'ETA меняется, поэтому нужна адаптивная выдача маршрута.'], risks: ['Тяжёлый ML/stream-конвейер.'] } },
+    ],
+    rules: (s, d, st, m, warn) => {
+      if (st.active.cdn && !st.active.vector) warn('info', 'CDN снял нагрузку с origin. Векторные тайлы дополнительно уменьшат трафик в разы.');
+      if (!st.active.pretile) warn('info', 'Тайлы рисуются на лету: добавь предрасчёт, ведь карта почти статична.');
+      if (!st.active.hier && !st.active.astar) warn('info', 'Dijkstra по всему графу не выдерживает реальную нагрузку: смотри на узкое место «Routing».');
+      if (st.active.hier && s.stages.route.replicas < 2) warn('info', 'Routing-тайлы лениво грузятся в память; при холодном старте первые маршруты будут медленнее.');
+    },
+    goals: [
+      { text: 'Выдерживаем 100% нагрузки', check: (m) => m.served >= 1 && m.maxU <= 0.9 },
+      { text: 'Тайлы до 60 мс', check: (m) => m.lat.tiles <= 60 },
+      { text: 'Маршрут до 200 мс', check: (m) => m.lat.route <= 200 },
+      { text: 'Свежесть ETA ≥ 70', check: (m) => m.quality >= 70 },
+      { text: 'Сложность не выше 15 из 20', check: (m) => m.cx <= 15 },
+    ],
+    tryThis: ['Включи «Автомасштаб» и посмотри, сколько серверов нужно для тайлов и маршрутов без оптимизаций.', 'Добавь предрасчитанные тайлы, потом CDN: как меняется трафик?', 'Сравни A* и иерархические routing-тайлы по скорости и сложности.', 'Включи пробки в реальном времени: что нужно сначала добавить?'],
+  });
+})(typeof window !== 'undefined' ? window : globalThis);
