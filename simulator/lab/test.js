@@ -123,4 +123,5 @@ ad = E.adapt(L, 'base', est, x100);
 assert(!ad.original && ad.ok && ad.changes.some((c) => /Кэш/.test(c)), 'адаптация под ×100: ' + ad.changes.join('; '));
 ad = E.adapt(L, 'deep', est, huge);
 assert(!ad.ok && ad.blockers.length && ad.blockers[0].need, 'под ×1000×20 эталон не вытягивает и говорит почему');
+assert(ad.changes.some((c) => /Redis\) у Hotel Service → Memcached/.test(c)), 'эталон меняет упёршийся Redis на Memcached: ' + ad.changes.join('; '));
 console.log('scenario ok:', E.adapt(L, 'base', est, x100).changes.join('; '), '|', ad.changes.join('; '), '| blockers:', ad.blockers.map((b) => b.name + ' ' + Math.round(b.util * 100) + '%').join(', '));

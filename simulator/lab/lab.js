@@ -360,12 +360,13 @@
       const onMap = st.graph.nodes.some((n) => n.type === t);
       const done = onMap && !b.multi, chips = done ? [] : effects(r, analyzeG(E.addBlock(L, st.graph, t, [0, 0]).graph, step().stage));
       return `<div class="pwrap"><button class="pi cat-${b.cat}"${brand(b)} data-t="${t}" title="Перетащи на карту или нажми">
-        <span class="pic">${icon(b)}</span><span class="pin"><b>${esc(b.name)}</b><span class="pmeta"><span class="ptag ${b.extra ? 'xp' : 'bk'}">${b.extra ? '🧪 эксперимент' : '📘 книга'}</span>${onMap ? '<em>на карте</em>' : ''}</span><small>${esc(b.tag || '')}</small>
+        <span class="pic">${icon(b)}</span><span class="pin"><b>${esc(b.name)}</b><span class="pmeta"><span class="ptag ${b.extra ? 'xp' : 'bk'}">${b.extra ? '🧪 эксперимент' : '📘 книга'}</span>${b.alsoExp ? '<span class="ptag xp">🧪 сравни с аналогами</span>' : ''}${onMap ? '<em>на карте</em>' : ''}</span><small>${esc(b.tag || '')}</small>
         ${done ? '' : `<span class="chips">${chips.length ? chips.slice(0, 4).map(([t, good]) => `<span class="chip ${good ? 'good' : 'bad'}">${esc(t)}</span>`).join('') : '<span class="chip">сейчас без эффекта</span>'}</span>`}</span></button>
         ${b.fit ? `<button class="pinfo" data-info="${t}" aria-expanded="${infoOpen.has(t)}" title="Для чего подходит, когда не стоит, ограничения">ⓘ</button>${infoOpen.has(t) ? `<div class="pfit">${fitHtml(b.fit)}</div>` : ''}` : ''}</div>`;
     };
     const side = (extra) => {
-      const list = Object.entries(L.blocks).filter(([, b]) => !!b.extra === extra);
+      // alsoExp: блок из книги, который стоит сравнить с аналогами, повторяется и в экспериментах.
+      const list = Object.entries(L.blocks).filter(([, b]) => !!b.extra === extra || (extra && b.alsoExp));
       return [...new Set(list.map(([, b]) => b.group || 'Другое'))].sort((a, b) => rank(a, extra) - rank(b, extra)).map((g) => {
         const key = (extra ? 'x:' : 'b:') + g, items = list.filter(([, b]) => (b.group || 'Другое') === g);
         return `<details class="pgroup" data-g="${esc(key)}" ${st.palClosed && st.palClosed[key] ? '' : 'open'}><summary>${esc(g)}<span>${items.length}</span></summary>${items.map(item).join('')}</details>`;

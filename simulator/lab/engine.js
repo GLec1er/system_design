@@ -301,6 +301,17 @@
     let g = refGraph(lab, stage), r = run(g);
     const before = r, changes = [];
     (lab.reference[stage].adapt || []).forEach((a) => {
+      if (a.replace) {
+        // Замена технологии (например, Redis → Memcached): те же id и стрелки, другой тип, если это снижает перегрузку.
+        // Каждый узел отдельно: второй кэш может обслуживать другой поток, где замена хуже.
+        g.nodes.filter((n) => n.type === a.replace).forEach(({ id }) => {
+          if (r.m.maxU <= 0.9) return;
+          const g2 = { nodes: g.nodes.map((n) => (n.id === id ? Object.assign({}, n, { type: a.with }) : n)), edges: g.edges }, r2 = run(g2);
+          if (over(r2) < over(r) - 0.01) { const by = g.edges.filter((e) => e.to === id).map((e) => lab.blocks[g.nodes.find((n) => n.id === e.from).type].name).join(', ');
+            changes.push(`${lab.blocks[a.replace].name}${by ? ` у ${by}` : ''} → ${lab.blocks[a.with].name}: ${a.why}`); g = g2; r = r2; }
+        });
+        return;
+      }
       const id = a.id || a.add, from = g.nodes.find((n) => n.type === a.from);
       if (r.m.maxU <= 0.9 || !from || g.nodes.some((n) => n.id === id)) return;
       const p = a.pos || lab.blocks[a.add].pos, g2 = { nodes: g.nodes.concat({ id, type: a.add, x: p[0], y: p[1] }), edges: g.edges.concat({ from: from.id, to: id }) };
