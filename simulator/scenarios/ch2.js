@@ -1,0 +1,73 @@
+(function (g) {
+  (g.SIM_SCENARIOS = g.SIM_SCENARIOS || []).push({
+    id: 'ch2', n: 2, title: 'Nearby Friends', subtitle: 'Друзья рядом в реальном времени',
+    intro: 'Каждые N секунд телефон шлёт геопозицию, а сервер должен показать друзьям, кто из них сейчас рядом. Главная боль: один апдейт превращается в десятки доставок друзьям (fan-out).',
+    flows: [{ id: 'live', label: 'Поток обновлений' }],
+    inputs: [
+      { id: 'conc', label: 'Одновременно онлайн', unit: 'млн', min: 1, max: 50, step: 1, value: 10 },
+      { id: 'interval', label: 'Интервал обновления локации', unit: 'с', min: 5, max: 120, step: 5, value: 30 },
+      { id: 'friends', label: 'Друзей у пользователя', unit: '', min: 50, max: 1000, step: 50, value: 400 },
+      { id: 'nearby', label: 'Друзей онлайн и рядом', unit: '%', min: 1, max: 30, step: 1, value: 10 },
+    ],
+    baseQuality: 25, qualityLabel: 'Устойчивость', qualityHint: 'Переживёт ли система масштабирование, падения серверов и рассыпание соединений.',
+    derive: (i) => { const upd = (i.conc * 1e6) / i.interval; return { upd, fan: upd * i.friends * (i.nearby / 100), conc: i.conc * 1e6 }; },
+    load: (d) => ({ ws: d.upd + d.fan, fan: d.fan, store: d.upd, hist: d.upd }),
+    stages: [
+      { id: 'ws', name: 'WebSocket-серверы', icon: '🔌', unit: 'msg/s', cap: 150000, lat: 5, avail: 0.995, cost: 400, flow: 'live', note: 'Stateful: держат соединения клиентов' },
+      { id: 'fan', name: 'Доставка друзьям (SQL-опрос)', icon: '📮', unit: 'доставок/s', cap: 4000, lat: 150, avail: 0.995, cost: 500, flow: 'live', note: 'Наивно: читаем из БД локации всех друзей' },
+      { id: 'store', name: 'Postgres (последняя локация)', icon: '🗄️', unit: 'writes/s', cap: 3000, lat: 20, avail: 0.995, cost: 450, flow: 'live' },
+      { id: 'hist', name: 'История локаций (Cassandra)', icon: '📚', unit: 'writes/s', cap: 25000, lat: 5, avail: 0.995, cost: 500, flow: 'live', path: false, hidden: true, critical: false },
+    ],
+    components: [
+      { id: 'pubsub', name: 'Redis Pub/Sub: канал на пользователя', icon: '📡', at: 'fan', cx: 3, q: 10,
+        apply: (s) => { const x = s.stages.fan; x.name = 'Redis Pub/Sub'; x.unit = 'push/s'; x.cap = 100000; x.lat = 3; x.cost = 650; x.note = 'Подписка на каналы друзей, публикация в свой канал'; },
+        learn: { what: 'Каждый пользователь публикует локацию в свой канал; друзья подписаны на эти каналы и получают апдейт мгновенно.',
+          why: 'Убирает чтение из БД: доставка идёт «толчком» через память, а не опросом.',
+          must: ['При подключении клиент подписывается на каналы всех друзей, при апдейте сервер считает расстояние и решает, показывать ли.', 'Pub/Sub не хранит сообщения: пропущенный апдейт теряется (нужен кэш последней локации).', 'Один Redis держит ~100 тыс. доставок/с. На 14 млн нужно больше сотни серверов.'],
+          risks: ['Много серверов Pub/Sub, значит нужно шардирование каналов.', 'Сообщения не гарантированы.'] } },
+      { id: 'shardps', name: 'Шардирование каналов (hash ring + service discovery)', icon: '🕸️', at: 'fan', cx: 3, q: 30, requires: ['pubsub'],
+        apply: (s) => {},
+        learn: { what: 'Каналы распределяют по серверам Pub/Sub через consistent hashing. Актуальную карту хранит service discovery (etcd/ZooKeeper).',
+          why: 'Без этого клиент не знает, на каком сервере живёт канал друга, а масштабировать Pub/Sub горизонтально нельзя.',
+          must: ['Consistent hashing, чтобы при добавлении сервера переезжала малая часть каналов.', 'Pub/Sub-кластер — stateful: при изменении кластера нужно переподписать часть клиентов.', 'Расширение делаем заранее и в тихие часы.'],
+          risks: ['Шторм переподписок при ресайзе.', 'Нужно поддерживать etcd/ZooKeeper.'] } },
+      { id: 'loccache', name: 'Location cache (Redis с TTL)', icon: '⚡', at: 'store', cx: 2, q: 15,
+        apply: (s) => { const x = s.stages.store; x.name = 'Location cache (Redis, TTL)'; x.cap = 80000; x.lat = 2; x.cost = 500; },
+        learn: { what: 'Последняя локация каждого пользователя лежит в Redis с TTL. Неактивные пользователи пропадают сами.',
+          why: 'Запись 300+ тыс. раз в секунду Postgres не выдержит, а нам нужна только свежая точка.',
+          must: ['TTL = время жизни «онлайн». Нет апдейта, значит пользователь выпал из выдачи.', 'При подключении клиент берёт локации друзей из кэша, дальше подписывается на обновления.'],
+          risks: ['Данные в памяти: при падении кэша потеряем актуальные точки (быстро восстановятся).'] } },
+      { id: 'history', name: 'История локаций (Cassandra, async)', icon: '📚', at: 'hist', cx: 2, q: 5,
+        apply: (s) => { s.stages.hist.hidden = false; },
+        learn: { what: 'Асинхронно пишем историю перемещений в БД, заточенную под запись.',
+          why: 'Нужна для аналитики и «умных» функций, но не должна тормозить онлайн-путь.',
+          must: ['Запись в стороне от основного пути (path: false).', 'Cassandra хорошо масштабирует запись, но запросы ограничены ключами.'],
+          risks: ['Ещё одна БД.'] } },
+      { id: 'filter', name: 'Не публиковать, если сместился < 50 м', icon: '🎯', at: 'fan', cx: 1, q: -5,
+        apply: (s) => { s.stages.fan.load *= 0.45; s.stages.ws.load *= 0.6; },
+        learn: { what: 'Клиент шлёт апдейт только при заметном перемещении или раз в N секунд.',
+          why: 'Самый дешёвый способ снизить fan-out: не делать лишнюю работу.',
+          must: ['Нужен баланс свежести и нагрузки.', 'Стоит ограничить и «нужен ли друг в этом радиусе» на сервере.'],
+          risks: ['Менее плавные обновления на карте.'] } },
+      { id: 'drain', name: 'Graceful drain WebSocket-серверов', icon: '🚰', at: 'ws', cx: 1, q: 25,
+        apply: (s) => {},
+        learn: { what: 'Перед выключением сервера он перестаёт принимать новые соединения и ждёт, пока клиенты переподключатся.',
+          why: 'WebSocket-серверы stateful. Резкое отключение сотни тысяч соединений создаёт лавину переподключений.',
+          must: ['Нужны load balancer с поддержкой drain и клиенты с экспоненциальным backoff.'],
+          risks: ['Деплой становится медленнее.'] } },
+    ],
+    rules: (s, d, st, m, warn) => {
+      if (st.active.pubsub && !st.active.shardps && s.stages.fan.replicas > 1) warn('warn', 'Несколько Pub/Sub-серверов без hash ring: клиент не знает, на каком сервере нужный канал.');
+      if (st.active.pubsub && st.active.shardps && s.stages.fan.replicas > 1) warn('info', 'Ресайз Pub/Sub-кластера вызовет переподписку части клиентов. Делай это заранее и в тихие часы.');
+      if (s.stages.ws.replicas > 1 && !st.active.drain) warn('info', 'Много stateful WebSocket-серверов, но нет graceful drain: деплой будет рвать соединения пачками.');
+      if (!st.active.pubsub) warn('info', 'Доставка друзьям идёт опросом БД: добавь Redis Pub/Sub и сравни нагрузку.');
+    },
+    goals: [
+      { text: 'Выдерживаем 100% нагрузки', check: (m) => m.served >= 1 && m.maxU <= 0.9 },
+      { text: 'Время доставки до 50 мс', check: (m) => m.lat.live <= 50 },
+      { text: 'Устойчивость ≥ 70', check: (m) => m.quality >= 70 },
+      { text: 'Сложность не выше 14 из 20', check: (m) => m.cx <= 14 },
+    ],
+    tryThis: ['Оставь «Автомасштаб» включённым и посмотри, сколько серверов нужно без Pub/Sub.', 'Включи Pub/Sub, затем выключи шардирование каналов и подними число серверов.', 'Включи фильтр «сместился < 50 м»: как изменится fan-out?', 'Подними интервал обновления до 120 с: нагрузка падает, но чем платим?'],
+  });
+})(typeof window !== 'undefined' ? window : globalThis);
