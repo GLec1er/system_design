@@ -210,7 +210,7 @@ a{color:var(--accent)}
 .board-wrap{position:relative;overflow:auto;border:1px solid var(--line);border-radius:14px;background:var(--board);max-height:78vh;transition:box-shadow .15s}
 .board-wrap.drop{box-shadow:inset 0 0 0 3px var(--accent)}
 .board{position:relative;transform-origin:0 0;background-image:radial-gradient(var(--dot) 1.2px,transparent 1.2px);background-size:20px 20px}
-.board svg{position:absolute;inset:0;overflow:visible}
+.board>svg{position:absolute;inset:0;overflow:visible}
 .edge .hit{fill:none;stroke:transparent;stroke-width:16;cursor:pointer}
 .edge .base{fill:none;stroke:var(--edge);stroke-width:1.6;stroke-dasharray:5 5;pointer-events:none}
 .edge.live .base{stroke-dasharray:none;opacity:.5}
@@ -371,3 +371,11 @@ h3.sec{margin:22px 0 10px;font-size:13px;letter-spacing:.04em;text-transform:upp
 .qs .q.warn{background:var(--warn-soft);color:var(--warn)}.qs .q.bad{background:var(--bad-soft);color:var(--bad)}
 .clk{display:flex;flex-direction:column;gap:1px;color:var(--muted)}
 .expl{font-size:12.5px}.expl .lim{color:var(--bad)}
+
+/* логотипы технологий и фирменный цвет: --c задаётся на блоке */
+.pic svg,.ni svg{width:17px;height:17px;display:block}
+.pic svg,.ih .ni svg{width:20px;height:20px}
+.node[style*="--c"],.ih[style*="--c"]{border-top-color:var(--c)}
+.node[style*="--c"]{background:linear-gradient(180deg,color-mix(in srgb,var(--c) 10%,var(--card)),var(--card) 60px)}
+.pi[style*="--c"]{border-left:3px solid var(--c)}
+.dragghost .pic{width:24px;height:24px;display:grid;place-items:center}
