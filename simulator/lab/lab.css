@@ -380,3 +380,21 @@ h3.sec{margin:22px 0 10px;font-size:13px;letter-spacing:.04em;text-transform:upp
 .pi[style*="--c"]{border-left:3px solid var(--c)}
 .dragghost .pic{width:24px;height:24px;display:grid;place-items:center}
 .tseg button:disabled{opacity:.35;cursor:not-allowed}
+
+/* FR / NFR */
+.reqcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:14px;margin-bottom:14px}
+.reqcols>.card{margin:0}
+.reqcols .reqs{grid-template-columns:1fr}
+.rq-fr{border-top:3px solid var(--accent)}
+.rq-nfr{border-top:3px solid var(--warn)}
+.nchip{display:inline-block;font:inherit;font-size:11.5px;margin-bottom:4px;padding:1px 8px;border-radius:999px;border:1px solid var(--warn);background:var(--warn-soft);color:inherit;cursor:pointer}
+.nfrs{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:10px}
+.nfr{border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+.nfr.key{border-color:var(--warn);background:var(--warn-soft)}
+.nfr em{font-style:normal;white-space:nowrap;font-size:11.5px;padding:1px 7px;border-radius:999px;background:var(--warn);color:#fff}
+.nfr p{margin:6px 0}
+.nfr dl{margin:0;font-size:13px}
+.nfr dt{color:var(--muted);font-size:12px;margin-top:6px}
+.nfr dd{margin:0}
+.nfr.flash{animation:nflash 1.2s}
+@keyframes nflash{0%,40%{box-shadow:0 0 0 3px var(--accent)}100%{box-shadow:none}}

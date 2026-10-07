@@ -131,18 +131,22 @@
     return { ok, total };
   }
   function reqView() {
-    const R = L.requirements, sc = reqScore();
+    const R = L.requirements, sc = reqScore(), N = Object.fromEntries((R.nfr || []).map((n) => [n.id, n]));
     const mark = { ok: '✔ входит', miss: '○ пропущено', wrong: '✗ вне рамок', skip: '✔ верно, вне рамок' };
-    return `${head(step(), R.intro)}<section class="card">
-      ${R.groups.map((g, gi) => `<h4 class="grp">${esc(g.title)}</h4><div class="reqs">${g.items.map((it, ii) => {
-        const k = gi + '.' + ii, s = reqState(it, k);
-        return `<label class="ri ${s}"><input type="checkbox" data-k="${k}" ${st.req[k] ? 'checked' : ''}><span><b>${esc(it.text)}</b>${s ? `<small><em>${mark[s]}.</em> ${esc(it.why)}</small>` : ''}</span></label>`;
-      }).join('')}</div>`).join('')}
-      <div class="row-btns"><button class="btn primary" id="reqCheck">${st.reqChecked ? 'Скрыть ответы' : 'Проверить'}</button>${st.reqChecked ? `<span class="score">Верно ${sc.ok} из ${sc.total}</span>` : ''}</div>
-      ${st.reqChecked ? `<div class="w info">${esc(R.conclusion)}</div>` : ''}</section>`;
+    return `${head(step(), R.intro)}<div class="reqcols">
+      ${R.groups.map((g, gi) => `<section class="card rq-${g.kind || 'fr'}"><h4 class="grp">${esc(g.title)}${g.q ? ` <span class="muted">· ${esc(g.q)}</span>` : ''}</h4>${g.desc ? `<p class="muted">${esc(g.desc)}</p>` : ''}<div class="reqs">${g.items.map((it, ii) => {
+        const k = gi + '.' + ii, s = reqState(it, k), n = N[it.nfr];
+        return `<label class="ri ${s}"><input type="checkbox" data-k="${k}" ${st.req[k] ? 'checked' : ''}><span>${n ? `<button type="button" class="nchip" data-nfr="${n.id}" title="${esc(n.what)}">${esc(n.name)} · ${esc(n.en)}</button>` : ''}<b>${esc(it.text)}</b>${s ? `<small><em>${mark[s]}.</em> ${esc(it.why)}${it.to && it.in ? `<br>→ ${esc(it.to)}` : ''}</small>` : ''}</span></label>`;
+      }).join('')}</div></section>`).join('')}</div>
+      <section class="card"><div class="row-btns"><button class="btn primary" id="reqCheck">${st.reqChecked ? 'Скрыть ответы' : 'Проверить'}</button>${st.reqChecked ? `<span class="score">Верно ${sc.ok} из ${sc.total}</span>` : ''}</div>
+      ${st.reqChecked ? `<div class="w info">${esc(R.conclusion)}</div>` : ''}</section>
+      ${R.nfr ? `<section class="card"><h4 class="grp">📖 Понятия NFR и за что они отвечают</h4><p class="muted">Подсвечены свойства, которые решают эту главу. Остальные тоже стоит назвать на интервью хотя бы одной фразой.</p>
+        <div class="nfrs">${R.nfr.map((n) => `<div class="nfr ${n.key ? 'key' : ''}" id="nfr-${n.id}"><b>${esc(n.name)} <span class="muted">${esc(n.en)}</span>${n.key ? ' <em>важно здесь</em>' : ''}</b>
+          <p>${esc(n.what)}</p><dl><dt>Как меряют</dt><dd>${esc(n.metric)}</dd><dt>На что влияет</dt><dd>${esc(n.drives)}</dd><dt>В этой главе</dt><dd>${esc(n.here)}</dd></dl></div>`).join('')}</div></section>` : ''}`;
   }
   function bindReq() {
     $$('.ri input').forEach((c) => (c.onchange = () => { st.req[c.dataset.k] = c.checked; save(); renderStep(); }));
+    $$('.nchip').forEach((b) => (b.onclick = (e) => { e.preventDefault(); const el = $('#nfr-' + b.dataset.nfr); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }));
     $('#reqCheck').onclick = () => { st.reqChecked = !st.reqChecked; save(); renderStep(); };
   }
 
