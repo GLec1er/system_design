@@ -6,9 +6,9 @@ require('../ch7/ch7.js');
 const L = global.LAB;
 const est = {}; L.estimate.inputs.forEach((i) => (est[i.id] = i.value));
 const deep0 = { params: {}, choices: {} };
-L.problems.forEach((p) => { (p.params || []).forEach((x) => (deep0.params[x.id] = x.value)); deep0.choices[p.key] = p.options[0].v; });
+L.problems.forEach((p) => { (p.params || []).forEach((x) => (deep0.params[x.id] = x.value)); if (p.options) deep0.choices[p.key] = p.options[0].v; });
 const ref = (k) => ({
-  nodes: L.reference[k].nodes.map((n) => { const [type, id] = [].concat(n); return { id: id || type, type }; }),
+  nodes: L.reference[k].nodes.map((n) => { const [type, id] = [].concat(n); return { id: id || type, type, cfg: (L.reference[k].cfg || {})[id || type] }; }),
   edges: L.reference[k].edges.map(([from, to]) => ({ from, to })),
 });
 
@@ -73,4 +73,23 @@ r = E.analyze(L, g7, est, deep0, 'base');
 assert.equal(r.nodes.client2.why.kind, 'dup');
 assert.equal(r.nodes.search.why.kind, 'useless');
 assert(r.nodes.k.why.kind === 'off' && /Kafka → Notification/.test(r.nodes.k.why.text), r.nodes.k.why.text);
+// настройки БД: реплики снимают чтения, шарды запись; ×100 без кэша лечится настройками
+const x100 = { params: Object.assign({}, deep0.params, { flash: 100 }), choices: deep0.choices };
+const util = (g, id) => E.analyze(L, g, est, x100, 'base').nodes[id].util;
+const gb = ref('base');
+assert(util(gb, 'hotelDB') > 1 && util(gb, 'resDB') > 1, '×100 без кэша и настроек БД перегружены');
+gb.nodes.find((n) => n.id === 'hotelDB').cfg = { replicas: 5, shards: 2 };
+gb.nodes.find((n) => n.id === 'resDB').cfg = { replicas: 1, shards: 4 };
+assert(util(gb, 'hotelDB') < 0.9 && util(gb, 'resDB') < 0.9, 'реплики и шарды вытягивают ×100');
+// Kafka: потребителей не больше, чем партиций
+const gk = E.addBlock(L, ref('deep'), 'kafka', [0, 0]).graph;
+const kx = (pt) => { gk.nodes.find((n) => n.type === 'kafka').cfg = { partitions: pt }; return E.analyze(L, gk, est, x100, 'deep').nodes.notification; };
+assert(kx(1).util > 1 && kx(24).util < 1, 'мало партиций душит Notification Service');
+// NoSQL: DynamoDB защищает условной записью, MongoDB работает с блокировками, но медленнее
+const gd = E.addBlock(L, ref('deep'), 'dynamo', [0, 0]).graph;
+r = E.analyze(L, gd, est, hard, 'deep');
+assert(r.m.routed && r.m.oversell === 0 && r.nodes.dynamo.load > 0, 'DynamoDB: условная запись без перепродаж');
+const gm = E.addBlock(L, ref('deep'), 'mongo', [0, 0]).graph;
+r = E.analyze(L, gm, est, good, 'deep');
+assert(r.m.oversell === 0 && r.flows.find((f) => f.id === 'book').lat > bookLat(ref('deep'), good), 'MongoDB: транзакции есть, но медленнее');
 console.log('extras ok');
