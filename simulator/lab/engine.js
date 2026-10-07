@@ -6,13 +6,43 @@
   const queue = (u) => (u >= 0.95 ? 12 : Math.min(12, 1 + (0.5 * u * u) / (1 - u)));
   const has = (spec, t) => [].concat(spec).includes(t);
 
+  // Настройки «тяжёлых» блоков, общие для всех глав. book: так делают в книге (остальное эксперименты).
+  // Блок включает их через def.tune: 'sql' или 'kafka'; варианты ключа шардирования задаёт глава (def.shardKeys).
+  const TUNE = {
+    sql: [
+      { id: 'replicas', label: 'Реплики для чтения', book: true, opts: [0, 1, 2, 3, 5], value: 0,
+        hint: 'Чтения делятся между primary и репликами. Запись всё равно идёт только в primary.' },
+      { id: 'sync', label: 'Репликация', when: (c) => c.replicas > 0, value: 'async',
+        opts: [{ v: 'async', label: 'Асинхронная', note: 'Запись не ждёт реплик, но реплика может отставать на доли секунды.' }, { v: 'sync', label: 'Синхронная', note: 'Запись ждёт подтверждения реплики: данные свежие, но запись медленнее.' }] },
+      { id: 'shards', label: 'Шарды', book: true, opts: [1, 2, 4, 8, 16], value: 1,
+        hint: 'Данные и запись делятся между независимыми БД. Масштабирует запись, но запросы через шарды становятся сложнее.' },
+      { id: 'shardKey', label: 'Ключ шардирования', book: true, when: (c, def) => c.shards > 1 && def.shardKeys, opts: (def) => def.shardKeys, value: (def) => def.shardKeys && def.shardKeys[0].v },
+      { id: 'partition', label: 'Партиционирование', value: 'none',
+        opts: [{ v: 'none', label: 'Нет' }, { v: 'date', label: 'По дате', note: 'Таблица делится на части внутри одной БД: запросы читают меньше данных (+20% к запасу), старые даты легко архивировать.' }] },
+    ],
+    kafka: [
+      { id: 'partitions', label: 'Партиции', opts: [1, 3, 6, 12, 24], value: 3,
+        hint: 'Единица параллелизма: в группе потребителей на одну партицию работает один потребитель. Больше партиций, больше потребителей.' },
+      { id: 'rf', label: 'Репликация (RF)', opts: [1, 2, 3], value: 3,
+        hint: 'Сколько брокеров хранят копию партиции. RF=1 дёшево, но падение брокера теряет события.' },
+      { id: 'acks', label: 'acks', value: 'all',
+        opts: [{ v: '1', label: '1', note: 'Подтверждает только лидер: быстрее, но событие может потеряться при падении лидера.' }, { v: 'all', label: 'all', note: 'Ждём все синхронные реплики: надёжно, чуть медленнее.' }] },
+    ],
+  };
+  const optsOf = (f, def) => (typeof f.opts === 'function' ? f.opts(def) : f.opts) || [];
+  function tuneOf(def, cfg) {
+    const out = {};
+    (TUNE[def.tune] || []).forEach((f) => (out[f.id] = (cfg && cfg[f.id] !== undefined) ? cfg[f.id] : (typeof f.value === 'function' ? f.value(def) : f.value)));
+    return out;
+  }
+
   function analyze(lab, graph, inputs, deep, stage) {
     const d = lab.derive(inputs, deep);
     const nodes = {}, out = {}, edgeLoad = {};
     graph.nodes.forEach((n) => {
       const def = lab.blocks[n.type];
       if (!def) return;
-      nodes[n.id] = { id: n.id, type: n.type, def, load: 0, flows: {}, capMult: 1, maxRep: def.maxRep || 1, badges: [] };
+      nodes[n.id] = { id: n.id, type: n.type, def, cfg: tuneOf(def, n.cfg), load: 0, wload: 0, flows: {}, capMult: 1, maxRep: def.maxRep || 1, badges: [] };
       out[n.id] = [];
     });
     graph.edges.forEach((e) => nodes[e.from] && nodes[e.to] && out[e.from].push(e.to));
@@ -25,7 +55,7 @@
       // Нагрузку применяем в конце: недостроенный обязательный поток всё равно виден на карте,
       // а недостроенный необязательный (например, Kafka без потребителей) ничего не нагружает.
       const ops = [];
-      const touch = (n, p) => ops.push(() => { const l = r.rate * p; n.load += l; n.flows[f.id] = (n.flows[f.id] || 0) + l; r.path.push({ id: n.id, p }); });
+      const touch = (n, p) => ops.push(() => { const l = r.rate * p; n.load += l; if (f.write) n.wload += l; n.flows[f.id] = (n.flows[f.id] || 0) + l; r.path.push({ id: n.id, p }); });
       const edge = (a, b, p) => ops.push(() => { const k = a + '>' + b; (edgeLoad[k] = edgeLoad[k] || {})[f.id] = r.rate * p; });
       let cur = Object.values(nodes).find((n) => has(f.chain[0], n.type));
       if (!cur) { r.ok = false; r.missing = [null, f.chain[0]]; return r; }
@@ -68,13 +98,27 @@
       ctx.cx += def.cx || 0;
       n.rep = 1; n.util = 0; n.q = 1;
       if (!def.cap) return;
-      const cap = def.cap * n.capMult;
-      n.rep = Math.max(1, Math.min(n.maxRep, Math.ceil(n.load / (cap * TARGET))));
-      n.capTotal = cap * n.rep;
-      n.util = n.load / n.capTotal;
+      const cap = def.cap * n.capMult, c = n.cfg;
+      if (def.tune === 'sql') {
+        // Размер задаёт ученик. Primary берёт всю запись и свою долю чтений, шарды делят всё поровну.
+        n.rep = c.shards;
+        n.capTotal = cap * c.shards * (c.partition !== 'none' ? 1.2 : 1);
+        n.util = ((n.load - n.wload) / (1 + c.replicas) + n.wload) / n.capTotal;
+        ctx.cost += (def.cost || 0) * c.shards * (1 + 0.6 * c.replicas);
+        ctx.cx += (c.shards > 1 ? 1 + 0.3 * Math.log2(c.shards) : 0) + 0.2 * c.replicas + (c.partition !== 'none' ? 0.5 : 0);
+      } else if (def.tune === 'kafka') {
+        n.rep = c.partitions;
+        n.capTotal = cap * c.partitions;
+        n.util = n.load / n.capTotal;
+        ctx.cost += (def.cost || 0) * (c.rf / 3) * Math.max(1, c.partitions / 12);
+      } else {
+        n.rep = Math.max(1, Math.min(n.maxRep, Math.ceil(n.load / (cap * TARGET))));
+        n.capTotal = cap * n.rep;
+        n.util = n.load / n.capTotal;
+        ctx.cost += (def.cost || 0) * n.rep;
+        if (n.rep > 1 && (def.db || def.cache)) ctx.cx += 0.3 * Math.log2(n.rep); // stateless-реплики почти бесплатны по сложности
+      }
       n.q = queue(n.util);
-      ctx.cost += (def.cost || 0) * n.rep;
-      if (n.rep > 1 && (def.db || def.cache)) ctx.cx += 0.3 * Math.log2(n.rep); // stateless-реплики почти бесплатны по сложности
       if (n.util > maxU) { maxU = n.util; bottleneck = n; }
       if (n.util > 1) ctx.warn('bad', `«${def.name}» перегружен: ${Math.round(n.util * 100)}% даже на ${n.rep} ${def.repLabel || 'репл.'}. ${def.overload || ''}`);
       else if (!n.load && n.why) ctx.warn(n.why.kind === 'useless' ? 'info' : 'warn', `«${def.name}» простаивает. ${n.why.text}`);
@@ -156,7 +200,7 @@
   const canLink = (lab, a, b) => linkPairs(lab).has(a + '>' + b);
   const linkTargets = (lab, a) => Object.keys(lab.blocks).filter((b) => canLink(lab, a, b));
 
-  const api = { analyze, addBlock, canLink, linkTargets, TARGET };
+  const api = { analyze, addBlock, canLink, linkTargets, TUNE, optsOf, tuneOf, TARGET };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.LabEngine = api;
 })(typeof window !== 'undefined' ? window : globalThis);
