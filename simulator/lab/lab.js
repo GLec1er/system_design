@@ -191,7 +191,7 @@
             </div>
           </div>
           <div class="legend" id="legend"></div>
-          <p class="lghelp">Стрелка значит «вызывает»: запрос идёт по стрелке, ответ возвращается обратно. Точки на стрелке это запросы, цвет показывает поток, число это запросов в секунду. Пунктир: по стрелке пока ничего не идёт. Нажми на стрелку, чтобы увидеть, что по ней идёт.</p>
+          <p class="lghelp">Стрелка значит «вызывает»: запрос идёт по стрелке, ответ возвращается обратно. Точки на стрелке это запросы, цвет показывает поток, число это запросов в секунду. Серый пунктир: по стрелке ничего не идёт, а на блоке написано почему: 🔌 не подключён (не хватает стрелки) или 💤 не нужен в этой схеме. Нажми на стрелку или блок, чтобы увидеть подробности.</p>
           <div class="board-wrap" id="wrap">
             <div class="board" id="board" style="width:${W}px;height:${H}px">
               <svg id="edges" width="${W}" height="${H}" aria-hidden="true"><defs>
@@ -263,13 +263,20 @@
     return [Math.max(0, Math.min(x, W - 180)), Math.max(0, Math.min(y, H - 120))];
   }
 
+  // Блок добавляется сразу рабочим: с типовыми стрелками, нужными соседями (bring) и без стрелок, которые он заменяет (drop).
   function addNode(type, pos) {
-    const res = E.addBlock(L, st.graph, type, freePos(pos || L.blocks[type].pos));
-    const added = res.graph.edges.slice(st.graph.edges.length);
+    const def = L.blocks[type], have = st.graph.nodes.find((n) => n.type === type);
+    if (have && !def.multi) { select(have.id); toast(`«${def.name}» уже на карте. Второй ничего не получит: потоки идут через первый, а масштабируется блок сам, репликами.`); return; }
+    const before = st.graph, res = E.addBlock(L, before, type, freePos(pos || def.pos));
+    const key = (e) => e.from + '>' + e.to, old = new Set(before.edges.map(key)), nm = (g, id) => L.blocks[g.nodes.find((n) => n.id === id).type].name;
+    const added = res.graph.edges.filter((e) => !old.has(key(e)));
     st.graph = res.graph;
     selNode = res.id;
-    const nm = (id) => L.blocks[st.graph.nodes.find((n) => n.id === id).type].name;
-    toast(`Добавлен «${L.blocks[type].name}»` + (added.length ? `. Стрелки проведены сами: ${added.map((e) => nm(e.from) + ' → ' + nm(e.to)).join(', ')}. Лишние удали кликом.` : '. Проведи к нему стрелки.'));
+    const parts = [`Добавлен «${def.name}»`];
+    if (res.brought.length) parts.push(`вместе с ним «${res.brought.map((t) => L.blocks[t].name).join('», «')}», без него он бесполезен`);
+    if (added.length) parts.push(`стрелки: ${added.map((e) => nm(st.graph, e.from) + ' → ' + nm(st.graph, e.to)).join(', ')}`);
+    if (res.dropped.length) parts.push(`убрана стрелка ${res.dropped.map((e) => nm(before, e.from) + ' → ' + nm(before, e.to)).join(', ')}, он её заменяет`);
+    toast(parts.join('; ') + '.' + (added.length ? '' : ' Проведи к нему стрелки.'));
     changed();
   }
 
@@ -317,10 +324,10 @@
     const groups = [['Основные блоки', (b) => !b.extra], ['Попробовать', (b) => b.extra]];
     $('#pal').innerHTML = groups.map(([title, f]) => `<div class="pgroup"><div class="pgt">${title}</div>${Object.entries(L.blocks).filter(([, b]) => f(b)).map(([t, b]) => {
       const onMap = st.graph.nodes.some((n) => n.type === t);
-      const chips = effects(r, analyzeG(E.addBlock(L, st.graph, t, [0, 0]).graph, step().stage));
+      const done = onMap && !b.multi, chips = done ? [] : effects(r, analyzeG(E.addBlock(L, st.graph, t, [0, 0]).graph, step().stage));
       return `<button class="pi cat-${b.cat}" data-t="${t}" title="Перетащи на карту или нажми">
         <span class="pic">${b.icon}</span><span class="pin"><b>${esc(b.name)}</b>${onMap ? '<em>на карте</em>' : ''}<small>${esc(b.tag || '')}</small>
-        <span class="chips">${chips.length ? chips.slice(0, 4).map(([t, good]) => `<span class="chip ${good ? 'good' : 'bad'}">${esc(t)}</span>`).join('') : '<span class="chip">сейчас без эффекта</span>'}</span></span></button>`;
+        ${done ? '' : `<span class="chips">${chips.length ? chips.slice(0, 4).map(([t, good]) => `<span class="chip ${good ? 'good' : 'bad'}">${esc(t)}</span>`).join('') : '<span class="chip">сейчас без эффекта</span>'}</span>`}</span></button>`;
     }).join('')}</div>`).join('');
     $$('#pal .pi').forEach(bindPaletteItem);
   }
@@ -362,6 +369,7 @@
       return `<div class="node cat-${b.cat} ${hot ? 'hot' : ''} ${n.load || !b.cap ? '' : 'idle'} ${selNode === g.id ? 'sel' : ''}" data-id="${g.id}" style="left:${g.x}px;top:${g.y}px">
         <div class="nh"><span class="ni">${b.icon}</span><span class="nt"><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''}${b.extra ? ' · необязательный' : ''}</small></span><button class="nx" data-del aria-label="Удалить ${esc(b.name)}" title="Удалить">×</button></div>
         ${body}
+        ${n.why ? `<div class="nwhy ${n.why.kind}">${n.why.kind === 'useless' ? '💤 Не нужен в этой главе' : n.why.kind === 'dup' ? '💤 Лишний дубль' : '🔌 Не подключён'}</div>` : ''}
         <button class="port" data-port aria-label="Провести стрелку от «${esc(b.name)}»" title="Потяни к другому блоку"></button></div>`;
     }).join('');
   }
@@ -517,7 +525,15 @@
   function edgeText(e) {
     const loads = (last && last.edgeLoad[e.from + '>' + e.to]) || {}, fl = last.flows.filter((f) => loads[f.id] > 0);
     const head = `«${bname(typeOf(e.from))}» вызывает «${bname(typeOf(e.to))}».`;
-    return fl.length ? `${head} По стрелке идёт: ${fl.map((f) => `${f.label} ${fmt(loads[f.id])} rps`).join(', ')}.` : `${head} Пока по ней не идёт ни один поток.`;
+    return fl.length ? `${head} По стрелке идёт: ${fl.map((f) => `${f.label} ${fmt(loads[f.id])} rps`).join(', ')}.` : `${head} По стрелке пока ничего не идёт. ${(last.nodes[e.to] && last.nodes[e.to].why && last.nodes[e.to].why.text) || stuck(e)}`;
+  }
+
+  // Стрелка есть, но поток по ней обрывается дальше: говорим, какой стрелки не хватает.
+  function stuck(e) {
+    const a = typeOf(e.from), b = typeOf(e.to), has = (spec, t) => [].concat(spec).includes(t);
+    const tips = L.flows.filter((f) => f.chain.some((t, i) => i && has(f.chain[i - 1], a) && has(t, b))).map((f) => last.flows.find((x) => x.id === f.id))
+      .filter((f) => !f.ok && f.missing && f.missing[0]).map((f) => `«${f.label}» обрывается дальше: нужна стрелка ${bname(f.missing[0])} → ${[].concat(f.missing[1]).map(bname).join(' или ')}.`);
+    return tips.join(' ') || 'Ни одному потоку главы эта стрелка не нужна.';
   }
 
   function removeNode(id) {
@@ -576,7 +592,7 @@
     box.innerHTML = `<div class="ih cat-${b.cat}"><span class="ni">${b.icon}</span><div><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''}${b.extra ? ' · необязательный' : ''}</small></div><button class="nx" id="inspX" aria-label="Закрыть">×</button></div>
       <p>${esc(b.learn.what)}</p>
       ${b.cap ? `<div class="istats"><div><span>Нагрузка</span><b>${fmt(n.load)} / ${fmt(n.capTotal)} rps</b></div><div><span>Загрузка</span><b class="${cls(n.util)}">${Math.round(n.util * 100)}%</b></div><div><span>${esc(b.repLabel || 'Реплик')}</span><b>${n.rep}${n.rep >= n.maxRep ? ' (макс.)' : ''}</b></div><div><span>Задержка</span><b>${ms(b.lat * n.q)}</b></div></div>` : ''}
-      ${flows.length ? `<h5>Какие потоки идут</h5>${flows.map((f) => `<div class="fbar"><span>${esc(f.label)}</span><i style="width:${(n.flows[f.id] / max) * 100}%;background:${f.color}"></i><b>${fmt(n.flows[f.id])}</b></div>`).join('')}` : '<p class="muted">Через блок не идёт ни один поток: проведи к нему стрелки.</p>'}
+      ${flows.length ? `<h5>Какие потоки идут</h5>${flows.map((f) => `<div class="fbar"><span>${esc(f.label)}</span><i style="width:${(n.flows[f.id] / max) * 100}%;background:${f.color}"></i><b>${fmt(n.flows[f.id])}</b></div>`).join('')}` : `<p class="why ${n.why ? n.why.kind : ''}">${n.why ? (n.why.kind === 'useless' ? '💤 ' : '🔌 ') + esc(n.why.text) : 'Через блок не идёт ни один поток.'}</p>`}
       ${b.learn.plus && b.learn.plus.length ? `<h5 class="plus">Что даёт</h5>${li(b.learn.plus)}` : ''}
       ${b.learn.minus && b.learn.minus.length ? `<h5 class="minus">Чем платим</h5>${li(b.learn.minus)}` : ''}
       <button class="btn sm ghost danger" id="inspDel">Убрать с карты</button>`;
