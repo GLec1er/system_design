@@ -192,48 +192,59 @@
   function estView() {
     const aff = (id) => `<div class="aff" id="aff_${id}"></div>`;
     return `${head(step(), L.estimate.intro)}<section class="card">
-      <div class="est"><div><p class="muted small">Наведи на ползунок или потяни его: в таблице подсветятся строки, которые он меняет. ↑ растёт вместе с ползунком, ↓ падает.</p>${L.estimate.inputs.map((i) => `<div class="dep" data-dep="${i.id}">${sliderHtml(i, st.est[i.id], 'data-est')}${aff(i.id)}</div>`).join('')}
-        <div class="scn"><h4 class="grp">📐 Сценарий нагрузки</h4><p class="muted">Один на всю главу: по этим цифрам считаются карта, узкие места и эталон.</p>${L.scenario.map((x) => `<div class="dep" data-dep="${x.id}">${scnHtml(x)}<small class="muted shint">${esc(x.hint)}</small>${aff(x.id)}</div>`).join('')}</div>
-</div>
+      <ol class="howread"><li><b>Слева</b> то, что мы предполагаем: размер бизнеса и сценарий пика.</li><li><b>Справа</b> расчёт сверху вниз: каждый шаг берёт результат предыдущего, в формулу подставлены твои числа.</li><li><b>Внизу</b> три числа, которые уходят на карту, и вывод о технологиях.</li></ol>
+      <div class="est"><div>
+        <h4 class="grp first">1. Допущения о бизнесе</h4><p class="muted small">Задают обычный день. Наведи на ползунок: справа подсветятся шаги, куда он входит.</p>
+        ${L.estimate.inputs.map((i) => `<div class="dep" data-dep="${i.id}">${sliderHtml(i, st.est[i.id], 'data-est')}${aff(i.id)}</div>`).join('')}
+        <div class="scn"><h4 class="grp">2. Сценарий нагрузки</h4><p class="muted small">Умножает обычный день: рост бизнеса и пик распродажи. По этим числам считаются карта, узкие места и эталон во всей главе.</p>${L.scenario.map((x) => `<div class="dep" data-dep="${x.id}">${scnHtml(x)}<small class="muted shint">${esc(x.hint)}</small>${aff(x.id)}</div>`).join('')}</div>
+      </div>
       <div id="estOut"></div></div></section>`;
   }
-  // Значения строк таблицы: «Сейчас» без сценария, «Сценарий» с пиком и ростом.
-  const estVals = (est, params) => { const d = L.derive(est, { params }); return L.estimate.rows(d).map((r) => r.v * (r.peak ? d.k : 1)); };
-  // Что двигает ползунок: сдвигаем его на одно деление и смотрим, какие строки поменялись и куда.
-  function estDeps() {
-    const p = scn(), v0 = estVals(st.est, p), out = {};
-    const diff = (v1, sign) => v0.map((v, i) => ({ i, dv: (v1[i] - v) * sign })).filter((x) => Math.abs(x.dv) > 1e-9 * Math.max(1, Math.abs(v0[x.i]))).map((x) => ({ i: x.i, up: x.dv > 0 }));
-    L.estimate.inputs.forEach((i) => {
-      const v = st.est[i.id], up = v + i.step <= i.max, nv = up ? v + i.step : v - i.step;
-      out[i.id] = diff(estVals(Object.assign({}, st.est, { [i.id]: nv }), p), up ? 1 : -1);
-    });
-    L.scenario.forEach((x) => {
-      const k = x.stops.indexOf(p[x.id]), up = k < x.stops.length - 1, nv = x.stops[up ? k + 1 : k - 1];
-      out[x.id] = diff(estVals(st.est, Object.assign({}, p, { [x.id]: nv })), up ? 1 : -1);
-      if (out[x.id].length) return;
-      // Сейчас ни на что не влияет (например, длительность пика при пике ×1): проверяем при максимуме остальных ползунков.
-      const q = {}; L.scenario.forEach((y) => (q[y.id] = y.stops[y.stops.length - 1])); q[x.id] = p[x.id];
-      const w0 = estVals(st.est, q), w1 = estVals(st.est, Object.assign({}, q, { [x.id]: nv }));
-      out[x.id] = w0.map((v, i) => ({ i, dv: (w1[i] - v) * (up ? 1 : -1) })).filter((y) => Math.abs(y.dv) > 1e-9 * Math.max(1, Math.abs(w0[y.i]))).map((y) => ({ i: y.i, up: y.dv > 0, later: true }));
-    });
-    return out;
+  // Какие шаги ползунок меняет: напрямую (uses) и дальше по цепочке (from).
+  function estReach(rows, id) {
+    const direct = rows.map((r, k) => (r.uses.includes(id) ? k : -1)).filter((k) => k >= 0), all = new Set(direct);
+    let grew = true;
+    while (grew) { grew = false; rows.forEach((r, k) => { if (!all.has(k) && r.from.some((x) => all.has(x))) { all.add(k); grew = true; } }); }
+    return { direct, down: [...all].filter((k) => !direct.includes(k)).sort((x, y) => x - y) };
   }
-  let estHl = null, estPrev = null, estDep = {};
-  function estHighlight(id) {
+  let estHl = null, estPrev = null;
+  function estHighlight(id, row) {
     estHl = id;
-    const on = new Set((estDep[id] || []).filter((x) => !x.later).map((x) => x.i));
-    $$('#estOut tr[data-row]').forEach((tr) => { tr.classList.toggle('hl', !!id && on.has(+tr.dataset.row)); tr.classList.toggle('dim', !!id && !on.has(+tr.dataset.row)); });
-    $$('.dep').forEach((el) => el.classList.toggle('on', el.dataset.dep === id));
+    const rows = L.estimate.rows(L.derive(st.est, { params: scn() })), R = id ? estReach(rows, id) : null;
+    $$('#estOut .cstep').forEach((el) => {
+      const k = +el.dataset.row;
+      el.classList.toggle('hl', !!R && R.direct.includes(k)); el.classList.toggle('hl2', !!R && R.down.includes(k)); el.classList.toggle('dim', !!R && !R.direct.includes(k) && !R.down.includes(k));
+    });
+    const uses = row != null ? rows[row].uses : [];
+    $$('.dep').forEach((el) => el.classList.toggle('on', el.dataset.dep === id || uses.includes(el.dataset.dep)));
   }
   function renderEst() {
-    const now = L.derive(st.est, { params: {} }), d = L.derive(st.est, { params: scn() }), vals = estVals(st.est, scn()), rows = L.estimate.rows(now);
-    estDep = estDeps();
-    Object.keys(estDep).forEach((id) => { const el = $('#aff_' + id); if (el) el.innerHTML = estDep[id].length ? (estDep[id][0].later ? '<span>сейчас не влияет, заработает при другом пике или росте →</span>' : '→ ') + estDep[id].map((x) => `<span class="ach ${x.up ? 'up' : 'down'} ${x.later ? 'later' : ''}">${esc(rows[x.i].short || rows[x.i].label)} ${x.up ? '↑' : '↓'}</span>`).join('') : '<span class="muted">на таблицу не влияет</span>'; });
-    $('#estOut').innerHTML = `<table class="tbl"><thead><tr><th>Что считаем</th><th>Как и куда идёт</th><th>Сейчас</th><th>Сценарий</th></tr></thead><tbody>
-      ${rows.map((r, i) => { const v = vals[i], chg = estPrev && Math.abs(estPrev[i] - v) > 1e-9 * Math.max(1, Math.abs(v));
-        return `<tr data-row="${i}"><td>${esc(r.label)}${r.to ? `<div class="to m">→ ${esc(r.to)}</div>` : ''}</td><td class="muted">${esc(r.formula)}${r.peak && d.k > 1 ? ` × пик ${d.k}` : ''}${r.to ? `<div class="to">→ ${esc(r.to)}</div>` : ''}</td><td class="num">${fmt(r.v)}</td><td class="num ${v > r.v ? 'up' : ''} ${chg ? 'chg' : ''}">${fmt(v)}</td></tr>`; }).join('')}</tbody></table>
-      <div class="w info">${esc(L.estimate.conclusion(d))}</div>`;
+    const p = scn(), d = L.derive(st.est, { params: p }), now = L.derive(st.est, { params: {} }), rows = L.estimate.rows(d), rowsNow = L.estimate.rows(now);
+    const nm = Object.fromEntries(L.estimate.inputs.map((i) => [i.id, i.label]).concat(L.scenario.map((x) => [x.id, x.label])));
+    const val = (r) => r.v * (r.peak ? d.k : 1), fc = Object.fromEntries(L.flows.map((f) => [f.id, f]));
+    const dot = (id) => `<i class="fdot" style="background:${fc[id].color}"></i>`;
+    Object.keys(nm).forEach((id) => {
+      const el = $('#aff_' + id); if (!el) return;
+      const R = estReach(rows, id), idle = id === 'hours' && d.flash === 1;
+      el.innerHTML = !R.direct.length ? '<span class="muted">в расчёт не входит</span>'
+        : `→ ${R.direct.map((k) => `<span class="ach">шаг ${k + 1} · ${esc(rows[k].short)}</span>`).join('')}${R.down.length ? `<span>потом шаги ${R.down.map((k) => k + 1).join(', ')}</span>` : ''}${idle ? '<span class="later">при пике ×1 ничего не меняет</span>' : ''}`;
+    });
+    const vals = rows.map(val), chg = (k) => estPrev && Math.abs(estPrev[k] - vals[k]) > 1e-9 * Math.max(1, Math.abs(vals[k]));
+    $('#estOut').innerHTML = `<h4 class="grp first">3. Расчёт по шагам</h4><div class="csteps">${rows.map((r, k) => {
+      const base = rowsNow[k].v, scnDiff = Math.abs(base - val(r)) > 1e-9 * Math.max(1, base);
+      return `<div class="cstep" data-row="${k}"><div class="ch"><span class="cn">${k + 1}</span><b>${esc(r.label)}</b><span class="cv ${chg(k) ? 'chg' : ''}">${fmt(val(r))}${r.peak ? '/с' : ''}</span></div>
+        <div class="calc">${esc(r.calc(d, st.est, fmt))}</div>
+        <p class="cwhy">${esc(r.why)}</p>
+        <div class="cfoot"><span>из: ${r.uses.map((u) => `<span class="cin">${esc(nm[u])}</span>`).join('')}${r.from.map((x) => `<span class="cin st">шаг ${x + 1}</span>`).join('')}</span>
+          <span class="cto">${(r.flows || []).map(dot).join('')}→ ${esc(r.to)}</span>${scnDiff ? `<span class="cnow">без сценария было бы ${fmt(base)}${r.peak ? '/с' : ''}</span>` : ''}</div></div>`;
+    }).join('')}</div>
+      <div class="tomap"><h4 class="grp first">4. Что уходит на карту</h4><div class="tm">${L.flows.map((f) => { const k = rows.findIndex((r) => (r.flows || []).includes(f.id)); return k < 0 ? '' : `<div>${dot(f.id)}<span>${esc(f.label)}</span><b>${fmt(vals[k])}/с</b><small>шаг ${k + 1}</small></div>`; }).join('')}</div>
+      <div class="w info">${esc(L.estimate.conclusion(d))}</div></div>`;
     estPrev = vals;
+    $$('#estOut .cstep').forEach((el) => {
+      el.addEventListener('pointerenter', () => estHighlight(null, +el.dataset.row));
+      el.addEventListener('pointerleave', () => estHighlight(null));
+    });
     estHighlight(estHl);
   }
   function bindEst() {
