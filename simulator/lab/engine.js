@@ -47,6 +47,20 @@
       { id: 'near', label: 'Локальный кэш в сервисе (L1)', value: 'off',
         opts: [{ v: 'off', label: 'Нет' }, { v: 'on', label: 'Да', note: 'Каждая копия сервиса держит горячие ключи у себя в памяти на 1–5 с (Caffeine, near cache). До общего кэша доходит около 40% чтений, а горячий ключ почти целиком читается локально. Цена: копии сервиса могут отставать друг от друга на этот TTL.' }] },
     ],
+    cell: [
+      { id: 'cells', label: 'Ячеек', opts: [1, 2, 4, 8, 16, 32], value: 4,
+        hint: 'Сколько полных копий системы. Роутер по ключу (регион или hotel_id) отправляет пользователя в его ячейку, и каждая ячейка получает 1/N трафика. Ячейки ничего не делят между собой, поэтому сбой одной задевает только 1/N пользователей.' },
+    ],
+    admit: [
+      { id: 'admit', label: 'Пускать в систему', value: 100000,
+        opts: [10000, 50000, 100000, 300000, 1000000].map((v) => ({ v, label: v >= 1e6 ? v / 1e6 + ' млн/с' : v / 1000 + ' тыс/с' })),
+        hint: 'Сколько запросов воронки брони (доступность, бронь, оплата) в секунду пускать внутрь. Остальные ждут в очереди. Ставь чуть ниже того, что держит самое слабое место.' },
+    ],
+    gw: [
+      { id: 'shed', label: 'Load shedding', value: 'off',
+        opts: [{ v: 'off', label: 'Нет', note: 'Перегруженный сервис копит очередь: растёт задержка у всех, и бронь тонет вместе с просмотрами.' },
+          { v: 'on', label: 'Да', note: 'Перегруженный сервис сразу отвечает 503 на лишние запросы, начиная с менее важных. Бронь и оплата получают мощность первыми, просмотры режутся. Очереди нет, задержка не растёт.' }] },
+    ],
     lb: [
       { id: 'layer', label: 'Уровень', value: 'l4',
         opts: [{ v: 'l4', label: 'L4 (TCP)', note: 'Смотрит только IP и порт, TLS не расшифровывает. Очень быстрый и дешёвый, держит миллионы соединений, но не видит URL и не может разводить запросы по путям.' },
@@ -66,6 +80,8 @@
     rabbit: () => [1, 2, 4, 8].map((queues) => ({ queues, w: queues })),
     kv: () => [1, 3, 6, 12, 24, 48].flatMap((shards) => [0, 1, 2].flatMap((replicas) => ['off', 'on'].map((near) => ({ shards, replicas, near, w: shards * (1 + replicas) + (near === 'on' ? 60 : 0) })))),
   };
+  // absorb бывает функцией от оценки и настроек: доля, которую забирает виртуальная очередь, зависит от потока.
+  const absorbOf = (def, d, cfg) => (typeof def.absorb === 'function' ? def.absorb(d, cfg || tuneOf(def)) : def.absorb) || {};
   const optsOf = (f, def) => (typeof f.opts === 'function' ? f.opts(def) : f.opts) || [];
   function tuneOf(def, cfg) {
     const out = {};
@@ -92,36 +108,45 @@
       // Нагрузку применяем в конце: недостроенный обязательный поток всё равно виден на карте,
       // а недостроенный необязательный (например, Kafka без потребителей) ничего не нагружает.
       const ops = [];
-      const touch = (n, p) => ops.push(() => { const l = r.rate * p; r.steps.push({ id: n.id }); n.load += l; if (f.write) n.wload += l; n.flows[f.id] = (n.flows[f.id] || 0) + l; r.path.push({ id: n.id, p }); });
-      const edge = (a, b, p) => ops.push(() => { const k = a + '>' + b; (edgeLoad[k] = edgeLoad[k] || {})[f.id] = r.rate * p; r.steps.push({ k, v: r.rate * p }); });
+      // p: доля потока, дошедшая сюда (для задержки); s: делитель ячеек, он уменьшает нагрузку, но не задержку.
+      const touch = (n, p, s = 1) => ops.push(() => { const l = r.rate * p * s; r.steps.push({ id: n.id }); n.load += l; if (f.write) n.wload += l; n.flows[f.id] = (n.flows[f.id] || 0) + l; r.path.push({ id: n.id, p }); });
+      const edge = (a, b, p, s = 1) => ops.push(() => { const k = a + '>' + b; (edgeLoad[k] = edgeLoad[k] || {})[f.id] = r.rate * p * s; r.steps.push({ k, v: r.rate * p * s }); });
       let cur = Object.values(nodes).find((n) => has(f.chain[0], n.type));
       if (!cur) { r.ok = false; r.missing = [null, f.chain[0]]; return r; }
-      let p = 1;
+      let p = 1, sc = 1;
       const used = new Set();
       touch(cur, p);
       for (let i = 1; i < f.chain.length; i++) {
         let nextId = out[cur.id].find((id) => has(f.chain[i], nodes[id].type));
-        // Прозрачный блок (via: балансировщик) стоит между шагами цепочки: поток проходит через него.
-        const via = !nextId && out[cur.id].find((id) => nodes[id].def.via);
-        if (via) nextId = out[via].find((id) => has(f.chain[i], nodes[id].type));
-        if (!nextId) { r.ok = false; r.missing = [via ? nodes[via].type : cur.type, f.chain[i]]; break; }
+        // Прозрачные блоки (via: роутер ячеек, балансировщик) стоят между шагами цепочки, их может быть несколько подряд.
+        const vias = [];
+        for (let at = cur.id, v; !nextId && (v = out[at].find((id) => nodes[id].def.via && !vias.includes(id))); at = v) {
+          vias.push(v); nextId = out[v].find((id) => has(f.chain[i], nodes[id].type));
+        }
+        if (!nextId) { r.ok = false; r.missing = [vias.length ? nodes[vias[vias.length - 1]].type : cur.type, f.chain[i]]; break; }
         const nx = nodes[nextId];
         // Порядок обращения к кэшам задаёт не порядок стрелок, а скорость: сначала самый быстрый (L1), потом остальные.
         out[cur.id].slice().sort((x, y) => (nodes[x].def.lat || 0) - (nodes[y].def.lat || 0) || (x < y ? -1 : 1)).forEach((id) => {
-          const a = nodes[id], h = a.def.absorb && a.def.absorb[f.id];
+          const a = nodes[id], h = absorbOf(a.def, d, a.cfg)[f.id];
           if (!h || used.has(id) || (a.def.at === 'db' && !nx.def.db)) return;
-          used.add(id); edge(cur.id, id, p); touch(a, p); p *= 1 - h;
+          used.add(id); edge(cur.id, id, p, sc); touch(a, p, sc); p *= 1 - h;
           if (a.def.cache) r.cached = true;
         });
-        if (via) { edge(cur.id, via, p); touch(nodes[via], p); cur = nodes[via]; }
-        edge(cur.id, nextId, p);
-        touch(nx, p);
+        vias.forEach((v) => { edge(cur.id, v, p, sc); touch(nodes[v], p, sc); cur = nodes[v]; if (cur.def.tune === 'cell') sc /= cur.cfg.cells; });
+        edge(cur.id, nextId, p, sc);
+        touch(nx, p, sc);
         cur = nx;
       }
       if (r.ok || !r.optional) ops.forEach((op) => op());
       return r;
     });
 
+    // Всё, что за роутером ячеек, показано для одной ячейки, а стоит N раз.
+    Object.values(nodes).filter((c) => c.def.tune === 'cell').forEach((c) => {
+      const seen = new Set(), todo = out[c.id].slice();
+      while (todo.length) { const id = todo.pop(); if (seen.has(id)) continue; seen.add(id); nodes[id].cells = c.cfg.cells; todo.push(...out[id]); }
+    });
+    const shed = Object.values(nodes).some((n) => n.def.tune === 'gw' && n.cfg.shed === 'on');
     const ctx = { d, deep, stage, graph, nodes, flows, out, cx: 0, cost: 0, metrics: {}, warnings: [] };
     ctx.warn = (lvl, text) => ctx.warnings.push({ lvl, text });
     const names = (spec) => [].concat(spec).map((t) => lab.blocks[t].name).join(' или ');
@@ -149,6 +174,7 @@
       ctx.cx += def.cx || 0;
       n.rep = 1; n.util = 0; n.q = 1;
       if (!def.cap) return;
+      const cost0 = ctx.cost;
       const cap = def.cap * n.capMult, c = n.cfg, W = n.wload, Rd = n.load - n.wload;
       if (def.tune === 'sql') {
         // Размер задаёт ученик. Запись идёт только в primary своего шарда, чтения делятся между primary и репликами.
@@ -232,11 +258,13 @@
         if (n.lbBy) n.explain.push(`Перед блоком балансировщик (${{ rr: 'round robin', least: 'least connections', hash: 'IP hash' }[n.lbBy.cfg.alg]}): копии загружены ${n.capMult < 1 ? `неровно, полезно ${Math.round(n.capMult * 100)}% их мощности` : 'ровно'}.`);
         if (P) n.explain.push(`Читает из Kafka: в группе потребителей не больше, чем партиций (${P}).`);
         if (n.consumerOf && n.consumerOf.def.tune === 'rabbit') n.explain.push(`Читает из RabbitMQ: потребители конкурируют за очередь, их число не ограничено. Prefetch ${n.consumerOf.cfg.prefetch} даёт ${Math.round(n.capMult * 100)}% скорости.`);
-        if (n.util > 0.9) { n.limit = P ? `потребителей не больше, чем партиций (${P})` : `предел модели: ${n.maxRep} копий`; n.need = def.overload || 'снять нагрузку раньше (кэш, CDN, rate limiter) или делить систему по регионам, в модели этого нет'; }
+        if (n.util > 0.9) { n.limit = P ? `потребителей не больше, чем партиций (${P})` : `предел модели: ${n.maxRep} копий`; n.need = def.overload || lab.overload || 'снять нагрузку раньше (кэш, CDN, rate limiter) или делить систему по регионам, в модели этого нет'; }
         ctx.cost += (def.cost || 0) * n.rep;
         if (n.rep > 1 && (def.db || def.cache)) ctx.cx += 0.3 * Math.log2(n.rep); // stateless-реплики почти бесплатны по сложности
       }
-      n.q = queue(n.util);
+      if (n.cells > 1) { ctx.cost = cost0 + (ctx.cost - cost0) * n.cells; n.explain.push(`Показана одна ячейка из ${n.cells}: в каждой своя такая же копия блока, платим за ${n.cells}.`); }
+      // С load shedding лишнее сразу получает отказ, очередь не копится.
+      n.q = queue(shed ? Math.min(n.util, 0.8) : n.util);
       // Фоновые узлы (только необязательные асинхронные потоки) не решают, выдерживает ли система запросы пользователя:
       // их перегрузка это растущая очередь и задержка доставки, а не отказ брони.
       n.bg = Object.keys(n.flows).length > 0 && Object.keys(n.flows).every((id) => flows.find((f) => f.id === id).optional);
@@ -251,11 +279,18 @@
     });
     // Сколько реально проходит по стрелке: перегруженный блок пропускает только свою мощность (1 / загрузка),
     // остальное отваливается по таймауту. Дальше по цепочке идёт уже урезанный поток, поэтому берём минимум по пути.
-    const edgePass = {};
+    // С load shedding перегруженный блок сначала отдаёт мощность записи (бронь, оплата), остальным что останется.
+    const edgePass = {}, wr = new Set(lab.flows.filter((f) => f.write).map((f) => f.id));
+    const passAt = (n, f) => {
+      if (!(n.util > 1)) return 1;
+      if (!shed) return 1 / n.util;
+      const C = n.load / n.util, Lc = Object.keys(n.flows).filter((id) => wr.has(id)).reduce((s, id) => s + n.flows[id], 0);
+      return wr.has(f.id) ? Math.min(1, C / Lc) : Math.max(0, C - Lc) / (n.load - Lc);
+    };
     flows.forEach((f) => {
       let pass = 1;
       f.steps.forEach((x) => {
-        if (x.id) { const u = nodes[x.id].util; if (u > 1) pass = Math.min(pass, 1 / u); }
+        if (x.id) pass = Math.min(pass, passAt(nodes[x.id], f));
         else (edgePass[x.k] = edgePass[x.k] || {})[f.id] = x.v * pass;
       });
       f.pass = pass;
@@ -278,7 +313,8 @@
     if (Object.values(nodes).some((o) => o !== n && o.type === n.type && Object.keys(o.flows).length))
       return { kind: 'dup', text: `Такой блок уже есть, и потоки идут через него. Второй ничего не получает: убери его.` };
     if (def.via) return { kind: 'off', text: `Не подключён: нужны стрелки ${(def.links || []).map(([a, b]) => (a === 'self' ? `${def.name} → ${names(b)}` : `${names(a)} → ${def.name}`)).join(' и ')}.` };
-    const absorbs = lab.flows.filter((f) => def.absorb && def.absorb[f.id]);
+    const ab = def.absorb && (typeof def.absorb === 'function' ? def.absorb({ k: 1, page: 1, tps: 1, view: 1 }, Object.assign(tuneOf(def), { admit: 0 })) : def.absorb);
+    const absorbs = lab.flows.filter((f) => ab && ab[f.id]);
     if (absorbs.length) {
       const from = (def.links || []).filter(([a]) => a !== 'self').map(([a]) => names(a));
       return { kind: 'off', text: `Не подключён: нужна стрелка ${from.join(' или ')} → ${def.name}. Тогда он заберёт часть потока «${absorbs.map((f) => f.label).join('», «')}».` };
@@ -392,17 +428,36 @@
       const r2 = run(g2);
       if (over(r2) < over(r) - 0.01) { changes.push(`+ ${lab.blocks[a.add].name}: ${a.why}`); g = g2; r = r2; }
     });
-    const maxed = new Set();
-    for (let i = 0; i < 20 && r.m.maxU > 0.9; i++) {
-      const hot = Object.values(r.nodes).filter((n) => n.def.tune && n.util > 0.9 && !maxed.has(n.id)).sort((a, b) => b.util - a.util)[0];
-      if (!hot) break;
-      const s = sizeFor(lab, g, inputs, deep, stage, hot.id), diff = TUNE[hot.def.tune].filter((f) => s.cfg[f.id] !== hot.cfg[f.id]);
-      maxed.add(hot.id);
-      if (!diff.length || over(s.r) >= over(r) - 0.01) continue;
-      changes.push(`${hot.def.name}: ${diff.map((f) => `${f.label.toLowerCase()} ${hot.cfg[f.id]} → ${s.cfg[f.id]}`).join(', ')}`);
-      g = { nodes: g.nodes.map((n) => (n.id === hot.id ? Object.assign({}, n, { cfg: s.cfg }) : n)), edges: g.edges };
-      r = s.r;
+    // Подбор размеров перегруженных БД, кэшей и брокеров.
+    const size = (g, r) => {
+      const maxed = new Set(), ch = [];
+      for (let i = 0; i < 20 && r.m.maxU > 0.9; i++) {
+        const hot = Object.values(r.nodes).filter((n) => SIZES[n.def.tune] && n.util > 0.9 && !maxed.has(n.id)).sort((a, b) => b.util - a.util)[0];
+        if (!hot) break;
+        const s = sizeFor(lab, g, inputs, deep, stage, hot.id), diff = TUNE[hot.def.tune].filter((f) => s.cfg[f.id] !== hot.cfg[f.id]);
+        maxed.add(hot.id);
+        if (!diff.length || over(s.r) >= over(r) - 0.01) continue;
+        ch.push(`${hot.def.name}: ${diff.map((f) => `${f.label.toLowerCase()} ${hot.cfg[f.id]} → ${s.cfg[f.id]}`).join(', ')}`);
+        g = { nodes: g.nodes.map((n) => (n.id === hot.id ? Object.assign({}, n, { cfg: s.cfg }) : n)), edges: g.edges };
+        r = s.r;
+      }
+      return { g, r, ch };
+    };
+    let sized = size(g, r);
+    // Последний шаг: если одна копия системы не вытягивает, делим её на ячейки (cell-based): наименьшее N,
+    // при котором после подбора размеров всё держится. Размеры подбираем заново уже для одной ячейки.
+    const cellT = lab.reference[stage].cells;
+    if (cellT && sized.r.m.maxU > 0.9) {
+      const add = addBlock(lab, g, cellT, lab.blocks[cellT].pos);
+      let best = null;
+      for (const N of optsOf(TUNE.cell[0]).filter((x) => x > 1)) {
+        const g2 = { nodes: add.graph.nodes.map((n) => (n.id === add.id ? Object.assign({}, n, { cfg: { cells: N } }) : n)), edges: add.graph.edges };
+        best = Object.assign(size(g2, run(g2)), { N });
+        if (best.r.m.maxU <= 0.9) break;
+      }
+      if (over(best.r) < over(sized.r) - 0.01) { best.ch.push(`+ ${lab.blocks[cellT].name}: ${best.N} ячеек, ${lab.blocks[cellT].adaptWhy}`); sized = best; }
     }
+    g = sized.g; r = sized.r; changes.push(...sized.ch);
     const blockers = Object.values(r.nodes).filter((n) => n.util > 0.9 && !n.bg).sort((a, b) => b.util - a.util).map((n) => ({ name: n.def.name, util: n.util, limit: n.limit, need: n.need }));
     return { graph: g, r, before, changes, original: !changes.length, ok: r.m.maxU <= 0.9, blockers };
   }

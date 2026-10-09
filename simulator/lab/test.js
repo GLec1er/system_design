@@ -130,13 +130,13 @@ assert(!E.canLink(L, 'resDB', 'rabbit'), 'CDC только через Kafka');
   const g = ref('base'); const a = E.addBlock(L, g, t, [0, 0]).graph;
   assert(E.analyze(L, a, est, x100, 'base').nodes.hotelDB.load < E.analyze(L, g, est, x100, 'base').nodes.hotelDB.load * 0.3, t + ' разгружает Hotel DB');
 });
-// эталон: при книжной нагрузке оригинал, под ×100 адаптация выдерживает, под ×1000×20 нет и объясняет почему
+// эталон: при книжной нагрузке оригинал, под ×100 адаптация выдерживает, под ×1000×20 нужны ячейки
 let ad = E.adapt(L, 'base', est, deep0);
 assert(ad.original && ad.ok, 'книжная нагрузка: оригинал');
 ad = E.adapt(L, 'base', est, x100);
 assert(!ad.original && ad.ok && ad.changes.some((c) => /Кэш/.test(c)), 'адаптация под ×100: ' + ad.changes.join('; '));
 ad = E.adapt(L, 'deep', est, huge);
-assert(!ad.ok && ad.blockers.length && ad.blockers[0].need, 'под ×1000×20 эталон не вытягивает и говорит почему');
+assert(ad.ok && ad.changes.some((c) => /Ячейки/.test(c)), 'под ×1000×20 эталон делит систему на ячейки: ' + ad.changes.join('; ') + ' | ' + ad.blockers.map((b) => b.name).join(', '));
 assert(ad.changes.some((c) => /CDN: страницы целиком/.test(c)), 'эталон кэширует страницу отеля целиком на CDN: ' + ad.changes.join('; '));
 // ×300 на 24 ч при росте ×5: без full-page CDN Hotel Service упирается в 200 копий, с ним эталон выдерживает
 const x300 = { params: Object.assign({}, deep0.params, { flash: 300, hours: 24, growth: 5 }), choices: good.choices };
@@ -178,5 +178,37 @@ assert(ca.nodes.c1.load === cb.nodes.c1.load && ca.nodes.c1.load > ca.nodes.c2.l
   const need = Object.values(hot.edgeLoad[k]).reduce((a, b) => a + b, 0), got = Object.values(hot.edgePass[k]).reduce((a, b) => a + b, 0);
   assert(gw.util > 1, 'Hotel Service перегружен');
   assert(got < need && Math.abs(Object.values(hot.edgePass['client>gateway']).reduce((a, b) => a + b, 0) - Object.values(hot.edgeLoad['client>gateway']).reduce((a, b) => a + b, 0)) < 1e-6, 'до перегрузки проходит всё, после меньше ' + gw.util);
+}
+// пять решений для пика: ячейки, виртуальная очередь, асинхронная бронь, инвентарь в Redis, load shedding
+{
+  const x1000 = { params: Object.assign({}, deep0.params, { flash: 1000, hours: 24, growth: 20 }), choices: good.choices };
+  const short = { params: Object.assign({}, x1000.params, { hours: 1 }), choices: good.choices };
+  const run = (g2, sc) => E.analyze(L, g2, est, sc || x1000, 'deep');
+  const base = ref('deep'), r0 = run(base);
+  // ячейки: роутер встаёт перед Gateway, за ним нагрузка делится на N, а стоимость растёт; с балансировщиком получается цепочка
+  let c = E.addBlock(L, base, 'cells', [0, 0]);
+  c.graph.nodes.find((n) => n.id === c.id).cfg = { cells: 8 };
+  let r = run(c.graph);
+  assert(r.m.routed && Math.abs(r.nodes.reservation.load * 8 - r0.nodes.reservation.load) < 1 && r.nodes.reservation.cells === 8, 'ячейки делят нагрузку на 8');
+  const lbg = E.addBlock(L, c.graph, 'lb', [0, 0]).graph;
+  assert(run(lbg).m.routed && lbg.edges.some((e) => e.from === c.id && e.to === 'lb') && !lbg.edges.some((e) => e.from === c.id && e.to === 'gateway'), 'клиент → ячейки → балансировщик → Gateway');
+  // виртуальная очередь пускает внутрь не больше порога, просмотры не трогает
+  const w = E.addBlock(L, base, 'waitroom', [0, 0]).graph; w.nodes.find((n) => n.type === 'waitroom').cfg = { admit: 50000 };
+  r = run(w);
+  const fl = r.nodes.reservation.flows;
+  assert(Math.abs(fl.search + fl.book + fl.pay - 50000) < 1 && r.nodes.hotel.load === r0.nodes.hotel.load, 'очередь пускает 50 тыс/с воронки брони');
+  assert(r.warnings.some((x) => /очередь лишь откладывает/.test(x.text)), 'при пике 24 ч очередь не спасает');
+  // асинхронная бронь помогает короткому пику и не помогает суточному
+  const aq = E.addBlock(L, base, 'bookQ', [0, 0]).graph;
+  assert(run(aq, short).nodes.resDB.wload < run(base, short).nodes.resDB.wload * 0.5, 'асинхронная бронь сглаживает короткий пик');
+  assert(Math.abs(run(aq).nodes.resDB.wload - r0.nodes.resDB.wload) < 1e-6, 'суточный пик она не сглаживает');
+  // инвентарь в Redis: записей брони в БД в 10 раз меньше
+  const iv = run(E.addBlock(L, base, 'invRedis', [0, 0]).graph);
+  assert(Math.abs(r0.nodes.resDB.wload - iv.nodes.resDB.wload - r0.nodes.resDB.flows.book * 0.9) < 1, 'инвентарь в Redis: записей брони в БД в 10 раз меньше');
+  // load shedding: при перегрузке бронь получает мощность первой, доступность режется
+  const sh = ref('deep'); sh.nodes.find((n) => n.id === 'gateway').cfg = { shed: 'on' };
+  const rs = run(sh), pass = (rr, id) => rr.flows.find((f) => f.id === id).pass;
+  assert(r0.nodes.reservation.util > 1 && pass(rs, 'book') > pass(r0, 'book') && pass(rs, 'search') < pass(rs, 'book'), 'shedding: бронь проходит лучше, доступность хуже');
+  assert(rs.flows.find((f) => f.id === 'book').lat < r0.flows.find((f) => f.id === 'book').lat, 'shedding: очередь не копится, задержка ниже');
 }
 console.log('audit ok');

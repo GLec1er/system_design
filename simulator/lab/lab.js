@@ -606,6 +606,7 @@
     const c = n.cfg;
     if (b.tune === 'sql' || b.tune === 'kv') return `<span class="pill" title="Шарды">${c.shards} шард.</span>${n.cluster && n.cluster.replicas ? `<span class="pill" title="Реплики для чтения">+${n.cluster.replicas} репл.</span>` : ''}${c.near === 'on' ? '<span class="pill" title="Локальный кэш в сервисе">L1</span>' : ''}`;
     if (b.tune === 'kafka') return `<span class="pill" title="Брокеры, партиции и репликация">${c.brokers} брок. · ${c.partitions} парт. · RF${n.cluster.rf}</span>`;
+    if (b.tune === 'cell') return `<span class="pill" title="Полных копий системы">${c.cells} яч.</span><span class="pill" title="Копий роутера">×${n.rep}</span>`;
     if (b.tune === 'rabbit') return `<span class="pill" title="Очереди и их тип">${c.queues} очер. · ${c.qtype}</span>`;
     return `<span class="pill" title="${esc(b.repLabel || 'реплик')}, подбираются сами">×${n.rep}</span>`;
   }
@@ -841,7 +842,7 @@
     }).join('');
     prevKpi = kp;
 
-    $('#legend').innerHTML = r.flows.filter((f) => !f.optional || f.ok).map((f) => `<button class="lg ${st.show === f.id ? 'on' : ''} ${f.ok ? '' : 'off'}" data-f="${f.id}" title="Показать только этот поток"><i style="background:${f.color}"></i>${esc(f.label)}<span>${fmt(f.rate)} rps · ${f.ok ? ms(f.lat) : 'не доходит'}</span></button>`).join('');
+    $('#legend').innerHTML = r.flows.filter((f) => !f.optional || f.ok).map((f) => `<button class="lg ${st.show === f.id ? 'on' : ''} ${f.ok ? '' : 'off'}" data-f="${f.id}" title="Показать только этот поток"><i style="background:${f.color}"></i>${esc(f.label)}<span>${fmt(f.rate)} rps · ${f.ok ? ms(f.lat) : 'не доходит'}${f.ok && f.pass < 0.995 ? ` · <b class="bad">проходит ${pct(f.pass)}</b>` : ''}</span></button>`).join('');
     $$('#legend .lg').forEach((b) => (b.onclick = () => { st.show = st.show === b.dataset.f ? null : b.dataset.f; save(); renderPanels(last); drawEdges(); }));
 
     $$('[data-pset]').forEach((box) => {
