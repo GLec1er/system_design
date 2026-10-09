@@ -266,7 +266,7 @@
   // ---------- 3. API и данные ----------
   // JSON с подсветкой: ключи, строки, числа.
   const jsonHtml = (o) => esc(JSON.stringify(o, null, 2)).replace(/(&quot;(?:[^&]|&(?!quot;))*?&quot;)(\s*:)?|\b(-?\d+(?:\.\d+)?|true|false|null)\b/g, (m, str, colon, lit) => str ? `<span class="${colon ? 'jk' : 'js'}">${str}</span>${colon || ''}` : `<span class="jn">${lit}</span>`);
-  const sqlHtml = (q) => esc(q).replace(/(--[^\n]*)/g, '<span class="jc">$1</span>').replace(/\b(BEGIN|COMMIT|ROLLBACK|UPDATE|SET|WHERE|AND|INSERT INTO|VALUES|IN|SELECT|FROM)\b/g, '<span class="jk">$1</span>');
+  const sqlHtml = (q) => esc(q).replace(/(--[^\n]*)/g, '<span class="jc">$1</span>').replace(/\b(BEGIN|COMMIT|ROLLBACK|UPDATE|SET|WHERE|AND|INSERT INTO|VALUES|IN|SELECT|FROM|ON CONFLICT|DO NOTHING)\b/g, '<span class="jk">$1</span>');
   function apiView() {
     const A = L.api, fc = Object.fromEntries(L.flows.map((f) => [f.id, f])), byId = Object.fromEntries(A.endpoints.map((e) => [e.id, e]));
     const path = (p) => esc(p).replace(/\{(\w+)\}/g, '<i>{$1}</i>');
@@ -297,16 +297,41 @@
       <section class="card"><h4 class="grp first">Общие правила</h4><dl class="conv">${A.conventions.map((c) => `<div><dt>${esc(c.k)}</dt><dd>${esc(c.v)}</dd></div>`).join('')}</dl></section>
       <section class="card"><h4 class="grp first">Путь гостя по ручкам</h4><ol class="jour">${A.journey.map((j) => `<li>${j.ep ? `<button class="jbtn" data-ep="${j.ep}">${ep(byId[j.ep])}</button>` : '<span class="mth m-int">внутри</span>'}<span>${esc(j.text)}</span></li>`).join('')}</ol></section>
       <section class="card"><h4 class="grp first">Эндпоинты</h4><p class="muted small">Нажми на ручку, чтобы раскрыть контракт. <b class="req">*</b> обязательный параметр. Цветная метка показывает поток на карте, который создаёт эта ручка.</p><div class="eps">${A.endpoints.map(epHtml).join('')}</div></section>
-      <section class="card"><h4 class="grp first">Таблицы</h4><div class="schemas">${A.tables.map((t) => `<div class="schema" id="tbl-${esc(t.name)}"><div class="sh2"><code>${esc(t.name)}</code><span class="muted small">${esc(t.rows || '')}</span></div><p>${esc(t.why)}</p>
-        ${tbl(['Колонка', 'Тип', 'Ограничение', ''], t.cols.map(([n, ty, c, d]) => `<tr><td><code>${esc(n)}</code></td><td class="muted">${esc(ty)}</td><td>${c ? `<span class="cons">${esc(c)}</span>` : ''}</td><td>${esc(d)}</td></tr>`))}
+      <section class="card"><h4 class="grp first">Схема данных</h4><p class="muted small">Таблицы сгруппированы по базам: у каждого сервиса своя БД, как на карте. 🔑 первичный ключ. Сплошная стрелка это FOREIGN KEY внутри одной БД. Пунктир это связь между разными БД: БД её не проверяет, за неё отвечает код сервиса. Нажми на таблицу, чтобы открыть подробности.</p>
+        <div class="er" id="er"><svg class="erl" id="erl" aria-hidden="true"></svg>${A.dbs.map((d) => `<div class="erdb"><div class="erh"><b>${esc(d.name)}</b><small>${esc(d.owner)}</small></div>${A.tables.filter((t) => t.db === d.id).map((t) => `<button class="ert" data-tbl="${esc(t.name)}" id="er-${esc(t.name)}"><b>${esc(t.name)}</b>${t.cols.map((c) => `<span class="erc ${c.k ? 'key' : ''}" data-col="${esc(t.name)}.${esc(c.n)}"><i>${/PK/.test(c.k || '') ? '🔑' : ''}</i>${esc(c.n)}<em>${esc(c.t)}</em>${c.ref ? `<u class="${c.ref.soft ? 'soft' : ''}">→ ${esc(c.ref.t)}</u>` : ''}</span>`).join('')}</button>`).join('')}</div>`).join('')}</div></section>
+      <section class="card"><h4 class="grp first">Какая ручка какие таблицы трогает</h4><p class="muted small">👁 читает, ✏️ пишет. Нажми на ручку или таблицу, чтобы перейти к ней.</p>
+        <div class="tscroll"><table class="tbl mx"><thead><tr><th>Ручка</th>${A.tables.map((t) => `<th><button class="lnk" data-tbl="${esc(t.name)}">${esc(t.name)}</button></th>`).join('')}</tr></thead><tbody>
+        ${A.endpoints.map((e) => `<tr><td><button class="lnk" data-ep="${e.id}">${ep(e)}</button></td>${A.tables.map((t) => { const w = e.writes.includes(t.name), r = e.reads.includes(t.name); return `<td class="${w ? 'mw' : r ? 'mr' : ''}">${w ? '✏️' : r ? '👁' : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div></section>
+      <section class="card"><h4 class="grp first">Таблицы подробно</h4><div class="schemas">${A.tables.map((t) => { const db = A.dbs.find((d) => d.id === t.db) || {}; return `<div class="schema" id="tbl-${esc(t.name)}"><div class="sh2"><code>${esc(t.name)}</code><span class="dbtag">${esc(db.name || '')}</span><span class="muted small">${esc(t.rows || '')}</span></div><p>${esc(t.why)}</p>
+        ${tbl(['Колонка', 'Тип', 'Ключ и ограничения', 'Смысл'], t.cols.map((c) => `<tr><td><code>${esc(c.n)}</code></td><td class="muted">${esc(c.t)}</td><td>${(c.k || '').split(' ').filter(Boolean).map((k) => `<span class="kb ${k.toLowerCase()}">${k}</span>`).join('')}${c.c ? `<span class="cons">${esc(c.c)}</span>` : ''}${c.ref ? `<button class="lnk ref ${c.ref.soft ? 'soft' : ''}" data-tbl="${esc(c.ref.t)}" title="${c.ref.soft ? 'Другая БД: связь держит код, а не FOREIGN KEY' : 'FOREIGN KEY'}">→ ${esc(c.ref.t)}.${esc(c.ref.c)}</button>` : ''}</td><td>${esc(c.d)}</td></tr>`))}
         ${t.extra ? `<ul class="small">${t.extra.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-        <div class="rw">${t.name.split(', ').flatMap(usage).filter(([e, m], i, a) => a.findIndex(([e2, m2]) => e2 === e && m2 === m) === i).map(([e, m]) => `<button class="tchip ${m}" data-ep="${e.id}">${m === 'w' ? '✏️' : '👁'} ${e.method} ${esc(e.path)}</button>`).join('')}</div></div>`).join('')}</div></section>
+        ${(() => { const back = A.tables.flatMap((o) => o.cols.filter((c) => c.ref && c.ref.t === t.name).map((c) => [o, c])); return back.length ? `<p class="small muted">На неё ссылаются: ${back.map(([o, c]) => `<button class="lnk ${c.ref.soft ? 'soft' : ''}" data-tbl="${esc(o.name)}">${esc(o.name)}.${esc(c.n)}</button>`).join(', ')}</p>` : ''; })()}
+        <div class="rw">${usage(t.name).filter(([e, m]) => !(m === 'r' && e.writes.includes(t.name))).map(([e, m]) => `<button class="tchip ${m}" data-ep="${e.id}">${m === 'w' ? '✏️' : '👁'} ${e.method} ${esc(e.path)}</button>`).join('') || '<span class="muted small">Ни одна ручка главы не трогает её напрямую.</span>'}</div></div>`; }).join('')}</div></section>
+      ${A.more ? `<section class="card"><h4 class="grp first">Что можно добавить</h4><p>${esc(A.more.intro)}</p><div class="mores"><div><h5>Таблицы</h5>${A.more.tables.map((t) => `<div class="mo"><code>${esc(t.name)}</code><p>${esc(t.when)}</p><small class="muted">${esc(t.cols)}</small></div>`).join('')}</div>
+        <div><h5>Ручки</h5>${A.more.endpoints.map((t) => `<div class="mo"><code>${esc(t.ep)}</code><p>${esc(t.when)}</p></div>`).join('')}</div></div></section>` : ''}
       <section class="card"><h4 class="grp first">Проверь себя</h4><div class="quiz">${A.quiz.map((q) => `<details><summary>${esc(q.q)}</summary><p>${esc(q.a)}</p></details>`).join('')}</div></section>`;
   }
   function bindApi() {
     const jump = (el) => { if (!el) return; if (el.tagName === 'DETAILS') el.open = true; el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); };
     $$('[data-ep]').forEach((b) => (b.onclick = () => jump(document.getElementById('ep-' + b.dataset.ep))));
     $$('[data-tbl]').forEach((b) => (b.onclick = () => jump(document.getElementById('tbl-' + b.dataset.tbl))));
+    erLines();
+    if (window.ResizeObserver && $('#er')) new ResizeObserver(erLines).observe($('#er'));
+  }
+  // Стрелки связей на схеме: от колонки со ссылкой к колонке, на которую она ссылается.
+  function erLines() {
+    const er = $('#er'), svg = $('#erl');
+    if (!er || !svg) return;
+    const box = er.getBoundingClientRect(), R = (el) => { const r = el.getBoundingClientRect(); return { l: r.left - box.left, r: r.right - box.left, y: r.top - box.top + r.height / 2 }; };
+    svg.setAttribute('width', er.scrollWidth); svg.setAttribute('height', er.scrollHeight);
+    svg.innerHTML = '<defs><marker id="erArr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="currentColor"/></marker></defs>' + L.api.tables.flatMap((t) => t.cols.filter((c) => c.ref).map((c) => {
+      const a = er.querySelector(`[data-col="${t.name}.${c.n}"]`), b = er.querySelector(`[data-col="${c.ref.t}.${c.ref.c}"]`);
+      if (!a || !b) return '';
+      const A = R(a), B = R(b), same = Math.abs(A.l - B.l) < 40;
+      // одна колонка БД: петля слева; иначе от ближнего края к ближнему краю
+      const [x1, x2, c1, c2] = same ? [A.l, B.l, A.l - 28, B.l - 28] : A.l > B.l ? [A.l, B.r, A.l - 40, B.r + 40] : [A.r, B.l, A.r + 40, B.l - 40];
+      return `<path class="${c.ref.soft ? 'soft' : ''}" d="M${x1},${A.y} C${c1},${A.y} ${c2},${B.y} ${x2},${B.y}" marker-end="url(#erArr)"/>`;
+    })).join('');
   }
 
   // ---------- 4–5. Карта ----------
