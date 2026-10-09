@@ -39,8 +39,18 @@
       { id: 'prefetch', label: 'Prefetch', opts: [1, 10, 100], value: 10,
         hint: 'Сколько неподтверждённых сообщений потребитель берёт за раз. 1: честно, но потребитель простаивает в ожидании. 100: быстро, но сообщения копятся у медленного потребителя.' },
     ],
+    lb: [
+      { id: 'layer', label: 'Уровень', value: 'l4',
+        opts: [{ v: 'l4', label: 'L4 (TCP)', note: 'Смотрит только IP и порт, TLS не расшифровывает. Очень быстрый и дешёвый, держит миллионы соединений, но не видит URL и не может разводить запросы по путям.' },
+          { v: 'l7', label: 'L7 (HTTP)', note: 'Разбирает HTTP: видит путь, заголовки и cookie, сам снимает TLS, может слать /static и /api в разные пулы и повторять запрос. Дороже по CPU: в модели в 2,5 раза меньше запросов на копию и +1 мс.' }] },
+      { id: 'alg', label: 'Алгоритм', value: 'rr',
+        opts: [{ v: 'rr', label: 'Round robin', note: 'По кругу: 1, 2, 3, 1, 2, 3. Просто, но не учитывает, что бронь тяжелее просмотра: часть копий за ним перегружена, полезно около 90% их мощности.' },
+          { v: 'least', label: 'Least connections', note: 'Шлёт туда, где меньше открытых запросов. Сам выравнивает долгие и короткие запросы: копии за ним загружены ровно.' },
+          { v: 'hash', label: 'IP hash', note: 'Один клиент всегда попадает в одну копию (sticky). Нужно, если копия хранит сессию. Но клиенты за одним NAT (офис, мобильный оператор) садятся на одну копию: полезно около 80% мощности.' }] },
+    ],
   };
   const PREFETCH = { 1: 0.6, 10: 1, 100: 1.1 };
+  const LBALG = { rr: 0.9, least: 1, hash: 0.8 };
   // Шаги размеров для подбора под нагрузку (от дешёвых к дорогим).
   const SIZES = {
     sql: () => [1, 2, 4, 8, 16].flatMap((shards) => [0, 1, 2, 3, 5].map((replicas) => ({ shards, replicas, w: shards * (1 + 0.6 * replicas) }))),
@@ -81,8 +91,11 @@
       const used = new Set();
       touch(cur, p);
       for (let i = 1; i < f.chain.length; i++) {
-        const nextId = out[cur.id].find((id) => has(f.chain[i], nodes[id].type));
-        if (!nextId) { r.ok = false; r.missing = [cur.type, f.chain[i]]; break; }
+        let nextId = out[cur.id].find((id) => has(f.chain[i], nodes[id].type));
+        // Прозрачный блок (via: балансировщик) стоит между шагами цепочки: поток проходит через него.
+        const via = !nextId && out[cur.id].find((id) => nodes[id].def.via);
+        if (via) nextId = out[via].find((id) => has(f.chain[i], nodes[id].type));
+        if (!nextId) { r.ok = false; r.missing = [via ? nodes[via].type : cur.type, f.chain[i]]; break; }
         const nx = nodes[nextId];
         // Порядок обращения к кэшам задаёт не порядок стрелок, а скорость: сначала самый быстрый (L1), потом остальные.
         out[cur.id].slice().sort((x, y) => (nodes[x].def.lat || 0) - (nodes[y].def.lat || 0) || (x < y ? -1 : 1)).forEach((id) => {
@@ -91,6 +104,7 @@
           used.add(id); edge(cur.id, id, p); touch(a, p); p *= 1 - h;
           if (a.def.cache) r.cached = true;
         });
+        if (via) { edge(cur.id, via, p); touch(nodes[via], p); cur = nodes[via]; }
         edge(cur.id, nextId, p);
         touch(nx, p);
         cur = nx;
@@ -113,7 +127,9 @@
       if (!nx || nx.def.db || nx.def.cache) return;
       if (b.def.tune === 'kafka') { nx.maxRep = Math.min(nx.maxRep, b.cfg.partitions); nx.consumerOf = b; }
       if (b.def.tune === 'rabbit') { nx.capMult = PREFETCH[b.cfg.prefetch] || 1; nx.consumerOf = b; }
+      if (b.def.tune === 'lb') { nx.capMult = LBALG[b.cfg.alg] || 1; nx.lbBy = b; }
     }));
+    Object.values(nodes).forEach((n) => { if (n.def.tune === 'lb' && n.cfg.layer === 'l7') { n.capMult = 0.4; n.latAdd = 1; } });
     if (lab.model) lab.model(ctx);
 
     Object.values(nodes).forEach((n) => { if (!Object.keys(n.flows).length) n.why = idleWhy(lab, nodes, flows, n); });
@@ -181,6 +197,8 @@
         n.util = n.load / n.capTotal;
         const P = n.consumerOf && n.consumerOf.def.tune === 'kafka' && n.consumerOf.cfg.partitions;
         n.explain = n.load ? [`${rps(n.load)} rps ÷ ${rps(cap)} rps на копию: копий ${n.rep}${n.want > n.rep ? `, а нужно ${n.want}` : ', загрузка около 70%'}.`] : [];
+        if (def.tune === 'lb') n.explain.push(n.cfg.layer === 'l7' ? 'L7 разбирает HTTP и снимает TLS: копия держит в 2,5 раза меньше запросов, чем L4, и добавляет 1 мс.' : 'L4 только пересылает TCP-соединения: копия держит очень много запросов.');
+        if (n.lbBy) n.explain.push(`Перед блоком балансировщик (${{ rr: 'round robin', least: 'least connections', hash: 'IP hash' }[n.lbBy.cfg.alg]}): копии загружены ${n.capMult < 1 ? `неровно, полезно ${Math.round(n.capMult * 100)}% их мощности` : 'ровно'}.`);
         if (P) n.explain.push(`Читает из Kafka: в группе потребителей не больше, чем партиций (${P}).`);
         if (n.consumerOf && n.consumerOf.def.tune === 'rabbit') n.explain.push(`Читает из RabbitMQ: потребители конкурируют за очередь, их число не ограничено. Prefetch ${n.consumerOf.cfg.prefetch} даёт ${Math.round(n.capMult * 100)}% скорости.`);
         if (n.util > 0.9) { n.limit = P ? `потребителей не больше, чем партиций (${P})` : `предел модели: ${n.maxRep} копий`; n.need = def.overload || 'снять нагрузку раньше (кэш, CDN, rate limiter) или делить систему по регионам, в модели этого нет'; }
@@ -217,6 +235,7 @@
     const def = n.def, name = (t) => lab.blocks[t].name, names = (spec) => [].concat(spec).map(name).join(' или ');
     if (Object.values(nodes).some((o) => o !== n && o.type === n.type && Object.keys(o.flows).length))
       return { kind: 'dup', text: `Такой блок уже есть, и потоки идут через него. Второй ничего не получает: убери его.` };
+    if (def.via) return { kind: 'off', text: `Не подключён: нужны стрелки ${(def.links || []).map(([a, b]) => (a === 'self' ? `${def.name} → ${names(b)}` : `${names(a)} → ${def.name}`)).join(' и ')}.` };
     const absorbs = lab.flows.filter((f) => def.absorb && def.absorb[f.id]);
     if (absorbs.length) {
       const from = (def.links || []).filter(([a]) => a !== 'self').map(([a]) => names(a));
@@ -346,7 +365,8 @@
     return { graph: g, r, before, changes, original: !changes.length, ok: r.m.maxU <= 0.9, blockers };
   }
 
-  const api = { analyze, addBlock, canLink, linkTargets, sizeFor, refGraph, adapt, TUNE, optsOf, tuneOf, TARGET };
+  const sizable = (t) => !!SIZES[t];
+  const api = { sizable, analyze, addBlock, canLink, linkTargets, sizeFor, refGraph, adapt, TUNE, optsOf, tuneOf, TARGET };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.LabEngine = api;
 })(typeof window !== 'undefined' ? window : globalThis);
