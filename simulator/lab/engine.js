@@ -339,7 +339,7 @@
         g.nodes.filter((n) => n.type === a.replace).forEach(({ id }) => {
           if (r.m.maxU <= 0.9) return;
           const g2 = { nodes: g.nodes.map((n) => (n.id === id ? Object.assign({}, n, { type: a.with }) : n)), edges: g.edges }, r2 = run(g2);
-          if (over(r2) < over(r) - 0.01) { const by = g.edges.filter((e) => e.to === id).map((e) => lab.blocks[g.nodes.find((n) => n.id === e.from).type].name).join(', ');
+          if (over(r2) < over(r) - 0.01) { const by = g.edges.filter((e) => e.to === id).map((e) => lab.blocks[g.nodes.find((n) => n.id === e.from).type]).filter((b) => b.cat === 'svc').map((b) => b.name).join(', ');
             changes.push(`${lab.blocks[a.replace].name}${by ? ` у ${by}` : ''} → ${lab.blocks[a.with].name}: ${a.why}`); g = g2; r = r2; }
         });
         return;

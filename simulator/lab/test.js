@@ -137,7 +137,10 @@ ad = E.adapt(L, 'base', est, x100);
 assert(!ad.original && ad.ok && ad.changes.some((c) => /Кэш/.test(c)), 'адаптация под ×100: ' + ad.changes.join('; '));
 ad = E.adapt(L, 'deep', est, huge);
 assert(!ad.ok && ad.blockers.length && ad.blockers[0].need, 'под ×1000×20 эталон не вытягивает и говорит почему');
-assert(ad.changes.some((c) => /Redis\) у Hotel Service → Memcached/.test(c)), 'эталон меняет упёршийся Redis на Memcached: ' + ad.changes.join('; '));
+assert(ad.changes.some((c) => /CDN: страницы целиком/.test(c)), 'эталон кэширует страницу отеля целиком на CDN: ' + ad.changes.join('; '));
+// ×300 на 24 ч при росте ×5: без full-page CDN Hotel Service упирается в 200 копий, с ним эталон выдерживает
+const x300 = { params: Object.assign({}, deep0.params, { flash: 300, hours: 24, growth: 5 }), choices: good.choices };
+assert(E.adapt(L, 'deep', est, x300).ok && E.adapt(L, 'base', est, x300).ok, '×300×5: эталон выдерживает');
 console.log('scenario ok:', E.adapt(L, 'base', est, x100).changes.join('; '), '|', ad.changes.join('; '), '| blockers:', ad.blockers.map((b) => b.name + ' ' + Math.round(b.util * 100) + '%').join(', '));
 
 // аудит: пустая карта не «выдерживает», недостроенная бронь не даёт бизнес-ошибок

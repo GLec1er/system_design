@@ -377,7 +377,6 @@
         <aside class="card pal-card pal-exp"><div class="palh"><b>🧪 Эксперименты</b><small>В книге их нет. Добавь и посмотри, что станет лучше, а что хуже.</small></div><div id="palExp"></div></aside>
       </div>
       ${deep ? '<h3 class="sec">Проблемы углубления</h3><div class="probs" id="probs"></div>' : ''}
-      <section class="card ai" id="ai"></section>
       <div class="below">
         <section class="card"><h3>Цели</h3><div id="goals"></div></section>
         <section class="card"><h3>Подсказки и предупреждения</h3><div class="warns" id="warns"></div></section>
@@ -406,7 +405,6 @@
       lastDpr = dpr;
     };
     bindBoard();
-    renderAi();
     if (step().stage === 'deep') renderProbs();
     prevKpi = null;
     update();
@@ -961,100 +959,6 @@
       const x = L.problems.flatMap((p) => p.params || []).find((q) => q.id === el.dataset.par);
       D.params[x.id] = +el.value; $('#out_' + x.id).textContent = fmt(+el.value) + ' ' + x.unit; save(); update();
     }));
-  }
-
-  // ---------- Разбор схемы от Claude ----------
-  // Страница статическая и без ключей: собираем запрос с картой и метриками, ученик отправляет его Claude,
-  // а ответ с JSON вставляет обратно, и предложения можно применить к карте.
-  let aiRes = null, aiErr = null;
-
-  function renderAi() {
-    const box = $('#ai');
-    const sug = aiRes && aiRes.suggestions.map((x, i) => `<article class="sug"><b>${esc(x.title)}</b><p>${esc(x.why)}</p>${x.tradeoff ? `<p class="muted">Чем платим: ${esc(x.tradeoff)}</p>` : ''}${(x.actions || []).length ? `<button class="btn sm" data-apply="${i}">Применить на карте</button>` : ''}</article>`).join('');
-    box.innerHTML = `<h3>🤖 Разбор от Claude</h3>
-      <p class="muted">1. Скопируй запрос: в нём твоя карта, метрики и решения. 2. Отправь его Claude. 3. Вставь ответ сюда: предложения можно применить к карте одной кнопкой.</p>
-      <div class="row-btns"><button class="btn primary" id="aiCopy">Скопировать запрос</button><a class="btn" href="https://claude.ai/new" target="_blank" rel="noopener">Открыть Claude ↗</a></div>
-      <textarea id="aiAns" rows="3" placeholder="Вставь сюда ответ Claude целиком"></textarea>
-      <button class="btn sm" id="aiRead">Разобрать ответ</button>
-      ${aiErr ? `<p class="aierr">${esc(aiErr)}</p>` : ''}
-      ${aiRes ? `<div class="aiout"><p class="verdict">${esc(aiRes.verdict)}</p>${(aiRes.issues || []).length ? `<ul>${aiRes.issues.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}<div class="sugs">${sug}</div></div>` : ''}`;
-    $('#aiCopy').onclick = async () => {
-      try { await navigator.clipboard.writeText(aiPrompt()); toast('Запрос скопирован. Вставь его в чат с Claude.'); }
-      catch (e) { $('#aiAns').value = aiPrompt(); $('#aiAns').select(); toast('Не удалось скопировать сам: запрос в поле ниже, скопируй его вручную.'); }
-    };
-    $('#aiRead').onclick = () => {
-      const t = $('#aiAns').value, a = t.indexOf('{'), b = t.lastIndexOf('}');
-      try { aiRes = JSON.parse(t.slice(a, b + 1)); aiErr = aiCheck(aiRes); if (aiErr) aiRes = null; }
-      catch (e) { aiRes = null; aiErr = 'Не нашёл в ответе JSON с предложениями. Вставь ответ Claude целиком.'; }
-      renderAi();
-    };
-    $$('[data-apply]').forEach((b) => (b.onclick = () => applyAi(aiRes.suggestions[+b.dataset.apply])));
-  }
-
-  // Ответ модели это внешние данные: проверяем форму целиком, прежде чем рисовать и применять.
-  function aiCheck(x) {
-    const str = (v) => typeof v === 'string', ids = new Set(st.graph.nodes.map((n) => n.id));
-    if (!x || typeof x !== 'object' || !str(x.verdict) || !Array.isArray(x.suggestions)) return 'В ответе нет полей verdict и suggestions.';
-    if (x.issues != null && !(Array.isArray(x.issues) && x.issues.every(str))) return 'Поле issues должно быть списком строк.';
-    for (const [i, sg] of x.suggestions.entries()) {
-      if (!sg || typeof sg !== 'object' || !str(sg.title) || !str(sg.why)) return `Предложение ${i + 1}: нужны строки title и why.`;
-      if (sg.tradeoff != null && !str(sg.tradeoff)) return `Предложение ${i + 1}: tradeoff должен быть строкой.`;
-      for (const a of sg.actions || []) {
-        if (!a || !['add', 'link', 'unlink', 'remove'].includes(a.op)) return `Предложение ${i + 1}: неизвестное действие ${a && a.op}.`;
-        if (a.op === 'add' && !L.blocks[a.type]) return `Предложение ${i + 1}: нет блока типа ${a.type}.`;
-        const ok = (v) => ids.has(v) || L.blocks[v];
-        if (a.op !== 'add' && (!ok(a.from) || (a.op !== 'remove' && !ok(a.to)))) return `Предложение ${i + 1}: ссылка на блок, которого нет на карте.`;
-      }
-    }
-    return null;
-  }
-
-  function aiContext() {
-    const r = last, s = step();
-    return {
-      chapter: `Глава ${L.n}. ${L.title}`,
-      stage: s.stage === 'deep' ? 'углубление: конкурентность, масштаб, транзакции' : 'высокоуровневый дизайн',
-      blocks: Object.fromEntries(Object.entries(L.blocks).map(([t, b]) => [t, { name: b.name, what: b.learn.what, plus: b.learn.plus, minus: b.learn.minus, can_call: E.linkTargets(L, t) }])),
-      map: { nodes: st.graph.nodes.map((g) => ({ id: g.id, type: g.type, load_rps: Math.round(r.nodes[g.id].load), util: +r.nodes[g.id].util.toFixed(2), replicas: r.nodes[g.id].rep, limit: r.nodes[g.id].limit })), edges: st.graph.edges },
-      flows: r.flows.map((f) => ({ id: f.id, label: f.label, optional: f.optional, rps: +f.rate.toFixed(1), reaches_data: f.ok, latency_ms: f.ok ? Math.round(f.lat) : null })),
-      metrics: { served: +r.m.served.toFixed(2), bottleneck: r.m.bottleneck && r.m.bottleneck.def.name, cost_month: Math.round(r.m.cost), complexity: +r.m.cx.toFixed(1), ...Object.fromEntries(L.metrics.map((x) => [x.label, Math.round(r.m[x.id] || 0)])) },
-      scenario: scn(),
-      reference: (() => { const A = refFor(s.stage); return { original_from_book: A.original, changes_for_this_load: A.changes, holds: A.ok, blockers: A.blockers.map((x) => `${x.name}: ${x.limit}`) }; })(),
-      decisions: s.stage === 'deep' ? L.problems.filter((p) => p.options).map((p) => ({ problem: p.title, chosen: p.options.find((o) => o.v === st.deep.choices[p.key]).label, options: p.options.map((o) => o.label) })) : null,
-      db_settings: Object.fromEntries(st.graph.nodes.filter((g) => L.blocks[g.type].tune).map((g) => [g.id, last.nodes[g.id].cfg])),
-      warnings: r.warnings.map((w) => w.text),
-    };
-  }
-
-  function aiPrompt() {
-    return `Ты наставник по system design. Я прохожу учебный симулятор по книге Алекса Сюя и собрал схему. Разбери её по-русски, коротко, как на собеседовании.
-Ответь одним JSON-блоком такого вида:
-{"verdict": "1–2 предложения: насколько схема хороша для этого этапа",
- "issues": ["до 5 главных проблем со ссылкой на цифры из метрик"],
- "suggestions": [{"title": "что сделать", "why": "что станет лучше", "tradeoff": "чем платим",
-   "actions": [{"op": "add|link|unlink|remove", "type": "тип блока для add", "from": "id узла или тип", "to": "id узла или тип"}]}]}
-Предложений до 3, самое полезное первым. Типы блоков бери из blocks, стрелки проводи только из can_call. Если правка карты не нужна (например, выбрать другое решение в карточке проблемы), оставь actions пустым и скажи это в why.
-
-Моя схема:
-${JSON.stringify(aiContext(), null, 1)}`;
-  }
-
-  function applyAi(sg) {
-    const made = {}, notes = [];
-    const idOf = (x) => made[x] || (st.graph.nodes.some((n) => n.id === x) ? x : (st.graph.nodes.find((n) => n.type === x) || {}).id);
-    (sg.actions || []).filter((a) => a.op === 'add' && L.blocks[a.type]).forEach((a) => {
-      const res = E.addBlock(L, st.graph, a.type, freePos(L.blocks[a.type].pos));
-      st.graph = res.graph; made[a.type] = res.id;
-    });
-    (sg.actions || []).forEach((a) => {
-      const f = idOf(a.from), t = idOf(a.to);
-      if (a.op === 'link' && f && t) { const m = link(f, t); if (m) notes.push(m); }
-      if (a.op === 'unlink') st.graph.edges = st.graph.edges.filter((e) => !(e.from === f && e.to === t));
-      if (a.op === 'remove' && f) { st.graph.nodes = st.graph.nodes.filter((n) => n.id !== f); st.graph.edges = st.graph.edges.filter((e) => e.from !== f && e.to !== f); }
-    });
-    selNode = null; selEdge = null;
-    changed();
-    toast(`Применил: «${sg.title}». Посмотри, как изменились метрики.` + (notes.length ? ' ' + notes.join(' ') : ''));
   }
 
   // ---------- 6. Итог ----------
