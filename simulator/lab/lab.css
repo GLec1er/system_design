@@ -205,6 +205,7 @@ a{color:var(--accent)}
 .lg{display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:3px 10px;font:inherit;font-size:12.5px;cursor:pointer;transition:box-shadow .12s}
 .lg i{width:10px;height:10px;border-radius:50%;display:inline-block;box-shadow:0 0 0 3px color-mix(in srgb,currentColor 0%,transparent)}
 .lg span{color:var(--muted);font-variant-numeric:tabular-nums}
+.lg span b.bad{color:var(--bad)}
 .lg.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
 .lg.off span{color:var(--bad)}
 
