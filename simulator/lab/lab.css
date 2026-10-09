@@ -322,6 +322,7 @@ h3.sec{margin:22px 0 10px;font-size:13px;letter-spacing:.04em;text-transform:upp
 /* подсказки к стрелкам, проверка связей, разбор от Claude */
 .lghelp{margin:0 0 8px;font-size:12.5px;color:var(--muted);line-height:1.45}
 .elab{font-size:11px;font-weight:600;fill:var(--ink);text-anchor:middle;paint-order:stroke;stroke:var(--board);stroke-width:4px;stroke-linejoin:round;pointer-events:none;font-variant-numeric:tabular-nums}
+.elab.cut{fill:var(--bad)}
 .node.can{box-shadow:0 0 0 2px var(--ok),0 0 18px color-mix(in srgb,var(--ok) 35%,transparent)}
 .node.cant{opacity:.35}
 
