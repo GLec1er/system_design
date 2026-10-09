@@ -135,13 +135,34 @@
   function reqView() {
     const R = L.requirements, sc = reqScore(), N = Object.fromEntries((R.nfr || []).map((n) => [n.id, n]));
     const mark = { ok: '✔ входит', miss: '○ пропущено', wrong: '✗ вне рамок', skip: '✔ верно, вне рамок' };
-    return `${head(step(), R.intro)}<div class="reqcols">
+    const chip = (id, cls) => N[id] ? `<button type="button" class="nchip ${cls || ''}" data-nfr="${id}" title="${esc(N[id].what)}">${esc(N[id].name)}</button>` : '';
+    const S = R.start, frs = R.groups.flatMap((g) => g.items).filter((it) => it.shapes);
+    const cols = (R.nfr || []).map((n) => n.id).filter((id) => frs.some((it) => it.shapes.some((x) => x[0] === id)));
+    const lvl = ['', 'влияет', 'определяет'];
+    const startHtml = S ? `<section class="card rq-start"><h4 class="grp">🧭 ${esc(S.title)}</h4><p>${esc(S.text)}</p>
+      <ol class="chain">${S.chain.map((c) => `<li><b>${esc(c.t)}</b><span>${esc(c.d)}</span></li>`).join('')}</ol>
+      <h4 class="grp">Чего не берём, потому что нагрузка маленькая</h4><div class="skips">${S.skip.map((c) => `<div><b>✗ ${esc(c.t)}</b><span>${esc(c.d)}</span></div>`).join('')}</div>
+      <p class="muted">${esc(S.revisit)}</p></section>` : '';
+    const mapHtml = !frs.length ? '' : st.reqChecked ? `<section class="card"><h4 class="grp">🔗 Как FR формируют NFR</h4>
+      <p class="muted">NFR не берутся из воздуха: каждое вырастает из конкретного действия пользователя. «Определяет» значит, что без этого FR требование было бы слабее или не нужно вовсе. Наведи на клетку, чтобы увидеть причину.</p>
+      <div class="frx"><table class="tbl frm"><thead><tr><th>FR</th>${cols.map((id) => `<th>${esc(N[id].name)}</th>`).join('')}</tr></thead><tbody>
+      ${frs.map((it) => `<tr><td>${esc(it.text)}</td>${cols.map((id) => { const x = it.shapes.find((q) => q[0] === id); return x ? `<td class="l${x[1]}" title="${esc(x[2])}">${lvl[x[1]]}</td>` : '<td></td>'; }).join('')}</tr>`).join('')}
+      </tbody></table></div>
+      <div class="frmaps">${frs.map((it) => `<div class="frmap"><b>${esc(it.text)}</b>${it.to ? `<small class="muted">→ ${esc(it.to)}</small>` : ''}
+        <ul>${it.shapes.map((x) => `<li class="l${x[1]}">${chip(x[0])}<em>${lvl[x[1]]}</em> ${esc(x[2])}</li>`).join('')}</ul></div>`).join('')}</div></section>`
+      : `<section class="card muted">🔗 После «Проверить» здесь откроется карта: какое FR формирует какое NFR и почему.</section>`;
+    const futHtml = R.future ? `<section class="card rq-fut"><h4 class="grp">⚠️ Будущие FR, которые ломают NFR</h4>
+      <p class="muted">Архитектура верна, пока верны требования. Бизнес добавляет одну «простую» функцию, и задержка, ожидание, доступность или согласованность перестают держаться. На интервью это хороший ответ на вопрос «что изменится, если…».</p>
+      <div class="futs">${R.future.map((f) => `<div class="fut"><b>${esc(f.fr)}</b><div class="fchips">ломает: ${f.breaks.map((id) => chip(id, 'bad')).join('')}</div>
+        <dl><dt>Сейчас держит</dt><dd>${esc(f.now)}</dd><dt>Что ломается</dt><dd>${esc(f.why)}</dd><dt>Что придётся добавить</dt><dd>${esc(f.fix)}</dd></dl></div>`).join('')}</div></section>` : '';
+    return `${head(step(), R.intro)}${startHtml}<div class="reqcols">
       ${R.groups.map((g, gi) => `<section class="card rq-${g.kind || 'fr'}"><h4 class="grp">${esc(g.title)}${g.q ? ` <span class="muted">· ${esc(g.q)}</span>` : ''}</h4>${g.desc ? `<p class="muted">${esc(g.desc)}</p>` : ''}<div class="reqs">${g.items.map((it, ii) => {
         const k = gi + '.' + ii, s = reqState(it, k), n = N[it.nfr];
         return `<label class="ri ${s}"><input type="checkbox" data-k="${k}" ${st.req[k] ? 'checked' : ''}><span>${n ? `<button type="button" class="nchip" data-nfr="${n.id}" title="${esc(n.what)}">${esc(n.name)} · ${esc(n.en)}</button>` : ''}<b>${esc(it.text)}</b>${s ? `<small><em>${mark[s]}.</em> ${esc(it.why)}${it.to && it.in ? `<br>→ ${esc(it.to)}` : ''}</small>` : ''}</span></label>`;
       }).join('')}</div></section>`).join('')}</div>
       <section class="card"><div class="row-btns"><button class="btn primary" id="reqCheck">${st.reqChecked ? 'Скрыть ответы' : 'Проверить'}</button>${st.reqChecked ? `<span class="score">Верно ${sc.ok} из ${sc.total}</span>` : ''}</div>
       ${st.reqChecked ? `<div class="w info">${esc(R.conclusion)}</div>` : ''}</section>
+      ${mapHtml}${futHtml}
       ${R.nfr ? `<section class="card"><h4 class="grp">📖 Понятия NFR и за что они отвечают</h4><p class="muted">Подсвечены свойства, которые решают эту главу. Остальные тоже стоит назвать на интервью хотя бы одной фразой.</p>
         <div class="nfrs">${R.nfr.map((n) => `<div class="nfr ${n.key ? 'key' : ''}" id="nfr-${n.id}"><b>${esc(n.name)} <span class="muted">${esc(n.en)}</span>${n.key ? ' <em>важно здесь</em>' : ''}</b>
           <p>${esc(n.what)}</p><dl><dt>Как меряют</dt><dd>${esc(n.metric)}</dd><dt>На что влияет</dt><dd>${esc(n.drives)}</dd><dt>В этой главе</dt><dd>${esc(n.here)}</dd></dl></div>`).join('')}</div></section>` : ''}`;
