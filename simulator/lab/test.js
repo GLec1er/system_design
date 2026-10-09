@@ -42,6 +42,20 @@ assert(L.goals.deep.every((x) => x.check(r)), 'deep: все цели ' + JSON.st
 assert(r.nodes.cache.load > 0 && r.nodes.cacheR.load > 0, 'кэши в работе');
 console.log('ok', 'cx', r.m.cx.toFixed(1), 'book', r.flows.find((f) => f.id === 'book').lat.toFixed(0) + 'ms');
 
+// балансировщик встаёт между клиентом и Gateway: стрелку client → gateway заменяет, потоки идут через него
+{
+  const lb = E.addBlock(L, ref('deep'), 'lb', [0, 0]), t = (id) => lb.graph.nodes.find((n) => n.id === id).type;
+  assert(lb.dropped.length === 1 && !lb.graph.edges.some((e) => t(e.from) === 'client' && t(e.to) === 'gateway'), 'lb: client → gateway заменена');
+  const rl = E.analyze(L, lb.graph, est, good, 'deep');
+  assert(rl.m.routed && rl.flows.every((f) => f.optional || f.path.some((x) => x.id === 'lb')), 'lb: все потоки идут через балансировщик');
+  assert(L.goals.deep.every((x) => x.check(rl)) && !rl.warnings.some((w) => /в обход/.test(w.text)), 'lb: цели не ломаются');
+  const gw = (alg) => E.analyze(L, { nodes: lb.graph.nodes.map((n) => (n.id === 'lb' ? Object.assign({}, n, { cfg: { alg } }) : n)), edges: lb.graph.edges }, est, good, 'deep').nodes.gateway, per = (alg) => gw(alg).capTotal / gw(alg).rep;
+  assert(per('least') > per('rr') && per('rr') > per('hash'), 'lb: алгоритм влияет на мощность копий за ним');
+  // без стрелки lb → gateway поток не доходит и подсказка называет балансировщик
+  const cut = { nodes: lb.graph.nodes, edges: lb.graph.edges.filter((e) => !(e.from === 'lb' && t(e.to) === 'gateway')) };
+  assert(E.analyze(L, cut, est, good, 'deep').flows.find((f) => f.id === 'view').missing[0] === 'lb', 'lb: подсказка про стрелку от балансировщика');
+}
+
 // необязательные блоки: addBlock сам проводит стрелки, эффекты видны
 const bookLat = (g, deep) => E.analyze(L, g, est, deep, 'deep').flows.find((f) => f.id === 'book').lat;
 let g2 = E.addBlock(L, ref('deep'), 'notification', [0, 0]).graph;
