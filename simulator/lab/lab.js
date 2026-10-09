@@ -1067,8 +1067,9 @@ ${JSON.stringify(aiContext(), null, 1)}`;
       return { p, o, ok: (p.best || []).includes(o.v), say: (S.says[key] || {})[o.v] || p.say }; };
     const names = (g) => [...new Set(g.nodes.map((n) => L.blocks[n.type].name))];
     const mine = names(st.graph), theirs = names(ref.graph);
-    const x = { d, r, choice, has, fmt, shards: (resDB && resDB.cfg && resDB.cfg.shards) || 1, bookLat: book && book.ok ? book.lat : 0,
-      extras: mine.filter((n) => !['Клиент', 'API Gateway', 'Hotel Service', 'Reservation Service', 'Payment Service', 'Hotel DB', 'Reservation DB', 'Payment DB'].includes(n)) };
+    const lbN = st.graph.nodes.find((n) => n.type === 'lb'), lbC = lbN && E.tuneOf(L.blocks.lb, lbN.cfg);
+    const x = { d, r, choice, has, fmt, lb: lbC ? `${lbC.layer === 'l7' ? 'L7' : 'L4'}, ${{ rr: 'round robin', least: 'least connections', hash: 'IP hash' }[lbC.alg]}` : '', shards: (resDB && resDB.cfg && resDB.cfg.shards) || 1, bookLat: book && book.ok ? book.lat : 0,
+      extras: mine.filter((n) => !['Клиент', 'API Gateway', 'Hotel Service', 'Reservation Service', 'Payment Service', 'Hotel DB', 'Reservation DB', 'Payment DB', 'Балансировщик нагрузки'].includes(n)) };
     return { S, r, ref, x, script: S.script(x), mine, theirs, onlyMine: mine.filter((n) => !theirs.includes(n)), onlyRef: theirs.filter((n) => !mine.includes(n)) };
   }
   function sumView() {
