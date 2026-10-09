@@ -397,6 +397,25 @@ h3.sec{margin:22px 0 10px;font-size:13px;letter-spacing:.04em;text-transform:upp
 .nfr dl{margin:0;font-size:13px}
 .nfr dt{color:var(--muted);font-size:12px;margin-top:6px}
 .nfr dd{margin:0}
+.nchip.bad{border-color:var(--bad);background:var(--bad-soft)}
+.rq-start{border-left:3px solid var(--accent)}
+.chain{list-style:none;margin:8px 0 14px;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:8px;counter-reset:c}
+.chain li{counter-increment:c;position:relative;border:1px solid var(--line);border-radius:12px;padding:10px 12px 10px 38px}
+.chain li::before{content:counter(c);position:absolute;left:10px;top:10px;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;display:grid;place-items:center}
+.chain b,.skips b{display:block}.chain span,.skips span{font-size:13px;color:var(--muted)}
+.skips{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:8px;margin:8px 0}
+.skips>div{border:1px dashed var(--line);border-radius:12px;padding:9px 12px}
+.frx{overflow-x:auto;margin:8px 0 14px}
+.tbl.frm td,.tbl.frm th{text-align:center;font-size:12.5px}.tbl.frm td:first-child,.tbl.frm th:first-child{text-align:left;min-width:180px}
+.tbl.frm td.l2{background:var(--warn);color:#1b1407;font-weight:600}.tbl.frm td.l1{background:var(--warn-soft)}
+.frmaps,.futs{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:10px}
+.frmap,.fut{border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+.frmap small{display:block;margin-top:2px}
+.frmap ul{margin:8px 0 0;padding:0;list-style:none;font-size:13px}.frmap li{margin:7px 0}
+.frmap em{font-style:normal;font-size:11px;color:var(--muted);margin-right:4px}.frmap li.l2 em{color:var(--warn);font-weight:600}
+.rq-fut{border-top:3px solid var(--bad)}.fut{border-color:var(--bad-soft)}
+.fchips{margin:6px 0;font-size:12px;color:var(--muted)}.fchips .nchip{margin:0 0 0 4px}
+.fut dl{margin:0;font-size:13px}.fut dt{color:var(--muted);font-size:12px;margin-top:6px}.fut dd{margin:0}
 .nfr.flash{animation:nflash 1.2s}
 @keyframes nflash{0%,40%{box-shadow:0 0 0 3px var(--accent)}100%{box-shadow:none}}
 
