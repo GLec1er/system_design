@@ -859,13 +859,14 @@
     const li = (a) => (a && a.length ? '<ul>' + a.map((t) => `<li>${esc(t)}</li>`).join('') + '</ul>' : '');
     box.innerHTML = `<div class="ih cat-${b.cat}"${brand(b)}><span class="ni">${icon(b)}</span><div><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''} · ${b.extra ? '🧪 эксперимент, в книге его нет' : '📘 по книге'}</small></div><button class="nx" id="inspX" aria-label="Закрыть">×</button></div>
       <p>${esc(b.learn.what)}</p>
-      ${b.cap ? `<div class="istats"><div><span>Нагрузка</span><b>${fmt(n.load)} / ${fmt(n.capTotal)} rps</b></div><div><span>Загрузка</span><b class="${cls(n.util)}">${pct(n.util)}</b></div><div><span>${esc(b.repLabel || 'Реплик')}</span><b>${n.rep}${!b.tune && n.rep >= n.maxRep ? ' (макс.)' : ''}</b></div><div><span>Задержка</span><b>${ms(b.lat * n.q)}</b></div></div>` : ''}
+      ${b.cap ? `<div class="istats"><div><span>Нагрузка</span><b>${fmt(n.load)} / ${fmt(n.capTotal)} rps</b></div><div><span>Загрузка</span><b class="${cls(n.util)}">${pct(n.util)}</b></div><div><span>${esc(b.repLabel || 'Реплик')}</span><b>${n.rep}${!b.tune && n.rep >= n.maxRep ? ' (макс.)' : ''}</b></div><div><span>Задержка</span><b>${ms((b.lat + (n.latAdd || 0)) * n.q)}</b></div></div>` : ''}
       ${n.explain && n.explain.length ? `<h5>Почему такая нагрузка</h5><ul class="expl">${n.explain.map((t) => `<li>${esc(t)}</li>`).join('')}${n.limit ? `<li class="lim">Упёрся: ${esc(n.limit)}. Нужно: ${esc(n.need)}.</li>` : ''}</ul>` : ''}
       ${tuneHtml(b, n)}
       ${flows.length ? `<h5>Какие потоки идут</h5>${flows.map((f) => `<div class="fbar"><span>${esc(f.label)}</span><i style="width:${(n.flows[f.id] / max) * 100}%;background:${f.color}"></i><b>${fmt(n.flows[f.id])}</b></div>`).join('')}` : `<p class="why ${n.why ? n.why.kind : ''}">${n.why ? (n.why.kind === 'useless' ? '💤 ' : '🔌 ') + esc(n.why.text) : 'Через блок не идёт ни один поток.'}</p>`}
       ${b.learn.plus && b.learn.plus.length ? `<h5 class="plus">Что даёт</h5>${li(b.learn.plus)}` : ''}
       ${b.learn.minus && b.learn.minus.length ? `<h5 class="minus">Чем платим</h5>${li(b.learn.minus)}` : ''}
       ${b.fit ? `<h5>Когда брать</h5><div class="pfit">${fitHtml(b.fit)}</div>` : ''}
+      ${(b.learn.more || []).map((m) => `<details class="more"><summary>${esc(m.title)}</summary><dl>${m.items.map(([t, d]) => `<dt>${esc(t)}</dt><dd>${esc(d)}</dd>`).join('')}</dl></details>`).join('')}
       <button class="btn sm ghost danger" id="inspDel">Убрать с карты</button>`;
     $$('#insp [data-tf]').forEach((el) => (el.onclick = () => setCfg(g, el.dataset.tf, el.dataset.v)));
     if ($('#autoTune')) $('#autoTune').onclick = () => autoTune(g);
@@ -885,7 +886,7 @@
           return `<button class="${o === cur ? 'on' : ''}" data-tf="${f.id}" data-v="${esc(o.v)}" ${no ? `disabled title="Копий не может быть больше, чем брокеров (${n.cfg.brokers})"` : ''}>${esc(o.label)}</button>`; }).join('')}</div>
         <p class="tnote">${esc((cur && cur.note) || f.hint || '')}</p></div>`;
     }).join('')}</div>
-    <button class="btn sm" id="autoTune">✨ Подобрать под нагрузку</button>`;
+    ${E.sizable(def.tune) ? '<button class="btn sm" id="autoTune">✨ Подобрать под нагрузку</button>' : ''}`;
   }
   function setCfg(g, id, raw) {
     const def = L.blocks[g.type], f = E.TUNE[def.tune].find((x) => x.id === id), o = tuneOpts(f, def).find((x) => String(x.v) === raw);

@@ -262,6 +262,9 @@ a{color:var(--accent)}
 .ih div{flex:1;display:flex;flex-direction:column}
 .ih small{color:var(--muted);font-size:11.5px}
 .insp h5{margin:12px 0 4px;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.insp details.more{margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:12.5px;line-height:1.45}
+.insp details.more summary{cursor:pointer;font-weight:600}
+.insp details.more dl{margin:4px 0 0}.insp details.more dt{font-weight:600;margin-top:7px}.insp details.more dd{margin:1px 0 0;color:var(--muted)}
 .insp h5.plus{color:var(--ok)}.insp h5.minus{color:var(--bad)}
 .insp ul{margin:0;padding-left:18px}.insp li{margin:2px 0}
 .insp .btn{margin-top:12px}
