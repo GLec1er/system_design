@@ -162,4 +162,21 @@ assert(ack('1')[0] > ack('all')[0] && ack('1')[1] < ack('all')[1], 'acks вли�
 const gc = ref('base'); gc.nodes.push({ id: 'c1', type: 'cache' }, { id: 'c2', type: 'pgcache' }); gc.edges.push({ from: 'hotel', to: 'c1' }, { from: 'hotel', to: 'c2' });
 const ca = E.analyze(L, gc, est, deep0, 'base'), cb = E.analyze(L, { nodes: gc.nodes, edges: gc.edges.slice().reverse() }, est, deep0, 'base');
 assert(ca.nodes.c1.load === cb.nodes.c1.load && ca.nodes.c1.load > ca.nodes.c2.load, 'быстрый кэш первым при любом порядке стрелок');
+// кэш: шарды делят ключи, но горячий ключ упирается в один шард; его снимают реплики и локальный кэш
+{
+  const cg = (cfg) => { const g2 = ref('deep'); g2.nodes = g2.nodes.map((n) => (n.id === 'cache' ? Object.assign({}, n, { cfg }) : n)); return E.analyze(L, g2, est, good, 'deep').nodes.cache; };
+  const c1 = cg({ shards: 1, replicas: 0 }), c12 = cg({ shards: 12, replicas: 0 }), c48 = cg({ shards: 48, replicas: 0 }), c48r = cg({ shards: 48, replicas: 2 }), c48n = cg({ shards: 48, replicas: 0, near: 'on' });
+  assert(c12.util < c1.util / 10, 'шарды делят чтения');
+  assert(c48.cluster.key === 'горячий ключ' && c48.util > c12.util / 3, '48 шардов упираются в горячий ключ: вчетверо больше шардов дают меньше чем вчетверо');
+  assert(c48r.util < c48.util / 2.9 && c48n.util < c48.util / 4, 'реплики и L1 снимают горячий ключ');
+  const mc = (() => { const g2 = ref('deep'); g2.nodes = g2.nodes.map((n) => (n.id === 'cache' ? Object.assign({}, n, { type: 'memcached', cfg: { shards: 1, replicas: 2 } }) : n)); return E.analyze(L, g2, est, good, 'deep').nodes.cache; })();
+  assert(mc.cluster.replicas === 0, 'у Memcached реплик нет');
+}
+// стрелки после перегруженного блока несут только то, что он пропустил
+{
+  const hot = E.analyze(L, ref('base'), est, x300, 'deep'), gw = hot.nodes.hotel, k = 'hotel>hotelDB';
+  const need = Object.values(hot.edgeLoad[k]).reduce((a, b) => a + b, 0), got = Object.values(hot.edgePass[k]).reduce((a, b) => a + b, 0);
+  assert(gw.util > 1, 'Hotel Service перегружен');
+  assert(got < need && Math.abs(Object.values(hot.edgePass['client>gateway']).reduce((a, b) => a + b, 0) - Object.values(hot.edgeLoad['client>gateway']).reduce((a, b) => a + b, 0)) < 1e-6, 'до перегрузки проходит всё, после меньше ' + gw.util);
+}
 console.log('audit ok');

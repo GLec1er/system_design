@@ -604,7 +604,7 @@
 
   function sizePills(b, n) {
     const c = n.cfg;
-    if (b.tune === 'sql') return `<span class="pill" title="Шарды">${c.shards} шард.</span>${c.replicas ? `<span class="pill" title="Реплики для чтения">+${c.replicas} репл.</span>` : ''}`;
+    if (b.tune === 'sql' || b.tune === 'kv') return `<span class="pill" title="Шарды">${c.shards} шард.</span>${n.cluster && n.cluster.replicas ? `<span class="pill" title="Реплики для чтения">+${n.cluster.replicas} репл.</span>` : ''}${c.near === 'on' ? '<span class="pill" title="Локальный кэш в сервисе">L1</span>' : ''}`;
     if (b.tune === 'kafka') return `<span class="pill" title="Брокеры, партиции и репликация">${c.brokers} брок. · ${c.partitions} парт. · RF${n.cluster.rf}</span>`;
     if (b.tune === 'rabbit') return `<span class="pill" title="Очереди и их тип">${c.queues} очер. · ${c.qtype}</span>`;
     return `<span class="pill" title="${esc(b.repLabel || 'реплик')}, подбираются сами">×${n.rep}</span>`;
@@ -620,7 +620,7 @@
   function clusterHtml(b, n, r) {
     const c = n.cluster;
     if (!c) return '';
-    if (b.tune === 'sql') {
+    if (b.tune === 'sql' || b.tune === 'kv') {
       const S = c.shards.length;
       if (S < 2 && !c.replicas) return '';
       const even = c.shards.every((x) => Math.abs(x.share - 1 / S) < 1e-9), show = S > 8 ? c.shards.slice(0, 7) : c.shards;
@@ -671,17 +671,18 @@
       if (!a || !b) return;
       const [x1, y1] = clip(a, b.x + b.w / 2, b.y + b.h / 2, 3), [x2, y2] = clip(b, a.x + a.w / 2, a.y + a.h / 2, 7);
       const len = Math.hypot(x2 - x1, y2 - y1) || 1, nx = -(y2 - y1) / len, ny = (x2 - x1) / len;
-      const loads = (r && r.edgeLoad[e.from + '>' + e.to]) || {};
+      const loads = (r && r.edgeLoad[e.from + '>' + e.to]) || {}, pass = (r && r.edgePass[e.from + '>' + e.to]) || {};
       const fl = r.flows.filter((f) => loads[f.id] > 0 && (!st.show || st.show === f.id));
       const lines = fl.map((f, k) => {
-        const o = (k - (fl.length - 1) / 2) * 6, v = loads[f.id], id = `p${i}_${k}`;
+        const o = (k - (fl.length - 1) / 2) * 6, v = pass[f.id], id = `p${i}_${k}`;
         const d = curve(x1 + nx * o, y1 + ny * o, x2 + nx * o, y2 + ny * o);
         const n = Math.max(1, Math.min(4, Math.round(1 + Math.log10(v + 1)))), dur = Math.max(0.9, 2.8 - 0.4 * Math.log10(v + 1));
         const dots = reduceMotion ? '' : Array.from({ length: n }, (_, j) => `<circle r="4" fill="${f.color}"><animateMotion dur="${dur}s" begin="-${((j * dur) / n).toFixed(2)}s" repeatCount="indefinite"><mpath href="#${id}"/></animateMotion></circle>`).join('');
-        return `<path id="${id}" class="fl" d="${d}" style="stroke:${f.color}"><title>${esc(f.label)}: ${fmt(v)} rps</title></path>${dots}`;
+        return `<path id="${id}" class="fl" d="${d}" style="stroke:${f.color}"><title>${esc(f.label)}: ${fmt(v)} rps${v < loads[f.id] * 0.995 ? ` из ${fmt(loads[f.id])}` : ''}</title></path>${dots}`;
       }).join('');
-      const d = curve(x1, y1, x2, y2), sel = selEdge === i, sum = fl.reduce((s, f) => s + loads[f.id], 0);
-      const lab = sum && len > 90 ? `<text class="elab" x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 8}">${fmt(sum)} rps</text>` : '';
+      const d = curve(x1, y1, x2, y2), sel = selEdge === i, sum = fl.reduce((s, f) => s + loads[f.id], 0), got = fl.reduce((s, f) => s + pass[f.id], 0), cut = got < sum * 0.995;
+      // Перегруженный блок выше по цепочке пропускает меньше, чем нужно: показываем «прошло из нужного».
+      const lab = sum && len > 90 ? `<text class="elab ${cut ? 'cut' : ''}" x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 8}">${fmt(got)}${cut ? ` из ${fmt(sum)}` : ''} rps</text>` : '';
       out.push(`<g class="edge ${sel ? 'sel' : ''} ${fl.length ? 'live' : ''}" data-e="${i}"><path class="hit" d="${d}"><title>${esc(r ? edgeText(e) : '')}</title></path><path class="base" d="${d}" marker-end="url(#${sel ? 'arrS' : 'arr'})"/>${lines}${lab}</g>`);
       if (sel) delAt = [(x1 + x2) / 2, (y1 + y2) / 2];
     });
@@ -797,9 +798,9 @@
   }
 
   function edgeText(e) {
-    const loads = (last && last.edgeLoad[e.from + '>' + e.to]) || {}, fl = last.flows.filter((f) => loads[f.id] > 0);
+    const loads = (last && last.edgeLoad[e.from + '>' + e.to]) || {}, pass = (last && last.edgePass[e.from + '>' + e.to]) || {}, fl = last.flows.filter((f) => loads[f.id] > 0);
     const head = `«${bname(typeOf(e.from))}» вызывает «${bname(typeOf(e.to))}».`;
-    return fl.length ? `${head} По стрелке идёт: ${fl.map((f) => `${f.label} ${fmt(loads[f.id])} rps`).join(', ')}.` : `${head} По стрелке пока ничего не идёт. ${(last.nodes[e.to] && last.nodes[e.to].why && last.nodes[e.to].why.text) || stuck(e)}`;
+    return fl.length ? `${head} По стрелке идёт: ${fl.map((f) => `${f.label} ${fmt(pass[f.id])} rps${pass[f.id] < loads[f.id] * 0.995 ? ` из нужных ${fmt(loads[f.id])}: остальное отвалилось на перегруженном блоке раньше` : ''}`).join(', ')}.` : `${head} По стрелке пока ничего не идёт. ${(last.nodes[e.to] && last.nodes[e.to].why && last.nodes[e.to].why.text) || stuck(e)}`;
   }
 
   // Стрелка есть, но поток по ней обрывается дальше: говорим, какой стрелки не хватает.

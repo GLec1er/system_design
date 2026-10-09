@@ -39,6 +39,14 @@
       { id: 'prefetch', label: 'Prefetch', opts: [1, 10, 100], value: 10,
         hint: 'Сколько неподтверждённых сообщений потребитель берёт за раз. 1: честно, но потребитель простаивает в ожидании. 100: быстро, но сообщения копятся у медленного потребителя.' },
     ],
+    kv: [
+      { id: 'shards', label: 'Шарды (мастера)', opts: [1, 3, 6, 12, 24, 48], value: 1,
+        hint: 'Redis Cluster делит 16 384 хэш-слота между мастерами: ключ по хэшу попадает в свой шард, и каждый шард держит свою долю чтений. Memcached делит ключи так же, но на клиенте (consistent hashing).' },
+      { id: 'replicas', label: 'Реплики на шард', when: (c, def) => !def.noRepl, opts: [0, 1, 2], value: 1,
+        hint: 'Копии шарда для чтения и на случай падения мастера. Масштабируют чтение даже одного ключа, но реплика может отставать на доли секунды.' },
+      { id: 'near', label: 'Локальный кэш в сервисе (L1)', value: 'off',
+        opts: [{ v: 'off', label: 'Нет' }, { v: 'on', label: 'Да', note: 'Каждая копия сервиса держит горячие ключи у себя в памяти на 1–5 с (Caffeine, near cache). До общего кэша доходит около 40% чтений, а горячий ключ почти целиком читается локально. Цена: копии сервиса могут отставать друг от друга на этот TTL.' }] },
+    ],
     lb: [
       { id: 'layer', label: 'Уровень', value: 'l4',
         opts: [{ v: 'l4', label: 'L4 (TCP)', note: 'Смотрит только IP и порт, TLS не расшифровывает. Очень быстрый и дешёвый, держит миллионы соединений, но не видит URL и не может разводить запросы по путям.' },
@@ -56,6 +64,7 @@
     sql: () => [1, 2, 4, 8, 16].flatMap((shards) => [0, 1, 2, 3, 5].map((replicas) => ({ shards, replicas, w: shards * (1 + 0.6 * replicas) }))),
     kafka: () => [1, 3, 5, 9].flatMap((brokers) => [1, 3, 6, 12, 24].map((partitions) => ({ brokers, partitions, w: brokers * 3 + partitions * 0.1 }))),
     rabbit: () => [1, 2, 4, 8].map((queues) => ({ queues, w: queues })),
+    kv: () => [1, 3, 6, 12, 24, 48].flatMap((shards) => [0, 1, 2].flatMap((replicas) => ['off', 'on'].map((near) => ({ shards, replicas, near, w: shards * (1 + replicas) + (near === 'on' ? 60 : 0) })))),
   };
   const optsOf = (f, def) => (typeof f.opts === 'function' ? f.opts(def) : f.opts) || [];
   function tuneOf(def, cfg) {
@@ -79,12 +88,12 @@
     // Блок с absorb (кэш, CDN, rate limiter) висит сбоку: если от текущего узла есть стрелка к нему,
     // он забирает свою долю запросов этого потока (кэш только перед походом в БД: at: 'db').
     const flows = lab.flows.map((f) => {
-      const r = { id: f.id, label: f.label, color: f.color, optional: !!f.optional, rate: f.rate(d), ok: true, path: [], missing: null, extraLat: 0, lat: 0 };
+      const r = { id: f.id, label: f.label, color: f.color, optional: !!f.optional, rate: f.rate(d), ok: true, path: [], steps: [], missing: null, extraLat: 0, lat: 0 };
       // Нагрузку применяем в конце: недостроенный обязательный поток всё равно виден на карте,
       // а недостроенный необязательный (например, Kafka без потребителей) ничего не нагружает.
       const ops = [];
-      const touch = (n, p) => ops.push(() => { const l = r.rate * p; n.load += l; if (f.write) n.wload += l; n.flows[f.id] = (n.flows[f.id] || 0) + l; r.path.push({ id: n.id, p }); });
-      const edge = (a, b, p) => ops.push(() => { const k = a + '>' + b; (edgeLoad[k] = edgeLoad[k] || {})[f.id] = r.rate * p; });
+      const touch = (n, p) => ops.push(() => { const l = r.rate * p; r.steps.push({ id: n.id }); n.load += l; if (f.write) n.wload += l; n.flows[f.id] = (n.flows[f.id] || 0) + l; r.path.push({ id: n.id, p }); });
+      const edge = (a, b, p) => ops.push(() => { const k = a + '>' + b; (edgeLoad[k] = edgeLoad[k] || {})[f.id] = r.rate * p; r.steps.push({ k, v: r.rate * p }); });
       let cur = Object.values(nodes).find((n) => has(f.chain[0], n.type));
       if (!cur) { r.ok = false; r.missing = [null, f.chain[0]]; return r; }
       let p = 1;
@@ -164,6 +173,28 @@
         }
         ctx.cost += (def.cost || 0) * s * (1 + 0.6 * R);
         ctx.cx += (s > 1 ? 1 + 0.3 * Math.log2(s) : 0) + 0.2 * R + (c.partition !== 'none' ? 0.5 : 0);
+      } else if (def.tune === 'kv') {
+        // Ключ по хэшу живёт в одном шарде: шарды делят ключи, но не один горячий ключ (популярный отель в распродажу).
+        // Его чтения делят только реплики шарда и локальный кэш в сервисе.
+        const s = c.shards, R = def.noRepl ? 0 : c.replicas, near = c.near === 'on', f = near ? 0.4 : 1, hk = (def.hotKey || 0.04) * (near ? 0.25 : 1);
+        const hot = Math.max(1 / s, hk), Rd2 = Rd * f;
+        const part = (sh) => ({ share: sh, pU: (Rd2 * sh / (1 + R) + W * sh) / cap, rU: R ? (Rd2 * sh) / (1 + R) / cap : 0 });
+        n.rep = s * (1 + R);
+        n.util = part(hot).pU;
+        n.capTotal = n.util ? n.load / n.util : cap * s;
+        n.cluster = { shards: [hot].concat(Array(s - 1).fill(s > 1 ? (1 - hot) / (s - 1) : 0)).map(part), replicas: R, key: hot > 1 / s + 1e-9 ? 'горячий ключ' : s > 1 && 'хэш-слот ключа', sync: 'async' };
+        n.explain = [
+          near ? `Локальный кэш в копиях сервиса отвечает на 60% чтений: до кэша доходит ${rps(Rd2)} rps из ${rps(Rd)}.` : `Все ${rps(Rd)} rps чтений идут в общий кэш: локального кэша в сервисе нет.`,
+          hot > 1 / s + 1e-9 ? `Самый популярный ключ берёт ${Math.round(hk * 100)}% чтений и живёт в одном шарде: этот шард загружен сильнее, и новые шарды его не разгрузят.` : s > 1 ? `Ключи делятся по ${s} шардам, каждый держит 1/${s} чтений.` : 'Шард один: все ключи на одном мастере.',
+          R ? `Чтения шарда делятся между мастером и ${R} репл.: одна копия держит около ${rps(cap)} rps.` : `Реплик нет${def.noRepl ? ' (Memcached их не умеет)' : ''}: все чтения шарда на одной машине, около ${rps(cap)} rps.`,
+        ];
+        if (n.util > 0.9) {
+          const hotBound = hot > 1 / s + 1e-9;
+          n.limit = hotBound ? 'горячий ключ в одном шарде' : 'шарды';
+          n.need = !hotBound && s < 48 ? 'больше шардов' : R < 2 && !def.noRepl ? 'реплики шарда для чтения' : !near ? 'локальный кэш в сервисе (L1)' : 'дробить горячий ключ на копии (hotel:42#1…#N) или кэшировать страницу на CDN';
+        }
+        ctx.cost += (def.cost || 0) * s * (1 + R);
+        ctx.cx += (s > 1 ? 0.5 + 0.2 * Math.log2(s) : 0) + 0.2 * R + (near ? 1 : 0);
       } else if (def.tune === 'kafka') {
         // Предел дают партиции (параллелизм) и диски брокеров: каждое событие пишется RF раз.
         // acks=all ждёт копии на других брокерах: событие подтверждается позже (+5 мс), партиция пропускает меньше.
@@ -218,6 +249,17 @@
       if (n.util > 1) ctx.warn('bad', `«${def.name}» перегружен: ${n.util < 10 ? Math.round(n.util * 100) + '%' : `в ${Math.round(n.util)} раз сверх мощности`}. Упёрся: ${n.limit}. Нужно: ${n.need}.`);
       else if (!n.load && n.why) ctx.warn(n.why.kind === 'useless' ? 'info' : 'warn', `«${def.name}» простаивает. ${n.why.text}`);
     });
+    // Сколько реально проходит по стрелке: перегруженный блок пропускает только свою мощность (1 / загрузка),
+    // остальное отваливается по таймауту. Дальше по цепочке идёт уже урезанный поток, поэтому берём минимум по пути.
+    const edgePass = {};
+    flows.forEach((f) => {
+      let pass = 1;
+      f.steps.forEach((x) => {
+        if (x.id) { const u = nodes[x.id].util; if (u > 1) pass = Math.min(pass, 1 / u); }
+        else (edgePass[x.k] = edgePass[x.k] || {})[f.id] = x.v * pass;
+      });
+      f.pass = pass;
+    });
     flows.forEach((f) => {
       f.lat = f.extraLat + f.path.reduce((s, x) => s + ((nodes[x.id].def.lat || 0) + (nodes[x.id].latAdd || 0)) * nodes[x.id].q * x.p, 0);
     });
@@ -226,7 +268,7 @@
     // served считается только для достроенной схемы: недостроенная не «выдерживает 100%», у неё нет ответа на часть запросов.
     const routed = Object.keys(nodes).length > 0 && flows.every((f) => f.ok || f.optional);
     const m = Object.assign({ maxU, bottleneck, bgU, routed, served: !routed ? 0 : maxU > 1 ? 1 / maxU : 1, cost: ctx.cost, cx: ctx.cx }, ctx.metrics);
-    return { d, graph, nodes, flows, edgeLoad, warnings: ctx.warnings, m };
+    return { d, graph, nodes, flows, edgeLoad, edgePass, warnings: ctx.warnings, m };
   }
 
   // Почему через блок не идёт ни один поток. kind: off (не подключён: не хватает стрелки),
@@ -305,7 +347,7 @@
     const ids = [id].concat(graph.edges.filter((e) => e.from === id).map((e) => e.to));
     let best = null;
     for (const s of SIZES[def.tune]().sort((a, b) => a.w - b.w)) {
-      if (s.brokers && s.brokers < base.rf) continue; // не жертвуем надёжностью ради подбора
+      if ((s.brokers && s.brokers < base.rf) || (def.tune === 'kv' && !def.noRepl && s.replicas < base.replicas)) continue; // не жертвуем надёжностью ради подбора
       const cfg = Object.assign({}, base, s); delete cfg.w;
       const r = analyze(lab, { nodes: graph.nodes.map((n) => (n.id === id ? Object.assign({}, n, { cfg }) : n)), edges: graph.edges }, inputs, deep, stage);
       best = { cfg, r, ok: ids.every((x) => !r.nodes[x] || r.nodes[x].util <= TARGET + 0.001) };
