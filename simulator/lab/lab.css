@@ -422,27 +422,43 @@ h3.sec{margin:22px 0 10px;font-size:13px;letter-spacing:.04em;text-transform:upp
 .nfr.flash{animation:nflash 1.2s}
 @keyframes nflash{0%,40%{box-shadow:0 0 0 3px var(--accent)}100%{box-shadow:none}}
 
-/* оценка: что двигает каждый ползунок */
+.small{font-size:12.5px}
+.tbl .to{font-size:12px;margin-top:3px;color:var(--accent)}
+.scnsrc .fr{display:inline-flex;align-items:center;gap:4px;margin-right:8px;white-space:nowrap}
+.scnsrc .fr i{width:8px;height:8px;border-radius:50%;display:inline-block}
+/* оценка: допущения → расчёт по шагам → что уходит на карту */
+.howread{margin:0 0 14px;padding-left:20px;font-size:13.5px;color:var(--muted)}.howread b{color:var(--ink)}
 .dep{border-radius:10px;padding:4px 8px;margin:0 -8px 6px;transition:background .15s}
 .dep.on{background:var(--accent-soft)}
 .dep .slider{margin-bottom:4px}
 .dep .shint{font-size:12.5px;display:block;margin:-4px 0 4px}
 .aff{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:12px;color:var(--muted)}
-.ach{padding:1px 7px;border-radius:999px;border:1px solid var(--line);background:var(--card);white-space:nowrap}
-.ach.up{border-color:var(--ok);color:var(--ok)}
-.ach.down{border-color:var(--muted)}
-.small{font-size:12.5px}
-.tbl .to{font-size:12px;margin-top:3px;color:var(--accent)}
-.tbl tr{transition:opacity .15s,background .15s}
-.tbl tr.dim{opacity:.35}
-.tbl tr.hl{background:var(--accent-soft)}
-.tbl td.chg{animation:chg .9s}
+.ach{padding:1px 7px;border-radius:999px;border:1px solid var(--accent);color:var(--accent);background:var(--card);white-space:nowrap}
+.aff .later{font-style:italic}
+.csteps{display:grid;gap:8px;counter-reset:s}
+.cstep{border:1px solid var(--line);border-radius:12px;padding:9px 12px;transition:opacity .15s,background .15s,border-color .15s;position:relative}
+.cstep+.cstep::before{content:'↓';position:absolute;top:-15px;left:18px;font-size:12px;color:var(--muted)}
+.cstep.hl{border-color:var(--accent);background:var(--accent-soft)}
+.cstep.hl2{border-color:var(--accent);border-style:dashed}
+.cstep.dim{opacity:.35}
+.cstep .ch{display:flex;align-items:baseline;gap:8px}
+.cstep .cn{flex:none;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;display:grid;place-items:center;align-self:center}
+.cstep .ch b{flex:1;min-width:0}
+.cstep .cv{font-weight:700;font-size:16px;white-space:nowrap;border-radius:6px;padding:0 4px}
+.cstep .cv.chg{animation:chg .9s}
 @keyframes chg{0%{background:var(--warn-soft)}100%{background:transparent}}
-.scnsrc .fr{display:inline-flex;align-items:center;gap:4px;margin-right:8px;white-space:nowrap}
-.scnsrc .fr i{width:8px;height:8px;border-radius:50%;display:inline-block}
-.ach.later{opacity:.6;border-style:dashed}
-.tbl .to.m{display:none}
-@media (max-width:600px){#estOut .tbl th:nth-child(2),#estOut .tbl td:nth-child(2){display:none}#estOut .tbl .to.m{display:block}}
+.cstep .calc{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;margin:6px 0 4px;padding:5px 8px;background:var(--bg);border-radius:8px;overflow-wrap:anywhere}
+.cstep .cwhy{margin:0 0 6px;font-size:13px;color:var(--muted)}
+.cstep .cfoot{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted);align-items:center}
+.cin{display:inline-block;padding:0 7px;margin:0 0 0 4px;border-radius:999px;border:1px solid var(--line);color:var(--ink)}
+.cin.st{border-style:dashed}
+.cto{color:var(--accent)}
+.cnow{font-style:italic}
+.fdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:3px}
+.tomap{margin-top:14px}
+.tm{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,120px),1fr));gap:8px;margin-bottom:10px}
+.tm>div{border:1px solid var(--line);border-radius:12px;padding:8px 10px;display:grid;grid-template-columns:auto 1fr;gap:2px 6px;align-items:center}
+.tm .fdot{grid-row:span 1}.tm b{grid-column:1/-1;font-size:18px}.tm small{grid-column:1/-1;color:var(--muted)}
 
 /* API: контракты ручек */
 .conv{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:10px;margin:0}
