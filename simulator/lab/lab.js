@@ -61,9 +61,11 @@
   const deepFor = (stage) => (stage === 'deep' ? st.deep : { params: Object.assign({}, defaults.deep.params, scn()), choices: defaults.deep.choices });
   const scnVal = (x, v) => (x.unit === '×' ? '×' + v : `${v} ${x.unit}`);
   const scnText = () => L.scenario.map((x) => `${x.label.toLowerCase()} ${scnVal(x, st.deep.params[x.id])}`).join(', ');
-  // Эталон под тот же сценарий и те же решения, что у ученика; считается только при их изменении.
+  // Эталон под тот же сценарий, но с решениями из книги (best), а не с выбором ученика; считается только при изменении.
+  const bestChoices = Object.fromEntries(L.problems.filter((p) => p.options).map((p) => [p.key, (p.best || [p.options[0].v])[0]]));
+  const refDeep = (stage) => (stage === 'deep' ? { params: st.deep.params, choices: bestChoices } : deepFor(stage));
   let refMemo = {};
-  const refFor = (stage) => { const k = JSON.stringify([stage, st.est, deepFor(stage)]); return refMemo[k] || (refMemo = { [k]: E.adapt(L, stage, st.est, deepFor(stage)) })[k]; };
+  const refFor = (stage) => { const k = JSON.stringify([stage, st.est, refDeep(stage)]); return refMemo[k] || (refMemo = { [k]: E.adapt(L, stage, st.est, refDeep(stage)) })[k]; };
   const analyzeG = (g, stage) => E.analyze(L, g, st.est, deepFor(stage), stage);
   const analyze = (stage) => analyzeG(st.graph, stage);
 
@@ -88,8 +90,15 @@
     window.scrollTo({ top: 0 });
   }
 
+  // Шаг пройден по результату: требования проверены, цели карты выполнены; остальные шаги достаточно открыть.
+  function stepDone(s) {
+    if (!st.visited[s.id]) return false;
+    if (s.kind === 'req') return st.reqChecked;
+    if (s.kind === 'map') { const r = analyze(s.stage); return st.graph.nodes.length > 0 && L.goals[s.stage].every((g) => g.check(r)); }
+    return true;
+  }
   function renderSteps() {
-    $('#steps').innerHTML = L.steps.map((s, i) => { const done = st.visited[s.id] && i !== st.step;
+    $('#steps').innerHTML = L.steps.map((s, i) => { const done = i !== st.step && stepDone(s);
       return `<button class="stp ${done ? 'done' : ''}" data-i="${i}" aria-current="${i === st.step ? 'step' : 'false'}"><span class="num">${done ? '✓' : i + 1}</span><span class="stt"><b>${esc(s.title)}</b><small>${esc(s.sub || '')}</small></span></button>`; }).join('<span class="sline" aria-hidden="true"></span>');
     $$('#steps .stp').forEach((b) => (b.onclick = () => go(+b.dataset.i)));
   }
@@ -108,7 +117,7 @@
   // Боковая панель: вся глава по шагам, текущий подсвечен
   function guide() {
     return `<aside class="side card"><h3 class="side-t">🧭 Как пройти главу</h3><div class="side-sub">ГЛАВА ПО ШАГАМ</div>
-      <ol class="tl">${L.steps.map((s, i) => `<li class="${i === st.step ? 'cur' : st.visited[s.id] ? 'done' : ''}"><span class="tn">${st.visited[s.id] && i !== st.step ? '✓' : i + 1}</span><div>
+      <ol class="tl">${L.steps.map((s, i) => `<li class="${i === st.step ? 'cur' : stepDone(s) ? 'done' : ''}"><span class="tn">${i !== st.step && stepDone(s) ? '✓' : i + 1}</span><div>
         <span class="tag">${esc(s.tag || '')}</span><b data-go="${i}" role="link" tabindex="0">${esc(s.title)}</b><p>${esc(s.guide || '')}</p></div></li>`).join('')}</ol></aside>`;
   }
 
@@ -170,7 +179,7 @@
   function bindReq() {
     $$('.ri input').forEach((c) => (c.onchange = () => { st.req[c.dataset.k] = c.checked; save(); renderStep(); }));
     $$('.nchip').forEach((b) => (b.onclick = (e) => { e.preventDefault(); const el = $('#nfr-' + b.dataset.nfr); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }));
-    $('#reqCheck').onclick = () => { st.reqChecked = !st.reqChecked; save(); renderStep(); };
+    $('#reqCheck').onclick = () => { st.reqChecked = !st.reqChecked; save(); renderSteps(); renderStep(); };
   }
 
   // ---------- 2. Оценка ----------
@@ -266,7 +275,7 @@
   // ---------- 3. API и данные ----------
   // JSON с подсветкой: ключи, строки, числа.
   const jsonHtml = (o) => esc(JSON.stringify(o, null, 2)).replace(/(&quot;(?:[^&]|&(?!quot;))*?&quot;)(\s*:)?|\b(-?\d+(?:\.\d+)?|true|false|null)\b/g, (m, str, colon, lit) => str ? `<span class="${colon ? 'jk' : 'js'}">${str}</span>${colon || ''}` : `<span class="jn">${lit}</span>`);
-  const sqlHtml = (q) => esc(q).replace(/(--[^\n]*)/g, '<span class="jc">$1</span>').replace(/\b(BEGIN|COMMIT|ROLLBACK|UPDATE|SET|WHERE|AND|INSERT INTO|VALUES|IN|SELECT|FROM|ON CONFLICT|DO NOTHING)\b/g, '<span class="jk">$1</span>');
+  const sqlHtml = (q) => esc(q).replace(/(--[^\n]*)/g, '<span class="jc">$1</span>').replace(/\b(BEGIN|COMMIT|ROLLBACK|WITH|AS|RETURNING|UPDATE|SET|WHERE|AND|INSERT INTO|VALUES|IN|SELECT|FROM|ON CONFLICT|DO NOTHING)\b/g, '<span class="jk">$1</span>');
   function apiView() {
     const A = L.api, fc = Object.fromEntries(L.flows.map((f) => [f.id, f])), byId = Object.fromEntries(A.endpoints.map((e) => [e.id, e]));
     const path = (p) => esc(p).replace(/\{(\w+)\}/g, '<i>{$1}</i>');
@@ -507,6 +516,7 @@
     drawEdges();
     renderPanels(last);
     renderPalette(last);
+    renderSteps();
   }
 
   // ----- палитра с предпросмотром эффекта -----
@@ -828,7 +838,8 @@
       ...(m.bgU ? [{ k: 'bg', label: 'Фоновая очередь', v: m.bgU, show: pct(m.bgU), cls: m.bgU > 1 ? 'warn' : 'ok', sub: m.bgU > 1 ? 'не успевает, очередь растёт' : 'успевает', better: -1 }] : []),
       { k: 'view', label: 'Просмотр', v: lat('view'), show: lat('view') == null ? '—' : ms(lat('view')), sub: 'задержка p50', better: -1 },
       { k: 'book', label: 'Бронь', v: lat('book'), show: lat('book') == null ? '—' : ms(lat('book')), sub: 'задержка p50', better: -1 },
-      ...(deep ? L.metrics.map((x) => ({ k: x.id, label: x.label, v: m[x.id] || 0, show: fmt(m[x.id] || 0), cls: m[x.id] > 0 ? (x.bad ? 'bad' : 'warn') : 'ok', sub: 'за день сценария', better: -1 })) : []),
+      ...(deep ? L.metrics.map((x) => (m.routed ? { k: x.id, label: x.label, v: m[x.id] || 0, show: fmt(m[x.id] || 0), cls: m[x.id] > 0 ? (x.bad ? 'bad' : 'warn') : 'ok', sub: 'за день сценария', better: -1 }
+        : { k: x.id, label: x.label, v: null, show: '—', sub: 'схема не достроена', better: -1 })) : []),
       { k: 'cost', label: 'Стоимость', v: m.cost, show: money(m.cost).replace('/мес', ''), sub: 'в месяц, условно', better: -1 },
       { k: 'cx', label: 'Сложность', v: m.cx, show: m.cx.toFixed(1), cls: m.cx > 20 ? 'bad' : m.cx > 14 ? 'warn' : '', sub: 'условных баллов', better: -1 },
     ];
@@ -968,13 +979,13 @@
   function sumData() {
     const S = L.summary, r = analyze('deep'), ref = refFor('deep'), c = st.deep.choices, d = r.d;
     const has = (t) => st.graph.nodes.some((n) => n.type === t);
-    const resDB = st.graph.nodes.find((n) => n.type === 'resDB'), book = r.flows.find((f) => f.id === 'book');
+    const resDB = st.graph.nodes.find((n) => n.type === 'resDB'), rc = resDB && E.tuneOf(L.blocks.resDB, resDB.cfg), book = r.flows.find((f) => f.id === 'book');
     const choice = (key) => { const p = L.problems.find((q) => q.key === key), o = p.options.find((x) => x.v === c[key]) || p.options[0];
       return { p, o, ok: (p.best || []).includes(o.v), say: (S.says[key] || {})[o.v] || p.say }; };
     const names = (g) => [...new Set(g.nodes.map((n) => L.blocks[n.type].name))];
     const mine = names(st.graph), theirs = names(ref.graph);
     const lbN = st.graph.nodes.find((n) => n.type === 'lb'), lbC = lbN && E.tuneOf(L.blocks.lb, lbN.cfg);
-    const x = { d, r, choice, has, fmt, lb: lbC ? `${lbC.layer === 'l7' ? 'L7' : 'L4'}, ${{ rr: 'round robin', least: 'least connections', hash: 'IP hash' }[lbC.alg]}` : '', shards: (resDB && resDB.cfg && resDB.cfg.shards) || 1, bookLat: book && book.ok ? book.lat : 0,
+    const x = { d, r, choice, has, fmt, lb: lbC ? `${lbC.layer === 'l7' ? 'L7' : 'L4'}, ${{ rr: 'round robin', least: 'least connections', hash: 'IP hash' }[lbC.alg]}` : '', shards: rc ? rc.shards : 1, rc, bookLat: book && book.ok ? book.lat : 0,
       extras: mine.filter((n) => !['Клиент', 'API Gateway', 'Hotel Service', 'Reservation Service', 'Payment Service', 'Hotel DB', 'Reservation DB', 'Payment DB', 'Балансировщик нагрузки'].includes(n)) };
     return { S, r, ref, x, script: S.script(x), mine, theirs, onlyMine: mine.filter((n) => !theirs.includes(n)), onlyRef: theirs.filter((n) => !mine.includes(n)) };
   }
