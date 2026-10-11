@@ -11,7 +11,9 @@
   // Текущий размер доски: не меньше W×H, растёт под блоки и во весь экран заполняет рамку.
   let BW = W, BH = H;
 
-  function fmt(n) {
+  // Дробь в тексте через запятую, как принято в русском.
+  const fmt = (n) => fmt0(n).replace('.', ',');
+  function fmt0(n) {
     if (!isFinite(n)) return '∞';
     const a = Math.abs(n);
     if (a >= 1e9) return (n / 1e9).toFixed(1).replace(/\.0$/, '') + ' млрд';
@@ -22,7 +24,7 @@
     if (a >= 10) return n.toFixed(1).replace(/\.0$/, '');
     return n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '') || '0';
   }
-  const ms = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + ' с' : Math.round(n) + ' мс');
+  const ms = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + ' с' : Math.round(n) + ' мс');
   const money = (n) => '$' + (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : Math.round(n)) + '/мес';
   const pct = (u) => (u < 10 ? Math.round(u * 100) + '%' : '×' + fmt(u)); // ×1800 читается легче, чем 180 000%
   // Логотип технологии (lab/logos.js) вместо эмодзи и её фирменный цвет для рамки и подложки.
@@ -536,7 +538,7 @@
     });
     const dC = b.m.cost - a.m.cost, dX = b.m.cx - a.m.cx;
     if (Math.abs(dC) >= 50) chips.push([`цена ${dC > 0 ? '+' : '−'}${money(Math.abs(dC)).replace('/мес', '')}`, dC < 0]);
-    if (Math.abs(dX) >= 0.2) chips.push([`сложность ${dX > 0 ? '+' : '−'}${Math.abs(dX).toFixed(1)}`, dX < 0]);
+    if (Math.abs(dX) >= 0.2) chips.push([`сложность ${dX > 0 ? '+' : '−'}${Math.abs(dX).toFixed(1).replace('.', ',')}`, dX < 0]);
     return chips;
   }
 
@@ -841,7 +843,7 @@
       ...(deep ? L.metrics.map((x) => (m.routed ? { k: x.id, label: x.label, v: m[x.id] || 0, show: fmt(m[x.id] || 0), cls: m[x.id] > 0 ? (x.bad ? 'bad' : 'warn') : 'ok', sub: 'за день сценария', better: -1 }
         : { k: x.id, label: x.label, v: null, show: '—', sub: 'схема не достроена', better: -1 })) : []),
       { k: 'cost', label: 'Стоимость', v: m.cost, show: money(m.cost).replace('/мес', ''), sub: 'в месяц, условно', better: -1 },
-      { k: 'cx', label: 'Сложность', v: m.cx, show: m.cx.toFixed(1), cls: m.cx > 20 ? 'bad' : m.cx > 14 ? 'warn' : '', sub: 'условных баллов', better: -1 },
+      { k: 'cx', label: 'Сложность', v: m.cx, show: m.cx.toFixed(1).replace('.', ','), cls: m.cx > 20 ? 'bad' : m.cx > 14 ? 'warn' : '', sub: 'условных баллов', better: -1 },
     ];
     const kp = {};
     $('#kpis').innerHTML = tiles.map((t) => {
@@ -1014,7 +1016,7 @@
           ${row('Бронь, задержка', lat(r), lat(ref.r), null)}
           ${row('Дубли и перепродажи за день', m.routed ? fmt((m.dup || 0) + (m.oversell || 0)) : '—', fmt((rm.dup || 0) + (rm.oversell || 0)), m.routed ? (m.dup || 0) + (m.oversell || 0) <= (rm.dup || 0) + (rm.oversell || 0) : null)}
           ${row('Стоимость в месяц', money(m.cost).replace('/мес', ''), money(rm.cost).replace('/мес', ''), m.cost <= rm.cost * 1.05)}
-          ${row('Сложность', m.cx.toFixed(1), rm.cx.toFixed(1), m.cx <= rm.cx + 0.5)}
+          ${row('Сложность', m.cx.toFixed(1).replace('.', ','), rm.cx.toFixed(1).replace('.', ','), m.cx <= rm.cx + 0.5)}
           ${row('Блоков', D.mine.length, D.theirs.length, null)}</tbody></table>
           ${D.onlyMine.length ? `<p class="small">🧪 Есть только у тебя: ${D.onlyMine.map(esc).join(', ')}.</p>` : ''}
           ${D.onlyRef.length ? `<p class="small">📘 Есть в эталоне, но нет у тебя: ${D.onlyRef.map(esc).join(', ')}.</p>` : ''}

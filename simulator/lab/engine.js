@@ -5,7 +5,7 @@
   const TARGET = 0.7; // автомасштаб держит загрузку около 70%
   const queue = (u) => (u >= 0.95 ? 12 : Math.min(12, 1 + (0.5 * u * u) / (1 - u)));
   const has = (spec, t) => [].concat(spec).includes(t);
-  const rps = (v) => (v >= 10 ? Math.round(v).toLocaleString('ru-RU') : String(+v.toFixed(1)));
+  const rps = (v) => (v >= 10 ? Math.round(v).toLocaleString('ru-RU') : String(+v.toFixed(1)).replace('.', ','));
 
   // Настройки «тяжёлых» блоков, общие для всех глав. book: так делают в книге (остальное эксперименты).
   // Блок включает их через def.tune: 'sql' или 'kafka'; варианты ключа шардирования задаёт глава (def.shardKeys).
@@ -14,7 +14,7 @@
       { id: 'replicas', label: 'Реплики для чтения', book: true, opts: [0, 1, 2, 3, 5], value: 0,
         hint: 'Чтения делятся между primary и репликами. Запись всё равно идёт только в primary.' },
       { id: 'sync', label: 'Репликация', when: (c) => c.replicas > 0, value: 'async',
-        opts: [{ v: 'async', label: 'Асинхронная', note: 'Запись не ждёт реплик, но реплика может отставать на доли секунды.' }, { v: 'sync', label: 'Синхронная', note: 'Запись ждёт подтверждения реплики: данные свежие, но запись медленнее.' }] },
+        opts: [{ v: 'async', label: 'Асинхронная', note: 'Запись не ждёт реплик, но реплика может отставать на доли секунды.' }, { v: 'semi', label: 'Полусинхронная', note: 'Запись ждёт одну реплику, остальные догоняют асинхронно: подтверждённая бронь переживает падение primary, а запись медленнее всего на несколько мс.' }, { v: 'sync', label: 'Синхронная', note: 'Запись ждёт подтверждения реплики: данные свежие, но запись медленнее.' }] },
       { id: 'shards', label: 'Шарды', book: true, opts: [1, 2, 4, 8, 16], value: 1,
         hint: 'Данные и запись делятся между независимыми БД. Масштабирует запись, но запросы через шарды становятся сложнее.' },
       { id: 'shardKey', label: 'Ключ шардирования', book: true, when: (c, def) => c.shards > 1 && def.shardKeys, opts: (def) => def.shardKeys, value: (def) => def.shardKeys && def.shardKeys[0].v },
@@ -408,8 +408,10 @@
   // Иначе по порядку: типовые добавки главы (reference.adapt: кэши, CDN…), пока они снижают перегрузку,
   // потом подбор размеров перегруженных БД и брокеров. Что не вытянуть, уходит в blockers с причиной.
   function adapt(lab, stage, inputs, deep) {
+    // Чуть ниже 0,9: эталон ровно на границе цели «до 90%» из-за округления то проходил её, то нет.
+    const LIM = 0.9 - 1e-6;
     const run = (g) => analyze(lab, g, inputs, deep, stage);
-    const over = (r) => Object.values(r.nodes).reduce((s, n) => s + Math.max(0, n.util - 0.9), 0);
+    const over = (r) => Object.values(r.nodes).reduce((s, n) => s + Math.max(0, n.util - LIM), 0);
     let g = refGraph(lab, stage), r = run(g);
     const before = r, changes = [];
     (lab.reference[stage].adapt || []).forEach((a) => {
@@ -417,7 +419,7 @@
         // Замена технологии (например, Redis → Memcached): те же id и стрелки, другой тип, если это снижает перегрузку.
         // Каждый узел отдельно: второй кэш может обслуживать другой поток, где замена хуже.
         g.nodes.filter((n) => n.type === a.replace).forEach(({ id }) => {
-          if (r.m.maxU <= 0.9) return;
+          if (r.m.maxU <= LIM) return;
           const g2 = { nodes: g.nodes.map((n) => (n.id === id ? Object.assign({}, n, { type: a.with }) : n)), edges: g.edges }, r2 = run(g2);
           if (over(r2) < over(r) - 0.01) { const by = g.edges.filter((e) => e.to === id).map((e) => lab.blocks[g.nodes.find((n) => n.id === e.from).type]).filter((b) => b.cat === 'svc').map((b) => b.name).join(', ');
             changes.push(`${lab.blocks[a.replace].name}${by ? ` у ${by}` : ''} → ${lab.blocks[a.with].name}: ${a.why}`); g = g2; r = r2; }
@@ -425,7 +427,7 @@
         return;
       }
       const id = a.id || a.add, from = g.nodes.find((n) => n.type === a.from);
-      if (r.m.maxU <= 0.9 || !from || g.nodes.some((n) => n.id === id)) return;
+      if (r.m.maxU <= LIM || !from || g.nodes.some((n) => n.id === id)) return;
       const p = a.pos || lab.blocks[a.add].pos, g2 = { nodes: g.nodes.concat({ id, type: a.add, x: p[0], y: p[1] }), edges: g.edges.concat({ from: from.id, to: id }) };
       const r2 = run(g2);
       if (over(r2) < over(r) - 0.01) { changes.push(`+ ${lab.blocks[a.add].name}: ${a.why}`); g = g2; r = r2; }
@@ -433,12 +435,12 @@
     // Подбор размеров перегруженных БД, кэшей и брокеров.
     const size = (g, r) => {
       const maxed = new Set(), ch = [];
-      for (let i = 0; i < 20 && r.m.maxU > 0.9; i++) {
-        const hot = Object.values(r.nodes).filter((n) => SIZES[n.def.tune] && n.util > 0.9 && !maxed.has(n.id)).sort((a, b) => b.util - a.util)[0];
+      for (let i = 0; i < 20 && r.m.maxU > LIM; i++) {
+        const hot = Object.values(r.nodes).filter((n) => SIZES[n.def.tune] && n.util > LIM && !maxed.has(n.id)).sort((a, b) => b.util - a.util)[0];
         if (!hot) break;
         const s = sizeFor(lab, g, inputs, deep, stage, hot.id), diff = TUNE[hot.def.tune].filter((f) => s.cfg[f.id] !== hot.cfg[f.id]);
         maxed.add(hot.id);
-        if (!diff.length || over(s.r) >= over(r) - 0.01) continue;
+        if (!diff.length || over(s.r) >= over(r) - 1e-9) continue; // любой выигрыш: перегрузка бывает и в доли процента
         ch.push(`${hot.def.name}: ${diff.map((f) => `${f.label.toLowerCase()} ${hot.cfg[f.id]} → ${s.cfg[f.id]}`).join(', ')}`);
         g = { nodes: g.nodes.map((n) => (n.id === hot.id ? Object.assign({}, n, { cfg: s.cfg }) : n)), edges: g.edges };
         r = s.r;
@@ -449,19 +451,19 @@
     // Последний шаг: если одна копия системы не вытягивает, делим её на ячейки (cell-based): наименьшее N,
     // при котором после подбора размеров всё держится. Размеры подбираем заново уже для одной ячейки.
     const cellT = lab.reference[stage].cells;
-    if (cellT && sized.r.m.maxU > 0.9) {
+    if (cellT && sized.r.m.maxU > LIM) {
       const add = addBlock(lab, g, cellT, lab.blocks[cellT].pos);
       let best = null;
       for (const N of optsOf(TUNE.cell[0]).filter((x) => x > 1)) {
         const g2 = { nodes: add.graph.nodes.map((n) => (n.id === add.id ? Object.assign({}, n, { cfg: { cells: N } }) : n)), edges: add.graph.edges };
         best = Object.assign(size(g2, run(g2)), { N });
-        if (best.r.m.maxU <= 0.9) break;
+        if (best.r.m.maxU <= LIM) break;
       }
       if (over(best.r) < over(sized.r) - 0.01) { best.ch.push(`+ ${lab.blocks[cellT].name}: ${best.N} ячеек, ${lab.blocks[cellT].adaptWhy}`); sized = best; }
     }
     g = sized.g; r = sized.r; changes.push(...sized.ch);
-    const blockers = Object.values(r.nodes).filter((n) => n.util > 0.9 && !n.bg).sort((a, b) => b.util - a.util).map((n) => ({ name: n.def.name, util: n.util, limit: n.limit, need: n.need }));
-    return { graph: g, r, before, changes, original: !changes.length, ok: r.m.maxU <= 0.9, blockers };
+    const blockers = Object.values(r.nodes).filter((n) => n.util > LIM && !n.bg).sort((a, b) => b.util - a.util).map((n) => ({ name: n.def.name, util: n.util, limit: n.limit, need: n.need }));
+    return { graph: g, r, before, changes, original: !changes.length, ok: r.m.maxU <= LIM, blockers };
   }
 
   const sizable = (t) => !!SIZES[t];

@@ -229,4 +229,15 @@ assert(ca.nodes.c1.load === cb.nodes.c1.load && ca.nodes.c1.load > ca.nodes.c2.l
   const rs = E.analyze(L, shared, est, good, 'deep');
   assert(!L.goals.deep.find((g2) => /платежей/.test(g2.text)).check(rs), 'общая БД с платежами не закрывает цель согласованности');
 }
+// повторный аудит: эталон с запасом от 90%, условная запись ждёт блокировку, полусинхронная реплика
+{
+  const P = Object.assign({}, deep0.params, { flash: 1000 }), best = { idem: 'key', lock: 'constraint', txn: 'saga' };
+  const a = E.adapt(L, 'deep', est, { params: P, choices: best });
+  ['base', 'deep'].forEach((st) => assert(E.analyze(L, a.graph, est, { params: P, choices: st === 'deep' ? best : deep0.choices }, st).m.maxU < 0.9 - 1e-7, 'эталон ×1000 не на границе 90%: ' + st));
+  const lat = (flash) => E.analyze(L, E.refGraph(L, 'deep'), est, { params: Object.assign({}, deep0.params, { flash }), choices: best }, 'deep').flows.find((f) => f.id === 'book').extraLat;
+  assert(lat(100) > lat(1), 'условная запись в пик ждёт блокировку строки');
+  const g = E.refGraph(L, 'deep'); g.nodes.find((n) => n.id === 'resDB').cfg = { shards: 4, replicas: 1, sync: 'semi' };
+  const rs = E.analyze(L, g, est, { params: deep0.params, choices: best }, 'deep');
+  assert(rs.warnings.some((w) => /полусинхронная/.test(w.text)), 'полусинхронная реплика есть в модели');
+}
 console.log('audit ok');
