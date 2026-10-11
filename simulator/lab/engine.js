@@ -117,7 +117,8 @@
       if (!cur) { r.ok = false; r.missing = [null, f.chain[0]]; return r; }
       let p = 1, lp = 1, sc = 1;
       const used = new Set();
-      touch(cur, p);
+      // side: поток идёт от блока, но не нагружает его (логи и метрики Gateway отправляет агент рядом с ним).
+      if (f.side) ops.push(() => r.path.push({ id: cur.id, p: 1, lp: 0 })); else touch(cur, p);
       for (let i = 1; i < f.chain.length; i++) {
         let nextId = out[cur.id].find((id) => has(f.chain[i], nodes[id].type));
         // Прозрачные блоки (via: роутер ячеек, балансировщик) стоят между шагами цепочки, их может быть несколько подряд.

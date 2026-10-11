@@ -240,4 +240,15 @@ assert(ca.nodes.c1.load === cb.nodes.c1.load && ca.nodes.c1.load > ca.nodes.c2.l
   const rs = E.analyze(L, g, est, { params: deep0.params, choices: best }, 'deep');
   assert(rs.warnings.some((w) => /полусинхронная/.test(w.text)), 'полусинхронная реплика есть в модели');
 }
+// наблюдаемость: блоки подключаются к Gateway сами, бронь не замедляют, логи в большой пик не успевают
+{
+  const best = { idem: 'key', lock: 'constraint', txn: 'saga' };
+  let g = E.refGraph(L, 'deep'); ['metrics', 'logs', 'tracing'].forEach((t) => (g = E.addBlock(L, g, t, [0, 0]).graph));
+  const run = (flash) => E.analyze(L, g, est, { params: Object.assign({}, deep0.params, { flash }), choices: best }, 'deep');
+  const r1 = run(1), r0 = E.analyze(L, E.refGraph(L, 'deep'), est, { params: deep0.params, choices: best }, 'deep');
+  assert(['metricsScrape', 'logShip', 'spans'].every((id) => r1.flows.find((f) => f.id === id).ok), 'потоки наблюдаемости доходят');
+  assert(r1.flows.find((f) => f.id === 'book').lat === r0.flows.find((f) => f.id === 'book').lat && r1.m.served === 1, 'бронь не замедляется');
+  assert(!r1.warnings.some((w) => /Нет метрик/.test(w.text)) && r0.warnings.some((w) => /Нет метрик/.test(w.text)), 'подсказка про метрики');
+  assert(run(1000).warnings.some((w) => /Централизованные логи» не успевает/.test(w.text)), 'логи в пик ×1000 не успевают');
+}
 console.log('audit ok');
