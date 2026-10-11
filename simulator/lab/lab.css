@@ -18,12 +18,16 @@ a{color:var(--accent)}
 
 /* верхняя полоса */
 .lab .top{background:var(--bg);border-bottom:1px solid var(--line)}
-.lab .top .bar{flex-direction:row;align-items:center;gap:14px;padding-top:14px;padding-bottom:14px}
-.brand-t{font-size:17px}
-.status{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:4px 12px}
-.status i{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
-.toplink{margin-left:auto;font-size:13px;text-decoration:none}
-@media (max-width:600px){.status{display:none}}
+.lab .top .topbar{flex-direction:row;align-items:center;gap:18px;padding-top:12px;padding-bottom:12px}
+.logo{display:flex;align-items:center;gap:10px;color:var(--ink);text-decoration:none;font-size:16px;letter-spacing:-.01em;white-space:nowrap}
+.logo svg{width:28px;height:28px;flex:none}
+.logo b{color:var(--accent)}
+.crumb{display:flex;align-items:baseline;gap:10px;min-width:0;padding-left:18px;border-left:1px solid var(--line)}
+.crumb small{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.crumb b{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.toplink{margin-left:auto;font-size:13px;text-decoration:none;color:var(--muted);white-space:nowrap}
+.toplink:hover{color:var(--ink)}
+@media (max-width:600px){.lab .top .topbar{gap:12px}.logo>span{display:none}.crumb{padding-left:12px}.crumb b{font-size:14px}}
 
 /* степпер в карточке */
 .stepper{display:flex;align-items:center;gap:10px;overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 20px;margin:20px 0 6px;scrollbar-width:thin}
