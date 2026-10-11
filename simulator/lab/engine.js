@@ -108,12 +108,14 @@
       // Нагрузку применяем в конце: недостроенный обязательный поток всё равно виден на карте,
       // а недостроенный необязательный (например, Kafka без потребителей) ничего не нагружает.
       const ops = [];
-      // p: доля потока, дошедшая сюда (для задержки); s: делитель ячеек, он уменьшает нагрузку, но не задержку.
-      const touch = (n, p, s = 1) => ops.push(() => { const l = r.rate * p * s; r.steps.push({ id: n.id }); n.load += l; if (f.write) n.wload += l; n.flows[f.id] = (n.flows[f.id] || 0) + l; r.path.push({ id: n.id, p }); });
+      // p: доля потока, дошедшая сюда; s: делитель ячеек, он уменьшает нагрузку, но не задержку.
+      // lp: вес узла в средней задержке. Кэш отвечает сам, поэтому за ним вес падает вместе с p. Шлюз (def.gate:
+      // виртуальная очередь, rate limiter) не отвечает, а задерживает или отказывает: прошедшие запросы идут весь путь.
+      const touch = (n, p, s = 1, lp = p) => ops.push(() => { const l = r.rate * p * s; r.steps.push({ id: n.id }); n.load += l; if (f.write) n.wload += l; n.flows[f.id] = (n.flows[f.id] || 0) + l; r.path.push({ id: n.id, p, lp }); });
       const edge = (a, b, p, s = 1) => ops.push(() => { const k = a + '>' + b; (edgeLoad[k] = edgeLoad[k] || {})[f.id] = r.rate * p * s; r.steps.push({ k, v: r.rate * p * s }); });
       let cur = Object.values(nodes).find((n) => has(f.chain[0], n.type));
       if (!cur) { r.ok = false; r.missing = [null, f.chain[0]]; return r; }
-      let p = 1, sc = 1;
+      let p = 1, lp = 1, sc = 1;
       const used = new Set();
       touch(cur, p);
       for (let i = 1; i < f.chain.length; i++) {
@@ -129,12 +131,12 @@
         out[cur.id].slice().sort((x, y) => (nodes[x].def.lat || 0) - (nodes[y].def.lat || 0) || (x < y ? -1 : 1)).forEach((id) => {
           const a = nodes[id], h = absorbOf(a.def, d, a.cfg)[f.id];
           if (!h || used.has(id) || (a.def.at === 'db' && !nx.def.db)) return;
-          used.add(id); edge(cur.id, id, p, sc); touch(a, p, sc); p *= 1 - h;
+          used.add(id); edge(cur.id, id, p, sc); touch(a, p, sc, lp); p *= 1 - h; if (!a.def.gate) lp *= 1 - h;
           if (a.def.cache) r.cached = true;
         });
-        vias.forEach((v) => { edge(cur.id, v, p, sc); touch(nodes[v], p, sc); cur = nodes[v]; if (cur.def.tune === 'cell') sc /= cur.cfg.cells; });
+        vias.forEach((v) => { edge(cur.id, v, p, sc); touch(nodes[v], p, sc, lp); cur = nodes[v]; if (cur.def.tune === 'cell') sc /= cur.cfg.cells; });
         edge(cur.id, nextId, p, sc);
-        touch(nx, p, sc);
+        touch(nx, p, sc, lp);
         cur = nx;
       }
       if (r.ok || !r.optional) ops.forEach((op) => op());
@@ -296,7 +298,7 @@
       f.pass = pass;
     });
     flows.forEach((f) => {
-      f.lat = f.extraLat + f.path.reduce((s, x) => s + ((nodes[x.id].def.lat || 0) + (nodes[x.id].latAdd || 0)) * nodes[x.id].q * x.p, 0);
+      f.lat = f.extraLat + f.path.reduce((s, x) => s + ((nodes[x.id].def.lat || 0) + (nodes[x.id].latAdd || 0)) * nodes[x.id].q * x.lp, 0);
     });
     if (lab.rules) lab.rules(ctx);
 
