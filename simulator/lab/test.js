@@ -181,8 +181,10 @@ assert(ca.nodes.c1.load === cb.nodes.c1.load && ca.nodes.c1.load > ca.nodes.c2.l
 }
 // пять решений для пика: ячейки, виртуальная очередь, асинхронная бронь, инвентарь в Redis, load shedding
 {
-  const x1000 = { params: Object.assign({}, deep0.params, { flash: 1000, hours: 24, growth: 20 }), choices: good.choices };
-  const short = { params: Object.assign({}, x1000.params, { hours: 1 }), choices: good.choices };
+  // условная запись (эталон): без повторов оптимистичной блокировки, которые в пик ×1000 сами нагружают БД
+  const ch = Object.assign({}, good.choices, { lock: 'constraint' });
+  const x1000 = { params: Object.assign({}, deep0.params, { flash: 1000, hours: 24, growth: 20 }), choices: ch };
+  const short = { params: Object.assign({}, x1000.params, { hours: 1 }), choices: ch };
   const run = (g2, sc) => E.analyze(L, g2, est, sc || x1000, 'deep');
   const base = ref('deep'), r0 = run(base);
   // ячейки: роутер встаёт перед Gateway, за ним нагрузка делится на N, а стоимость растёт; с балансировщиком получается цепочка
@@ -210,5 +212,21 @@ assert(ca.nodes.c1.load === cb.nodes.c1.load && ca.nodes.c1.load > ca.nodes.c2.l
   const rs = run(sh), pass = (rr, id) => rr.flows.find((f) => f.id === id).pass;
   assert(r0.nodes.reservation.util > 1 && pass(rs, 'book') > pass(r0, 'book') && pass(rs, 'search') < pass(rs, 'book'), 'shedding: бронь проходит лучше, доступность хуже');
   assert(rs.flows.find((f) => f.id === 'book').lat < r0.flows.find((f) => f.id === 'book').lat, 'shedding: очередь не копится, задержка ниже');
+}
+// исправления аудита: конфликты растут с пиком, повторы делятся на ячейки, очередь не «ускоряет» бронь, у платежей своя БД
+{
+  const sc = (flash, lock) => ({ params: Object.assign({}, deep0.params, { flash }), choices: Object.assign({}, good.choices, { lock }) });
+  const lat = (g2, s2) => E.analyze(L, g2, est, s2, 'deep').flows.find((f) => f.id === 'book').lat;
+  assert(lat(ref('deep'), sc(100, 'opt')) > lat(ref('deep'), sc(1, 'opt')) + 20, 'в пик оптимистичная блокировка дороже');
+  const c = E.addBlock(L, ref('deep'), 'cells', [0, 0]); c.graph.nodes.find((n) => n.id === c.id).cfg = { cells: 8 };
+  const db = (lock) => E.analyze(L, c.graph, est, { params: Object.assign({}, deep0.params, { flash: 100, conflict: 20 }), choices: Object.assign({}, good.choices, { lock }) }, 'deep').nodes.resDB;
+  const o = db('opt'), k = Math.min(0.95, 0.2 * 10);
+  assert(Math.abs(o.load - db('constraint').load - (o.flows.book * k) / (1 - k)) < 1, 'повторы считаются от потока брони одной ячейки');
+  const w = E.addBlock(L, ref('deep'), 'waitroom', [0, 0]).graph; w.nodes.find((n) => n.type === 'waitroom').cfg = { admit: 10000 };
+  const big = sc(1000, 'constraint');
+  assert(lat(w, big) >= lat(ref('deep'), sc(1, 'constraint')), 'очередь не делает бронь быстрее: прошедшие идут весь путь');
+  const shared = ref('deep'); shared.edges = shared.edges.filter((e) => e.to !== 'payDB').concat({ from: 'payment', to: 'resDB' });
+  const rs = E.analyze(L, shared, est, good, 'deep');
+  assert(!L.goals.deep.find((g2) => /платежей/.test(g2.text)).check(rs), 'общая БД с платежами не закрывает цель согласованности');
 }
 console.log('audit ok');
