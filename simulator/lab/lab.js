@@ -74,7 +74,7 @@
   // ---------- каркас ----------
   function init() {
     document.title = `Глава ${L.n}. ${L.title}`;
-    $('#chapter').textContent = `Глава ${L.n}. ${L.title}`;
+    $('#chapter').innerHTML = `<small>Глава ${L.n}</small><b>${esc(L.title)}</b>`;
     const h = location.hash.slice(1), i = L.steps.findIndex((s) => s.id === h);
     if (i >= 0) st.step = i;
     renderSteps();
