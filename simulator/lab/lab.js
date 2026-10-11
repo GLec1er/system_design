@@ -27,9 +27,11 @@
   const ms = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + ' с' : Math.round(n) + ' мс');
   const money = (n) => '$' + (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : Math.round(n)) + '/мес';
   const pct = (u) => (u < 10 ? Math.round(u * 100) + '%' : '×' + fmt(u)); // ×1800 читается легче, чем 180 000%
-  // Логотип технологии (lab/logos.js) вместо эмодзи и её фирменный цвет для рамки и подложки.
+  // Логотип технологии или контурная иконка (lab/logos.js) и фирменный цвет иконки.
   const LOGO = window.LOGOS || {};
-  const icon = (b) => (LOGO[b.logo] ? `<svg viewBox="0 0 24 24" fill="${LOGO[b.logo].color}" role="img" aria-label="${esc(b.name)}"><path d="${LOGO[b.logo].d}"/></svg>` : b.icon);
+  const GL = window.GLYPHS || {};
+  const icon = (b) => (LOGO[b.logo] ? `<svg viewBox="0 0 24 24" fill="${LOGO[b.logo].color}" role="img" aria-label="${esc(b.name)}"><path d="${LOGO[b.logo].d}"/></svg>`
+    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${GL[b.glyph || b.cat] || ''}</svg>`);
   const brand = (b) => { const c = b.brand || (LOGO[b.logo] && LOGO[b.logo].color); return c ? ` style="--c:${c}"` : ''; };
   const cls = (u) => (u > 0.9 ? 'bad' : u > 0.7 ? 'warn' : '');
 
@@ -118,7 +120,7 @@
 
   // Боковая панель: вся глава по шагам, текущий подсвечен
   function guide() {
-    return `<aside class="side card"><h3 class="side-t">🧭 Как пройти главу</h3><div class="side-sub">ГЛАВА ПО ШАГАМ</div>
+    return `<aside class="side card"><h3 class="side-t">Как пройти главу</h3><div class="side-sub">ГЛАВА ПО ШАГАМ</div>
       <ol class="tl">${L.steps.map((s, i) => `<li class="${i === st.step ? 'cur' : stepDone(s) ? 'done' : ''}"><span class="tn">${i !== st.step && stepDone(s) ? '✓' : i + 1}</span><div>
         <span class="tag">${esc(s.tag || '')}</span><b data-go="${i}" role="link" tabindex="0">${esc(s.title)}</b><p>${esc(s.guide || '')}</p></div></li>`).join('')}</ol></aside>`;
   }
@@ -150,19 +152,19 @@
     const S = R.start, frs = R.groups.flatMap((g) => g.items).filter((it) => it.shapes);
     const cols = (R.nfr || []).map((n) => n.id).filter((id) => frs.some((it) => it.shapes.some((x) => x[0] === id)));
     const lvl = ['', 'влияет', 'определяет'];
-    const startHtml = S ? `<section class="card rq-start"><h4 class="grp">🧭 ${esc(S.title)}</h4><p>${esc(S.text)}</p>
+    const startHtml = S ? `<section class="card rq-start"><h4 class="grp">${esc(S.title)}</h4><p>${esc(S.text)}</p>
       <ol class="chain">${S.chain.map((c) => `<li><b>${esc(c.t)}</b><span>${esc(c.d)}</span></li>`).join('')}</ol>
       <h4 class="grp">Чего не берём, потому что нагрузка маленькая</h4><div class="skips">${S.skip.map((c) => `<div><b>✗ ${esc(c.t)}</b><span>${esc(c.d)}</span></div>`).join('')}</div>
       <p class="muted">${esc(S.revisit)}</p></section>` : '';
-    const mapHtml = !frs.length ? '' : st.reqChecked ? `<section class="card"><h4 class="grp">🔗 Как FR формируют NFR</h4>
+    const mapHtml = !frs.length ? '' : st.reqChecked ? `<section class="card"><h4 class="grp">Как FR формируют NFR</h4>
       <p class="muted">NFR не берутся из воздуха: каждое вырастает из конкретного действия пользователя. «Определяет» значит, что без этого FR требование было бы слабее или не нужно вовсе. Наведи на клетку, чтобы увидеть причину.</p>
       <div class="frx"><table class="tbl frm"><thead><tr><th>FR</th>${cols.map((id) => `<th>${esc(N[id].name)}</th>`).join('')}</tr></thead><tbody>
       ${frs.map((it) => `<tr><td>${esc(it.text)}</td>${cols.map((id) => { const x = it.shapes.find((q) => q[0] === id); return x ? `<td class="l${x[1]}" title="${esc(x[2])}">${lvl[x[1]]}</td>` : '<td></td>'; }).join('')}</tr>`).join('')}
       </tbody></table></div>
       <div class="frmaps">${frs.map((it) => `<div class="frmap"><b>${esc(it.text)}</b>${it.to ? `<small class="muted">→ ${esc(it.to)}</small>` : ''}
         <ul>${it.shapes.map((x) => `<li class="l${x[1]}">${chip(x[0])}<em>${lvl[x[1]]}</em> ${esc(x[2])}</li>`).join('')}</ul></div>`).join('')}</div></section>`
-      : `<section class="card muted">🔗 После «Проверить» здесь откроется карта: какое FR формирует какое NFR и почему.</section>`;
-    const futHtml = R.future ? `<section class="card rq-fut"><h4 class="grp">⚠️ Будущие FR, которые ломают NFR</h4>
+      : `<section class="card muted">После «Проверить» здесь откроется карта: какое FR формирует какое NFR и почему.</section>`;
+    const futHtml = R.future ? `<section class="card rq-fut"><h4 class="grp">Будущие FR, которые ломают NFR</h4>
       <p class="muted">Архитектура верна, пока верны требования. Бизнес добавляет одну «простую» функцию, и задержка, ожидание, доступность или согласованность перестают держаться. На интервью это хороший ответ на вопрос «что изменится, если…».</p>
       <div class="futs">${R.future.map((f) => `<div class="fut"><b>${esc(f.fr)}</b><div class="fchips">ломает: ${f.breaks.map((id) => chip(id, 'bad')).join('')}</div>
         <dl><dt>Сейчас держит</dt><dd>${esc(f.now)}</dd><dt>Что ломается</dt><dd>${esc(f.why)}</dd><dt>Что придётся добавить</dt><dd>${esc(f.fix)}</dd></dl></div>`).join('')}</div></section>` : '';
@@ -174,7 +176,7 @@
       <section class="card"><div class="row-btns"><button class="btn primary" id="reqCheck">${st.reqChecked ? 'Скрыть ответы' : 'Проверить'}</button>${st.reqChecked ? `<span class="score">Верно ${sc.ok} из ${sc.total}</span>` : ''}</div>
       ${st.reqChecked ? `<div class="w info">${esc(R.conclusion)}</div>` : ''}</section>
       ${mapHtml}${futHtml}
-      ${R.nfr ? `<section class="card"><h4 class="grp">📖 Понятия NFR и за что они отвечают</h4><p class="muted">Подсвечены свойства, которые решают эту главу. Остальные тоже стоит назвать на интервью хотя бы одной фразой.</p>
+      ${R.nfr ? `<section class="card"><h4 class="grp">Понятия NFR и за что они отвечают</h4><p class="muted">Подсвечены свойства, которые решают эту главу. Остальные тоже стоит назвать на интервью хотя бы одной фразой.</p>
         <div class="nfrs">${R.nfr.map((n) => `<div class="nfr ${n.key ? 'key' : ''}" id="nfr-${n.id}"><b>${esc(n.name)} <span class="muted">${esc(n.en)}</span>${n.key ? ' <em>важно здесь</em>' : ''}</b>
           <p>${esc(n.what)}</p><dl><dt>Как меряют</dt><dd>${esc(n.metric)}</dd><dt>На что влияет</dt><dd>${esc(n.drives)}</dd><dt>В этой главе</dt><dd>${esc(n.here)}</dd></dl></div>`).join('')}</div></section>` : ''}`;
   }
@@ -288,7 +290,7 @@
     const epHtml = (e) => {
       const f = fc[e.flow];
       return `<details class="ep ${e.key ? 'key' : ''}" id="ep-${e.id}" ${e.key ? 'open' : ''}><summary>${ep(e)}<span class="ept">${esc(e.title)}</span>${f ? `<span class="epf" title="Поток на карте"><i style="background:${f.color}"></i>${esc(f.label)}</span>` : ''}<span class="epw">${esc(e.who)}</span></summary>
-        <p>${esc(e.about)}</p>${e.extra ? `<p class="muted small">📎 ${esc(e.extra)}</p>` : ''}
+        <p>${esc(e.about)}</p>${e.extra ? `<p class="muted small">${esc(e.extra)}</p>` : ''}
         <div class="rr"><div><h5>Запрос</h5>
           ${e.example ? `<pre class="code">${esc(e.example)}</pre>` : ''}
           ${e.headers ? `<div class="hdrs">${e.headers.map((h) => `<code>${esc(h)}</code>`).join('')}</div>` : ''}
@@ -302,22 +304,22 @@
           ${e.fields ? tbl(null, e.fields.map(([n, d]) => `<tr><td><code>${esc(n)}</code></td><td>${esc(d)}</td></tr>`)) : ''}</div></div>
         <h5>Ошибки</h5>${tbl(['HTTP', 'code', 'Когда'], e.errors.map(([h, c, d]) => `<tr><td><span class="st ${h < 400 ? 'ok' : h < 500 ? 'bad' : 'warn'}">${h}</span></td><td><code>${esc(c)}</code></td><td>${esc(d)}</td></tr>`))}
         ${e.sql ? `<h5>Что происходит в БД</h5><pre class="code sql">${sqlHtml(e.sql)}</pre>` : ''}
-        <div class="rw">${e.writes.map((t) => `<button class="tchip w" data-tbl="${esc(tname(t).name || t)}">✏️ пишет ${esc(t)}</button>`).join('')}${e.reads.map((t) => `<button class="tchip" data-tbl="${esc(tname(t).name || t)}">👁 читает ${esc(t)}</button>`).join('')}</div></details>`;
+        <div class="rw">${e.writes.map((t) => `<button class="tchip w" data-tbl="${esc(tname(t).name || t)}">пишет ${esc(t)}</button>`).join('')}${e.reads.map((t) => `<button class="tchip" data-tbl="${esc(tname(t).name || t)}">читает ${esc(t)}</button>`).join('')}</div></details>`;
     };
     return `${head(step(), A.intro)}
       <section class="card"><h4 class="grp first">Общие правила</h4><dl class="conv">${A.conventions.map((c) => `<div><dt>${esc(c.k)}</dt><dd>${esc(c.v)}</dd></div>`).join('')}</dl></section>
       <section class="card"><h4 class="grp first">Путь гостя по ручкам</h4><ol class="jour">${A.journey.map((j) => `<li>${j.ep ? `<button class="jbtn" data-ep="${j.ep}">${ep(byId[j.ep])}</button>` : '<span class="mth m-int">внутри</span>'}<span>${esc(j.text)}</span></li>`).join('')}</ol></section>
       <section class="card"><h4 class="grp first">Эндпоинты</h4><p class="muted small">Нажми на ручку, чтобы раскрыть контракт. <b class="req">*</b> обязательный параметр. Цветная метка показывает поток на карте, который создаёт эта ручка.</p><div class="eps">${A.endpoints.map(epHtml).join('')}</div></section>
-      <section class="card"><h4 class="grp first">Схема данных</h4><p class="muted small">Таблицы сгруппированы по базам: у каждого сервиса своя БД, как на карте. 🔑 первичный ключ. Сплошная стрелка это FOREIGN KEY внутри одной БД. Пунктир это связь между разными БД: БД её не проверяет, за неё отвечает код сервиса. Нажми на таблицу, чтобы открыть подробности.</p>
-        <div class="er" id="er"><svg class="erl" id="erl" aria-hidden="true"></svg>${A.dbs.map((d) => `<div class="erdb"><div class="erh"><b>${esc(d.name)}</b><small>${esc(d.owner)}</small></div>${A.tables.filter((t) => t.db === d.id).map((t) => `<button class="ert" data-tbl="${esc(t.name)}" id="er-${esc(t.name)}"><b>${esc(t.name)}</b>${t.cols.map((c) => `<span class="erc ${c.k ? 'key' : ''}" data-col="${esc(t.name)}.${esc(c.n)}"><i>${/PK/.test(c.k || '') ? '🔑' : ''}</i>${esc(c.n)}<em>${esc(c.t)}</em>${c.ref ? `<u class="${c.ref.soft ? 'soft' : ''}">→ ${esc(c.ref.t)}</u>` : ''}</span>`).join('')}</button>`).join('')}</div>`).join('')}</div></section>
-      <section class="card"><h4 class="grp first">Какая ручка какие таблицы трогает</h4><p class="muted small">👁 читает, ✏️ пишет. Нажми на ручку или таблицу, чтобы перейти к ней.</p>
+      <section class="card"><h4 class="grp first">Схема данных</h4><p class="muted small">Таблицы сгруппированы по базам: у каждого сервиса своя БД, как на карте. первичный ключ. Сплошная стрелка это FOREIGN KEY внутри одной БД. Пунктир это связь между разными БД: БД её не проверяет, за неё отвечает код сервиса. Нажми на таблицу, чтобы открыть подробности.</p>
+        <div class="er" id="er"><svg class="erl" id="erl" aria-hidden="true"></svg>${A.dbs.map((d) => `<div class="erdb"><div class="erh"><b>${esc(d.name)}</b><small>${esc(d.owner)}</small></div>${A.tables.filter((t) => t.db === d.id).map((t) => `<button class="ert" data-tbl="${esc(t.name)}" id="er-${esc(t.name)}"><b>${esc(t.name)}</b>${t.cols.map((c) => `<span class="erc ${c.k ? 'key' : ''}" data-col="${esc(t.name)}.${esc(c.n)}"><i>${/PK/.test(c.k || '') ? '' : ''}</i>${esc(c.n)}<em>${esc(c.t)}</em>${c.ref ? `<u class="${c.ref.soft ? 'soft' : ''}">→ ${esc(c.ref.t)}</u>` : ''}</span>`).join('')}</button>`).join('')}</div>`).join('')}</div></section>
+      <section class="card"><h4 class="grp first">Какая ручка какие таблицы трогает</h4><p class="muted small">R читает, W пишет. Нажми на ручку или таблицу, чтобы перейти к ней.</p>
         <div class="tscroll"><table class="tbl mx"><thead><tr><th>Ручка</th>${A.tables.map((t) => `<th><button class="lnk" data-tbl="${esc(t.name)}">${esc(t.name)}</button></th>`).join('')}</tr></thead><tbody>
-        ${A.endpoints.map((e) => `<tr><td><button class="lnk" data-ep="${e.id}">${ep(e)}</button></td>${A.tables.map((t) => { const w = e.writes.includes(t.name), r = e.reads.includes(t.name); return `<td class="${w ? 'mw' : r ? 'mr' : ''}">${w ? '✏️' : r ? '👁' : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div></section>
+        ${A.endpoints.map((e) => `<tr><td><button class="lnk" data-ep="${e.id}">${ep(e)}</button></td>${A.tables.map((t) => { const w = e.writes.includes(t.name), r = e.reads.includes(t.name); return `<td class="${w ? 'mw' : r ? 'mr' : ''}">${w ? 'W' : r ? 'R' : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div></section>
       <section class="card"><h4 class="grp first">Таблицы подробно</h4><div class="schemas">${A.tables.map((t) => { const db = A.dbs.find((d) => d.id === t.db) || {}; return `<div class="schema" id="tbl-${esc(t.name)}"><div class="sh2"><code>${esc(t.name)}</code><span class="dbtag">${esc(db.name || '')}</span><span class="muted small">${esc(t.rows || '')}</span></div><p>${esc(t.why)}</p>
         ${tbl(['Колонка', 'Тип', 'Ключ и ограничения', 'Смысл'], t.cols.map((c) => `<tr><td><code>${esc(c.n)}</code></td><td class="muted">${esc(c.t)}</td><td>${(c.k || '').split(' ').filter(Boolean).map((k) => `<span class="kb ${k.toLowerCase()}">${k}</span>`).join('')}${c.c ? `<span class="cons">${esc(c.c)}</span>` : ''}${c.ref ? `<button class="lnk ref ${c.ref.soft ? 'soft' : ''}" data-tbl="${esc(c.ref.t)}" title="${c.ref.soft ? 'Другая БД: связь держит код, а не FOREIGN KEY' : 'FOREIGN KEY'}">→ ${esc(c.ref.t)}.${esc(c.ref.c)}</button>` : ''}</td><td>${esc(c.d)}</td></tr>`))}
         ${t.extra ? `<ul class="small">${t.extra.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
         ${(() => { const back = A.tables.flatMap((o) => o.cols.filter((c) => c.ref && c.ref.t === t.name).map((c) => [o, c])); return back.length ? `<p class="small muted">На неё ссылаются: ${back.map(([o, c]) => `<button class="lnk ${c.ref.soft ? 'soft' : ''}" data-tbl="${esc(o.name)}">${esc(o.name)}.${esc(c.n)}</button>`).join(', ')}</p>` : ''; })()}
-        <div class="rw">${usage(t.name).filter(([e, m]) => !(m === 'r' && e.writes.includes(t.name))).map(([e, m]) => `<button class="tchip ${m}" data-ep="${e.id}">${m === 'w' ? '✏️' : '👁'} ${e.method} ${esc(e.path)}</button>`).join('') || '<span class="muted small">Ни одна ручка главы не трогает её напрямую.</span>'}</div></div>`; }).join('')}</div></section>
+        <div class="rw">${usage(t.name).filter(([e, m]) => !(m === 'r' && e.writes.includes(t.name))).map(([e, m]) => `<button class="tchip ${m}" data-ep="${e.id}">${m === 'w' ? 'W' : 'R'} ${e.method} ${esc(e.path)}</button>`).join('') || '<span class="muted small">Ни одна ручка главы не трогает её напрямую.</span>'}</div></div>`; }).join('')}</div></section>
       ${A.more ? `<section class="card"><h4 class="grp first">Что можно добавить</h4><p>${esc(A.more.intro)}</p><div class="mores"><div><h5>Таблицы</h5>${A.more.tables.map((t) => `<div class="mo"><code>${esc(t.name)}</code><p>${esc(t.when)}</p><small class="muted">${esc(t.cols)}</small></div>`).join('')}</div>
         <div><h5>Ручки</h5>${A.more.endpoints.map((t) => `<div class="mo"><code>${esc(t.ep)}</code><p>${esc(t.when)}</p></div>`).join('')}</div></div></section>` : ''}
       <section class="card"><h4 class="grp first">Проверь себя</h4><div class="quiz">${A.quiz.map((q) => `<details><summary>${esc(q.q)}</summary><p>${esc(q.a)}</p></details>`).join('')}</div></section>`;
@@ -359,20 +361,20 @@
       <div class="kpis" id="kpis"></div>
       <section class="broken" id="broken" hidden></section>
       <div class="lab-grid">
-        <aside class="card pal-card pal-book"><div class="palh"><b>📘 По книге</b><small>Этих блоков хватает для ответа на интервью.</small></div><div id="palBook"></div></aside>
+        <aside class="card pal-card pal-book"><div class="palh"><b>По книге</b><small>Этих блоков хватает для ответа на интервью.</small></div><div id="palBook"></div></aside>
         <section class="card mapcard" id="mapcard">
           <div class="toolbar">
             <div class="scnbar">${L.scenario.map(scnHtml).join('')}<span class="scnsrc" id="scnsrc"></span></div>
             <div class="tb">
               <button class="ib" data-z="-1" aria-label="Уменьшить" title="Уменьшить">−</button><button class="ib" data-z="0" title="Вписать">⤢</button><button class="ib" data-z="1" aria-label="Увеличить" title="Увеличить">+</button>
               <button class="ib" id="full" title="Во весь экран">⛶</button>
-              <button class="btn sm" id="ref" title="Эталон под текущий сценарий: оригинал из книги или его адаптация">✨ Эталон</button><button class="btn sm ghost" id="refBook" title="Схема ровно как в книге">📘 Оригинал</button><button class="btn sm ghost" id="clr">Очистить</button>
+              <button class="btn sm" id="ref" title="Эталон под текущий сценарий: оригинал из книги или его адаптация">Эталон</button><button class="btn sm ghost" id="refBook" title="Схема ровно как в книге">Оригинал</button><button class="btn sm ghost" id="clr">Очистить</button>
             </div>
           </div>
           <div class="cmp" id="cmp"></div>
           <div class="bookline" id="bookline"></div>
           <div class="legend" id="legend"></div>
-          <p class="lghelp">Стрелка значит «вызывает»: запрос идёт по стрелке, ответ возвращается обратно. Точки на стрелке это запросы, цвет показывает поток, число это запросов в секунду. Серый пунктир: по стрелке ничего не идёт, а на блоке написано почему: 🔌 не подключён (не хватает стрелки) или 💤 не нужен в этой схеме. Нажми на стрелку или блок, чтобы увидеть подробности.</p>
+          <p class="lghelp">Стрелка значит «вызывает»: запрос идёт по стрелке, ответ возвращается обратно. Точки на стрелке это запросы, цвет показывает поток, число это запросов в секунду. Серый пунктир: по стрелке ничего не идёт, а на блоке написано почему: не подключён (не хватает стрелки) или не нужен в этой схеме. Нажми на стрелку или блок, чтобы увидеть подробности.</p>
           <div class="board-wrap" id="wrap">
             <div class="board" id="board" style="width:${W}px;height:${H}px">
               <svg id="edges" width="${W}" height="${H}" aria-hidden="true"><defs>
@@ -381,11 +383,11 @@
               <div id="nodes"></div><button class="edel" id="edel" hidden aria-label="Удалить стрелку">×</button>
             </div>
             <div class="hint" id="hint" hidden></div>
-            <div class="empty-map" id="emptyMap" hidden><b>Карта пустая</b><span>Перетащи сюда «Клиент» из палитры или нажми «✨ Эталон».</span></div>
+            <div class="empty-map" id="emptyMap" hidden><b>Карта пустая</b><span>Перетащи сюда «Клиент» из палитры или нажми «Эталон».</span></div>
             <aside class="insp" id="insp" hidden></aside>
           </div>
         </section>
-        <aside class="card pal-card pal-exp"><div class="palh"><b>🧪 Эксперименты</b><small>В книге их нет. Добавь и посмотри, что станет лучше, а что хуже.</small></div><div id="palExp"></div></aside>
+        <aside class="card pal-card pal-exp"><div class="palh"><b>Эксперименты</b><small>В книге их нет. Добавь и посмотри, что станет лучше, а что хуже.</small></div><div id="palExp"></div></aside>
       </div>
       ${deep ? '<h3 class="sec">Проблемы углубления</h3><div class="probs" id="probs"></div>' : ''}
       <div class="below">
@@ -552,7 +554,7 @@
       const onMap = st.graph.nodes.some((n) => n.type === t);
       const done = onMap && !b.multi, chips = done ? [] : effects(r, analyzeG(E.addBlock(L, st.graph, t, [0, 0]).graph, step().stage));
       return `<div class="pwrap"><button class="pi cat-${b.cat}"${brand(b)} data-t="${t}" title="Перетащи на карту или нажми">
-        <span class="pic">${icon(b)}</span><span class="pin"><b>${esc(b.name)}</b><span class="pmeta"><span class="ptag ${b.extra ? 'xp' : 'bk'}">${b.extra ? '🧪 эксперимент' : '📘 книга'}</span>${b.alsoExp ? '<span class="ptag xp">🧪 сравни с аналогами</span>' : ''}${onMap ? '<em>на карте</em>' : ''}</span><small>${esc(b.tag || '')}</small>
+        <span class="pic">${icon(b)}</span><span class="pin"><b>${esc(b.name)}</b><span class="pmeta">${b.alsoExp ? '<span class="ptag">сравни с аналогами</span>' : ''}${onMap ? '<em>на карте</em>' : ''}</span><small>${esc(b.tag || '')}</small>
         ${done ? '' : `<span class="chips">${chips.length ? chips.slice(0, 4).map(([t, good]) => `<span class="chip ${good ? 'good' : 'bad'}">${esc(t)}</span>`).join('') : '<span class="chip">сейчас без эффекта</span>'}</span>`}</span></button>
         ${b.fit ? `<button class="pinfo" data-info="${t}" aria-expanded="${infoOpen.has(t)}" title="Для чего подходит, когда не стоит, ограничения">ⓘ</button>${infoOpen.has(t) ? `<div class="pfit">${fitHtml(b.fit)}</div>` : ''}` : ''}</div>`;
     };
@@ -607,9 +609,9 @@
         : `<div class="nf"><span class="pill">${fmt(Object.values(n.flows).reduce((s, v) => s + v, 0))} rps</span></div>`;
       const cl = clusterHtml(b, n, r);
       return `<div class="node cat-${b.cat} ${b.extra ? 'exp' : ''} ${cl ? 'wide' : ''} ${hot ? 'hot' : ''} ${n.load || !b.cap ? '' : 'idle'} ${selNode === g.id ? 'sel' : ''}" data-id="${g.id}" style="left:${g.x}px;top:${g.y}px;${brand(b).slice(8, -1)}">
-        <div class="nh"><span class="ni">${icon(b)}</span><span class="nt"><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''}${b.extra ? ' · 🧪 эксперимент' : ''}</small></span><button class="nx" data-del aria-label="Удалить ${esc(b.name)}" title="Удалить">×</button></div>
+        <div class="nh"><span class="ni">${icon(b)}</span><span class="nt"><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''}${b.extra ? ' · эксперимент' : ''}</small></span><button class="nx" data-del aria-label="Удалить ${esc(b.name)}" title="Удалить">×</button></div>
         ${body}${cl}
-        ${n.why ? `<div class="nwhy ${n.why.kind}">${n.why.kind === 'useless' ? '💤 Не нужен в этой главе' : n.why.kind === 'dup' ? '💤 Лишний дубль' : '🔌 Не подключён'}</div>` : ''}
+        ${n.why ? `<div class="nwhy ${n.why.kind}">${n.why.kind === 'useless' ? 'Не нужен в этой главе' : n.why.kind === 'dup' ? 'Лишний дубль' : 'Не подключён'}</div>` : ''}
         <button class="port" data-port aria-label="Провести стрелку от «${esc(b.name)}»" title="Потяни к другому блоку"></button></div>`;
     }).join('');
   }
@@ -637,26 +639,26 @@
       const S = c.shards.length;
       if (S < 2 && !c.replicas) return '';
       const even = c.shards.every((x) => Math.abs(x.share - 1 / S) < 1e-9), show = S > 8 ? c.shards.slice(0, 7) : c.shards;
-      return `<div class="cl">${S > 1 ? `<div class="clr">🧭 Роутер${c.key ? `: по ${esc(c.key)}` : ''}${even ? '' : ' · <b class="warn">перекос</b>'}</div>` : ''}
+      return `<div class="cl">${S > 1 ? `<div class="clr">Роутер${c.key ? `: по ${esc(c.key)}` : ''}${even ? '' : ' · <b class="warn">перекос</b>'}</div>` : ''}
         <div class="shs">${show.map((x, i) => `<div class="shd" title="Шард ${i + 1}: ${pct(x.share)} данных и запросов. Primary ${pct(x.pU)}${c.replicas ? `, реплики по ${pct(x.rU)}` : ''}">
           ${S > 1 ? `<span class="shn">S${i + 1}${even ? '' : ' · ' + pct(x.share)}</span>` : ''}<span class="pp ${cls(x.pU)}">P ${pct(x.pU)}</span>
           ${c.replicas ? `<span class="rl" title="${c.sync === 'sync' ? 'Синхронная' : 'Асинхронная'} репликация primary → реплики">${c.sync === 'sync' ? '⇊' : '⇣'}</span><span class="rs">${Array.from({ length: c.replicas }, () => `<i class="${cls(x.rU)}"></i>`).join('')}</span>` : ''}</div>`).join('')}
           ${S > 8 ? `<div class="shd more">+${S - 7}</div>` : ''}</div>
-        <div class="clk"><span>✍️ запись → P</span><span>👁 чтение → ${c.replicas ? 'P и R' : 'P'}</span></div></div>`;
+        <div class="clk"><span>запись → P</span><span>чтение → ${c.replicas ? 'P и R' : 'P'}</span></div></div>`;
     }
     if (b.tune === 'kafka') {
       const B = c.brokers, P = c.partitions, on = (k) => Array.from({ length: P }, (_, p) => p).filter((p) => (k - (p % B) + B) % B < c.rf);
       const cons = consumersOf(r, n.id);
-      return `<div class="cl"><div class="clr">✍️ ${esc(producersOf(r, n.id))} → топик, ${P} парт.</div>
+      return `<div class="cl"><div class="clr">${esc(producersOf(r, n.id))} → топик, ${P} парт.</div>
         <div class="brs">${Array.from({ length: B }, (_, k) => { const all = on(k), lead = all.filter((p) => p % B === k);
           return `<div class="br" title="Брокер ${k + 1}: лидер для ${lead.length} партиций, копии ещё ${all.length - lead.length}"><span class="shn">B${k + 1}</span><span class="pts">${lead.slice(0, 6).map((p) => `<i class="ld">P${p}</i>`).join('')}${lead.length > 6 ? `<i>+${lead.length - 6}</i>` : ''}</span>${all.length > lead.length ? `<small>+${all.length - lead.length} коп.</small>` : ''}</div>`; }).join('')}</div>
-        <div class="clk">${cons.length ? cons.map((x) => x.def.cache ? `<span>📥 ${esc(x.def.name)}: CDC</span>` : `<span>👥 ${esc(x.def.name)}: ${x.rep} потреб., ${x.rep >= P ? 'по 1 партиции' : `по ${Math.ceil(P / x.rep)} парт.`}${x.want > P ? `; нужно ${x.want}, но лишним не досталось бы партиций` : ''}</span>`).join('') : '<span>👥 потребителей нет</span>'}<span>RF ${c.rf}: лидер + ${c.rf - 1} коп.</span></div></div>`;
+        <div class="clk">${cons.length ? cons.map((x) => x.def.cache ? `<span>${esc(x.def.name)}: CDC</span>` : `<span>${esc(x.def.name)}: ${x.rep} потреб., ${x.rep >= P ? 'по 1 партиции' : `по ${Math.ceil(P / x.rep)} парт.`}${x.want > P ? `; нужно ${x.want}, но лишним не досталось бы партиций` : ''}</span>`).join('') : '<span>потребителей нет</span>'}<span>RF ${c.rf}: лидер + ${c.rf - 1} коп.</span></div></div>`;
     }
     if (b.tune === 'rabbit') {
       const cons = consumersOf(r, n.id);
-      return `<div class="cl"><div class="clr">✍️ ${esc(producersOf(r, n.id))} → exchange</div>
+      return `<div class="cl"><div class="clr">${esc(producersOf(r, n.id))} → exchange</div>
         <div class="qs">${Array.from({ length: c.queues }, (_, i) => `<i class="q ${cls(n.util)}" title="Очередь ${i + 1}: ${pct(n.util)}">q${i + 1} ${pct(n.util)}</i>`).join('')}</div>
-        <div class="clk">${cons.length ? cons.map((x) => `<span>👥 ${esc(x.def.name)}: ${x.rep} конкурируют</span>`).join('') : '<span>👥 потребителей нет</span>'}<span>${c.qtype} · prefetch ${c.prefetch}</span></div></div>`;
+        <div class="clk">${cons.length ? cons.map((x) => `<span>${esc(x.def.name)}: ${x.rep} конкурируют</span>`).join('') : '<span>потребителей нет</span>'}<span>${c.qtype} · prefetch ${c.prefetch}</span></div></div>`;
     }
     return '';
   }
@@ -863,23 +865,23 @@
       if (!n) { box.innerHTML = `<p class="onote">«${esc(def.name)}» нет на карте.</p>`; return; }
       const c = n.cfg, key = c.shards > 1 && def.shardKeys ? `, ключ ${def.shardKeys.find((k) => k.v === c.shardKey).label}` : '';
       box.closest('.prob').classList.toggle('solved', n.util <= 0.9 && c.shardKey !== 'date');
-      box.innerHTML = `<p class="onote">Сейчас: ${c.shards} шард.${key}, реплик ${c.replicas}. Загрузка ${Math.round(n.util * 100)}%.</p><button class="btn sm" data-open="${g.id}">⚙️ Настроить ${esc(def.name)}</button>`;
+      box.innerHTML = `<p class="onote">Сейчас: ${c.shards} шард.${key}, реплик ${c.replicas}. Загрузка ${Math.round(n.util * 100)}%.</p><button class="btn sm" data-open="${g.id}">Настроить ${esc(def.name)}</button>`;
       $('[data-open]', box).onclick = () => { select(g.id); $('#mapcard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
     });
     const d = r.d;
-    $('#scnsrc').innerHTML = `📐 На входе из оценки: ${L.flows.filter((f) => !f.optional).map((f) => `<span class="fr"><i style="background:${f.color}"></i>${esc(f.label)} ${fmt(f.rate(d))}/с</span>`).join('')} <button class="lnk" data-go="${L.steps.findIndex((x) => x.kind === 'est')}">изменить</button>`;
+    $('#scnsrc').innerHTML = `На входе из оценки: ${L.flows.filter((f) => !f.optional).map((f) => `<span class="fr"><i style="background:${f.color}"></i>${esc(f.label)} ${fmt(f.rate(d))}/с</span>`).join('')} <button class="lnk" data-go="${L.steps.findIndex((x) => x.kind === 'est')}">изменить</button>`;
     $('[data-go]', $('#scnsrc')).onclick = (e) => go(+e.target.dataset.go);
     renderCmp(r);
     const nb = st.graph.nodes.filter((g) => !L.blocks[g.type].extra).length, nx = st.graph.nodes.length - nb;
-    $('#bookline').innerHTML = `<span class="bk">📘 По книге: ${nb}</span><span class="xp">🧪 Эксперименты: ${nx}</span><span class="muted">Блоки-эксперименты на карте с пунктирной рамкой.</span>`;
+    $('#bookline').innerHTML = `<span class="bk">По книге: ${nb}</span><span class="xp">Эксперименты: ${nx}</span><span class="muted">Блоки-эксперименты на карте с пунктирной рамкой.</span>`;
     const goals = L.goals[step().stage], done = goals.filter((g) => g.check(r)).length;
-    $('#goals').innerHTML = `<div class="gprog"><i style="width:${(done / goals.length) * 100}%"></i></div><p class="muted">Выполнено ${done} из ${goals.length}${done === goals.length ? ' 🎉' : ''}</p>
+    $('#goals').innerHTML = `<div class="gprog"><i style="width:${(done / goals.length) * 100}%"></i></div><p class="muted">Выполнено ${done} из ${goals.length}${done === goals.length ? ' ' : ''}</p>
       <ul class="goals">${goals.map((g) => { const ok = g.check(r); return `<li class="${ok ? 'done' : ''}"><span class="${ok ? 'y' : 'n'}">${ok ? '✔' : '○'}</span><span>${esc(g.text)}</span></li>`; }).join('')}</ul>`;
-    const order = { bad: 0, warn: 1, info: 2 }, icon = { bad: '⛔', warn: '⚠️', info: '💡' };
+    const order = { bad: 0, warn: 1, info: 2 };
     const ws = r.warnings.slice().sort((a, b) => order[a.lvl] - order[b.lvl]), bad = ws.filter((w) => w.lvl === 'bad'), rest = ws.filter((w) => w.lvl !== 'bad');
     $('#broken').hidden = !bad.length;
-    $('#broken').innerHTML = `<h4><span>❗</span> Что сломалось</h4><ul>${bad.map((w) => `<li>${esc(w.text)}</li>`).join('')}</ul>`;
-    $('#warns').innerHTML = rest.length ? rest.map((w) => `<div class="w ${w.lvl}"><span>${icon[w.lvl]}</span><span>${esc(w.text)}</span></div>`).join('') : '<div class="note">Пока всё спокойно.</div>';
+    $('#broken').innerHTML = `<h4>Что сломалось</h4><ul>${bad.map((w) => `<li>${esc(w.text)}</li>`).join('')}</ul>`;
+    $('#warns').innerHTML = rest.length ? rest.map((w) => `<div class="w ${w.lvl}"><span>${esc(w.text)}</span></div>`).join('') : '<div class="note">Пока всё спокойно.</div>';
     renderInspector();
   }
 
@@ -889,11 +891,11 @@
     const k = (x) => { const b = x.flows.find((f) => f.id === 'book');
       if (!x.m.routed) return '<span class="bad">схема не достроена: часть потоков не доходит до данных</span>';
       return `<span class="${x.m.served >= 1 && x.m.maxU <= 0.9 ? 'ok' : 'bad'}">выдерживает ${pct(x.m.served)}, пик загрузки ${pct(x.m.maxU)}</span> · бронь ${b && b.ok ? ms(b.lat) : '—'} · ${money(x.m.cost)} · сложность ${x.m.cx.toFixed(1)}`; };
-    $('#cmp').innerHTML = `<div class="cref ${A.ok ? '' : 'nok'}"><div class="ct"><b>${A.original ? '📘 Эталон: оригинал из книги' : `🔧 Эталон: адаптация под ${esc(scnText())}`}</b><small>${k(A.r)}</small></div>
+    $('#cmp').innerHTML = `<div class="cref ${A.ok ? '' : 'nok'}"><div class="ct"><b>${A.original ? 'Эталон: оригинал из книги' : `Эталон: адаптация под ${esc(scnText())}`}</b><small>${k(A.r)}</small></div>
       ${A.original ? '<p class="muted">При этом сценарии схема из книги выдерживает нагрузку без изменений.</p>'
         : `<details><summary>Чем отличается от книги (${A.changes.length})</summary><ul>${A.changes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul><p class="muted">Оригинал из книги здесь: ${k(A.before)}</p></details>`}
-      ${A.ok ? '' : `<div class="blk">⛔ Даже адаптированный эталон не выдерживает. Упёрлись: ${A.blockers.map((x) => `«${esc(x.name)}» ${pct(x.util)} (${esc(x.limit)})`).join(', ')}. Нужно: ${[...new Set(A.blockers.map((x) => x.need))].map(esc).join('; ')}.</div>`}</div>
-      <div class="cmine"><div class="ct"><b>🧩 Твоя схема</b><small>${st.graph.nodes.length ? k(r) : 'карта пустая'}</small></div></div>`;
+      ${A.ok ? '' : `<div class="blk">Даже адаптированный эталон не выдерживает. Упёрлись: ${A.blockers.map((x) => `«${esc(x.name)}» ${pct(x.util)} (${esc(x.limit)})`).join(', ')}. Нужно: ${[...new Set(A.blockers.map((x) => x.need))].map(esc).join('; ')}.</div>`}</div>
+      <div class="cmine"><div class="ct"><b>Твоя схема</b><small>${st.graph.nodes.length ? k(r) : 'карта пустая'}</small></div></div>`;
   }
 
   function renderInspector() {
@@ -906,12 +908,12 @@
     const n = last.nodes[g.id], b = L.blocks[g.type];
     const flows = last.flows.filter((f) => n.flows[f.id] > 0), max = Math.max(...flows.map((f) => n.flows[f.id]), 1);
     const li = (a) => (a && a.length ? '<ul>' + a.map((t) => `<li>${esc(t)}</li>`).join('') + '</ul>' : '');
-    box.innerHTML = `<div class="ih cat-${b.cat}"${brand(b)}><span class="ni">${icon(b)}</span><div><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''} · ${b.extra ? '🧪 эксперимент, в книге его нет' : '📘 по книге'}</small></div><button class="nx" id="inspX" aria-label="Закрыть">×</button></div>
+    box.innerHTML = `<div class="ih cat-${b.cat}"${brand(b)}><span class="ni">${icon(b)}</span><div><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''} · ${b.extra ? 'эксперимент, в книге его нет' : 'по книге'}</small></div><button class="nx" id="inspX" aria-label="Закрыть">×</button></div>
       <p>${esc(b.learn.what)}</p>
       ${b.cap ? `<div class="istats"><div><span>Нагрузка</span><b>${fmt(n.load)} / ${fmt(n.capTotal)} rps</b></div><div><span>Загрузка</span><b class="${cls(n.util)}">${pct(n.util)}</b></div><div><span>${esc(b.repLabel || 'Реплик')}</span><b>${n.rep}${!b.tune && n.rep >= n.maxRep ? ' (макс.)' : ''}</b></div><div><span>Задержка</span><b>${ms((b.lat + (n.latAdd || 0)) * n.q)}</b></div></div>` : ''}
       ${n.explain && n.explain.length ? `<h5>Почему такая нагрузка</h5><ul class="expl">${n.explain.map((t) => `<li>${esc(t)}</li>`).join('')}${n.limit ? `<li class="lim">Упёрся: ${esc(n.limit)}. Нужно: ${esc(n.need)}.</li>` : ''}</ul>` : ''}
       ${tuneHtml(b, n)}
-      ${flows.length ? `<h5>Какие потоки идут</h5>${flows.map((f) => `<div class="fbar"><span>${esc(f.label)}</span><i style="width:${(n.flows[f.id] / max) * 100}%;background:${f.color}"></i><b>${fmt(n.flows[f.id])}</b></div>`).join('')}` : `<p class="why ${n.why ? n.why.kind : ''}">${n.why ? (n.why.kind === 'useless' ? '💤 ' : '🔌 ') + esc(n.why.text) : 'Через блок не идёт ни один поток.'}</p>`}
+      ${flows.length ? `<h5>Какие потоки идут</h5>${flows.map((f) => `<div class="fbar"><span>${esc(f.label)}</span><i style="width:${(n.flows[f.id] / max) * 100}%;background:${f.color}"></i><b>${fmt(n.flows[f.id])}</b></div>`).join('')}` : `<p class="why ${n.why ? n.why.kind : ''}">${n.why ? (n.why.kind === 'useless' ? '' : '') + esc(n.why.text) : 'Через блок не идёт ни один поток.'}</p>`}
       ${b.learn.plus && b.learn.plus.length ? `<h5 class="plus">Что даёт</h5>${li(b.learn.plus)}` : ''}
       ${b.learn.minus && b.learn.minus.length ? `<h5 class="minus">Чем платим</h5>${li(b.learn.minus)}` : ''}
       ${b.fit ? `<h5>Когда брать</h5><div class="pfit">${fitHtml(b.fit)}</div>` : ''}
@@ -928,14 +930,14 @@
   function tuneHtml(def, n) {
     if (!def.tune) return '';
     const fields = E.TUNE[def.tune].filter((f) => !f.when || f.when(n.cfg, def));
-    return `<h5>⚙️ Настройки</h5><div class="tune">${fields.map((f) => {
+    return `<h5>Настройки</h5><div class="tune">${fields.map((f) => {
       const opts = tuneOpts(f, def), cur = opts.find((o) => o.v === n.cfg[f.id]);
-      return `<div class="tf"><div class="tfl">${esc(f.label)}<span class="${f.book ? 'bk' : 'xp'}">${f.book ? '📘 по книге' : '🧪 эксперимент'}</span></div>
+      return `<div class="tf"><div class="tfl">${esc(f.label)}<span class="${f.book ? 'bk' : 'xp'}">${f.book ? 'по книге' : 'эксперимент'}</span></div>
         <div class="tseg">${opts.map((o) => { const no = f.id === 'rf' && o.v > n.cfg.brokers;
           return `<button class="${o === cur ? 'on' : ''}" data-tf="${f.id}" data-v="${esc(o.v)}" ${no ? `disabled title="Копий не может быть больше, чем брокеров (${n.cfg.brokers})"` : ''}>${esc(o.label)}</button>`; }).join('')}</div>
         <p class="tnote">${esc((cur && cur.note) || f.hint || '')}</p></div>`;
     }).join('')}</div>
-    ${E.sizable(def.tune) ? '<button class="btn sm" id="autoTune">✨ Подобрать под нагрузку</button>' : ''}`;
+    ${E.sizable(def.tune) ? '<button class="btn sm" id="autoTune">Подобрать под нагрузку</button>' : ''}`;
   }
   function setCfg(g, id, raw) {
     const def = L.blocks[g.type], f = E.TUNE[def.tune].find((x) => x.id === id), o = tuneOpts(f, def).find((x) => String(x.v) === raw);
@@ -957,17 +959,17 @@
   function renderProbs() {
     const D = st.deep;
     $('#probs').innerHTML = L.problems.map((p, i) => {
-      if (!p.options) return `<article class="card prob"><div class="ph"><span class="pnum">${i + 1}</span><h4>${p.icon} ${esc(p.title)}</h4></div><p class="pr">${esc(p.problem)}</p>
+      if (!p.options) return `<article class="card prob"><div class="ph"><span class="pnum">${i + 1}</span><h4>${esc(p.title)}</h4></div><p class="pr">${esc(p.problem)}</p>
         ${(p.params || []).map((x) => sliderHtml(x, D.params[x.id], 'data-par')).join('')}
         ${p.hint ? `<p class="note">${esc(p.hint)}</p>` : ''}<div class="pset" data-pset="${p.settings}"></div>
-        <details><summary>🗣️ Как сказать на интервью</summary><p>${esc(p.say)}</p></details></article>`;
+        <details><summary>Как сказать на интервью</summary><p>${esc(p.say)}</p></details></article>`;
       const cur = p.options.find((o) => o.v === D.choices[p.key]), solved = cur !== p.options[0];
-      return `<article class="card prob ${solved ? 'solved' : ''}"><div class="ph"><span class="pnum">${i + 1}</span><h4>${p.icon} ${esc(p.title)}</h4></div><p class="pr">${esc(p.problem)}</p>
+      return `<article class="card prob ${solved ? 'solved' : ''}"><div class="ph"><span class="pnum">${i + 1}</span><h4>${esc(p.title)}</h4></div><p class="pr">${esc(p.problem)}</p>
         ${(p.params || []).map((x) => sliderHtml(x, D.params[x.id], 'data-par')).join('')}
         ${p.hint ? `<p class="note">${esc(p.hint)}</p>` : ''}
         <div class="seg" role="radiogroup" aria-label="Решение">${p.options.map((o) => `<label class="opt ${o === cur ? 'on' : ''}"><input type="radio" name="${p.key}" value="${o.v}" ${o === cur ? 'checked' : ''}>${esc(o.label)}</label>`).join('')}</div>
         <p class="onote">${esc(cur.note)}</p>
-        <details><summary>🗣️ Как сказать на интервью</summary><p>${esc(p.say)}</p></details></article>`;
+        <details><summary>Как сказать на интервью</summary><p>${esc(p.say)}</p></details></article>`;
     }).join('');
     $$('#probs input[type=radio]').forEach((r) => (r.onchange = () => { D.choices[r.name] = r.value; save(); renderProbs(); update(); }));
     $$('#probs [data-par]').forEach((el) => (el.oninput = () => {
@@ -1018,15 +1020,15 @@
           ${row('Стоимость в месяц', money(m.cost).replace('/мес', ''), money(rm.cost).replace('/мес', ''), m.cost <= rm.cost * 1.05)}
           ${row('Сложность', m.cx.toFixed(1).replace('.', ','), rm.cx.toFixed(1).replace('.', ','), m.cx <= rm.cx + 0.5)}
           ${row('Блоков', D.mine.length, D.theirs.length, null)}</tbody></table>
-          ${D.onlyMine.length ? `<p class="small">🧪 Есть только у тебя: ${D.onlyMine.map(esc).join(', ')}.</p>` : ''}
-          ${D.onlyRef.length ? `<p class="small">📘 Есть в эталоне, но нет у тебя: ${D.onlyRef.map(esc).join(', ')}.</p>` : ''}
+          ${D.onlyMine.length ? `<p class="small">Есть только у тебя: ${D.onlyMine.map(esc).join(', ')}.</p>` : ''}
+          ${D.onlyRef.length ? `<p class="small">Есть в эталоне, но нет у тебя: ${D.onlyRef.map(esc).join(', ')}.</p>` : ''}
           ${!D.onlyMine.length && !D.onlyRef.length ? '<p class="small">Набор блоков совпадает с эталоном.</p>' : ''}</section>
         <section class="card"><h4 class="grp first">Твои решения против книги</h4><div class="decs">${probs.map((p) => { const q = x.choice(p.key);
-          return `<div class="dec ${q.ok ? 'ok' : 'no'}"><b>${p.icon} ${esc(p.title)}</b><span>Ты: <em>${esc(q.o.label)}</em> ${q.ok ? '✔' : `· в книге: ${esc(p.options.filter((o) => (p.best || []).includes(o.v)).map((o) => o.label).join(' или '))}`}</span><small>${esc(q.say)}</small></div>`; }).join('')}</div></section>
+          return `<div class="dec ${q.ok ? 'ok' : 'no'}"><b>${esc(p.title)}</b><span>Ты: <em>${esc(q.o.label)}</em> ${q.ok ? '✔' : `· в книге: ${esc(p.options.filter((o) => (p.best || []).includes(o.v)).map((o) => o.label).join(' или '))}`}</span><small>${esc(q.say)}</small></div>`; }).join('')}</div></section>
       </div>
       <section class="card"><h4 class="grp first">Рассказ на интервью с твоими цифрами</h4><p class="muted small">Около ${S.script(x).reduce((a, s) => a + s.min, 0)} минут: столько обычно и есть на дизайн-секцию. Рассказ меняется вместе со схемой и решениями.</p>
         <ol class="script2">${D.script.map((s) => `<li><span class="sst">${esc(s.step)}<small>~${s.min} мин</small></span><span>${esc(s.text)}</span></li>`).join('')}</ol>
-        <div class="row-btns"><button class="btn primary" id="copySum">📋 Скопировать конспект</button></div></section>
+        <div class="row-btns"><button class="btn primary" id="copySum">Скопировать конспект</button></div></section>
       <section class="card"><h4 class="grp first">Ключевые компромиссы</h4><div class="tscroll"><table class="tbl"><thead><tr><th>Выбрали</th><th>Вместо</th><th>Почему</th></tr></thead><tbody>
         ${S.tradeoffs.map((t) => `<tr><td><b>${esc(t.pick)}</b></td><td class="muted">${esc(t.alt)}</td><td>${esc(t.why)}</td></tr>`).join('')}</tbody></table></div></section>
       <div class="sum-grid">
