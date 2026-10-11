@@ -57,6 +57,8 @@
       ['Backpressure', 'Потребитель не успевает, очередь растёт. Брокер это переживёт и даст время добавить потребителей, но задержка доставки растёт: следим за lag.'],
     ] },
   ];
+  // Числа в тексте: разряды пробелами, дробь через запятую.
+  const num = (v) => Math.round(v).toLocaleString('ru-RU'), dec = (v) => String(+v.toFixed(1)).replace('.', ',');
   const ADAPT = [
     { add: 'cache', id: 'cache', from: 'hotel', pos: [685, 170], why: 'кэш отелей снимает чтения с Hotel DB' },
     { add: 'cache', id: 'cacheR', from: 'reservation', pos: [685, 290], why: 'кэш доступности снимает чтения с Reservation DB' },
@@ -223,7 +225,7 @@
           calc: (d, i, f) => `${f((i.rooms * d.growth) / 200)} отелей (по 200 номеров) × 20 типов × 730 дней = ${f(d.invRows)}`,
           why: 'Храним не номера, а остаток по типу номера на каждую дату на 2 года вперёд. Отель считаем по 200 номеров, поэтому рост бизнеса добавляет отели. Десятки миллионов строк легко помещаются в одну БД.', to: 'размер БД: влезает ли в одну' },
       ],
-      conclusion: (d) => { const w = d.tps * d.k, t = w < 10 ? w.toFixed(1) : Math.round(w);
+      conclusion: (d) => { const w = d.tps * d.k, t = w < 10 ? dec(w) : num(w);
         return w < 300 ? `В пике сценария запись около ${t} в секунду: это мало. Одна реляционная БД справится, шардировать ради нагрузки не нужно. Значит, вся сложность будет в конкурентности, а не в масштабе.`
           : w < 1000 ? `В пике сценария запись около ${t} в секунду. Один primary ещё справляется, но запас тает: пора думать о шардировании.`
           : `В пике сценария запись около ${t} в секунду: один primary (в модели около 1500 rps) не вытянет. Нужны шарды, а чтения стоит снять кэшем.`; },
@@ -308,7 +310,7 @@
           ok: { status: '200 OK', body: { reservationId: '7f3c9a2e-…', status: 'canceled', refund: { amount: 4500000, currency: 'RUB', state: 'pending' } } },
           fields: [['refund', 'Только для оплаченной брони. Возврат делает Payment Service по команде Reservation Service, состояние pending → done, бронь становится refunded']],
           errors: [['403', 'FORBIDDEN', 'Бронь чужая'], ['404', 'RESERVATION_NOT_FOUND', 'Нет такой брони'], ['409', 'CANNOT_CANCEL', 'Заезд уже начался или бронь отклонена']],
-          sql: "-- Одна команда: номер возвращается, только если статус сменили именно сейчас.\n-- Повтор отмены: c пустой, инвентарь не трогаем, отвечаем как в прошлый раз\nWITH c AS (\n  UPDATE reservation SET status = 'canceled'\n   WHERE reservation_id = '7f3c9a2e-…' AND status IN ('pending', 'paid')\n  RETURNING hotel_id, room_type_id, start_date, end_date\n)\nUPDATE room_type_inventory i\n   SET total_reserved = i.total_reserved - 1\n  FROM c\n WHERE i.hotel_id = c.hotel_id AND i.room_type_id = c.room_type_id\n   AND i.date >= c.start_date AND i.date < c.end_date;\n-- была paid → команда refund в Payment Service (шаг Saga), после возврата refunded",
+          sql: "-- PostgreSQL. Одна команда: номер возвращается, только если статус сменили именно сейчас.\n-- Повтор отмены: c пустой, инвентарь не трогаем, отвечаем как в прошлый раз\nWITH c AS (\n  UPDATE reservation SET status = 'canceled'\n   WHERE reservation_id = '7f3c9a2e-…' AND status IN ('pending', 'paid')\n  RETURNING hotel_id, room_type_id, start_date, end_date\n)\nUPDATE room_type_inventory i\n   SET total_reserved = i.total_reserved - 1\n  FROM c\n WHERE i.hotel_id = c.hotel_id AND i.room_type_id = c.room_type_id\n   AND i.date >= c.start_date AND i.date < c.end_date;\n-- была paid → команда refund в Payment Service (шаг Saga), после возврата refunded\n\n-- MySQL (изменяющих CTE нет): BEGIN; UPDATE reservation … ;\n-- и только если ROW_COUNT() = 1, UPDATE room_type_inventory … ; COMMIT;",
           reads: [], writes: ['reservation', 'room_type_inventory'] },
         { id: 'inventory', method: 'PUT', path: '/v1/hotels/{hotelId}/room-types/{roomTypeId}/inventory', title: 'Админка: сколько номеров продавать', who: 'сотрудник отеля', flow: null, extra: 'В книге это часть CRUD-ручек для отелей и номеров. Остальные (POST/PUT /v1/hotels, /rooms) устроены так же просто.',
           about: 'Отель задаёт, сколько номеров типа есть на каждую дату. Нельзя опустить ниже уже проданного.',
@@ -639,7 +641,8 @@
       // Настройки Reservation DB: репликация, шардирование, партиционирование
       if (rc && rc.replicas > 0) {
         if (rc.sync === 'sync') { book.extraLat += 10; pay.extraLat += 10; }
-        else ctx.warn('info', 'Асинхронные реплики Reservation DB могут отставать и показать «есть места», которых уже нет. Бронь всё равно проверяется на primary.');
+        else if (rc.sync === 'semi') { book.extraLat += 5; pay.extraLat += 5; ctx.warn('info', 'Одна реплика Reservation DB полусинхронная: подтверждённая бронь переживает падение primary. Остальные асинхронные и могут показать «есть места», которых уже нет.'); }
+        else ctx.warn('info', 'Асинхронные реплики Reservation DB могут отставать и показать «есть места», которых уже нет. Бронь всё равно проверяется на primary. При падении primary последние подтверждённые брони могут пропасть: держи одну реплику полусинхронной.');
       }
       if (rc && rc.shards > 1 && rc.shardKey === 'date') {
         ctx.cx += 2; book.extraLat += 40;
@@ -656,7 +659,7 @@
       if (linked('reservation', 'lock')) book.extraLat += 3;
 
       // Решения для пика ×1000. Ячейки и load shedding считает движок, здесь то, что меняет запись в БД.
-      const fmtN = (v) => Math.round(v).toLocaleString('ru-RU'), dur = (sec) => (sec < 90 ? `${Math.round(sec)} с` : sec < 5400 ? `${Math.round(sec / 60)} мин` : `${+(sec / 3600).toFixed(1)} ч`);
+      const fmtN = num, dur = (sec) => (sec < 90 ? `${Math.round(sec)} с` : sec < 5400 ? `${Math.round(sec / 60)} мин` : `${dec(sec / 3600)} ч`);
       of('waitroom').filter((n) => Object.keys(n.flows).length).forEach((n) => {
         const T = d.k * (d.page + 2 * d.tps), A = n.cfg.admit;
         if (T <= A) return ctx.warn('info', `Виртуальная очередь: спрос ${fmtN(T)} rps воронки брони ниже порога ${fmtN(A)}, все проходят без ожидания.`);
@@ -700,7 +703,7 @@
         if (!ok('bookAsync') && !ok('invDecr')) of(dbT).forEach((n) => { const x = ((n.flows.book || 0) * k) / (1 - k); n.load += x; n.wload += x; });
         if (k > 0.15) ctx.warn('warn', `Конфликтов ${Math.round(k * 100)}%: оптимистичная блокировка тонет в повторах. При частых конфликтах лучше пессимистичная или условная запись в БД.`);
       }
-      if (store !== 'cond' && acid && c.lock === 'constraint') { ctx.cx += 1; M.retries = B * k; badge(dbT, '✅', 'CHECK constraint'); }
+      if (store !== 'cond' && acid && c.lock === 'constraint') { ctx.cx += 1; M.retries = B * k; book.extraLat += 100 * k; badge(dbT, '✅', 'CHECK constraint'); } // ждёт блокировку строки, но короче, чем FOR UPDATE
 
       if (linked('reservation', 'lock')) {
         if (M.oversell > 0) { M.oversell *= 0.1; ctx.warn('info', 'Redis-блокировка убрала почти все гонки, но не все: lock с TTL может истечь посреди операции, а Redis может упасть.'); }
@@ -708,7 +711,7 @@
       }
       if ((ok('bookAsync') || ok('invDecr')) && M.oversell > 0) { M.oversell = 0; ctx.warn('info', ok('bookAsync') ? 'Все брони отеля лежат в одной партиции Kafka и обрабатываются по очереди: гонки «прочитал, проверил, записал» нет.' : 'Остаток списывается атомарно в Redis: гонки за последний номер нет.'); }
       if (flows.find((f) => f.id === 'search').cached) M.stale = B * (ok('cdc') ? 0.001 : 0.03);
-      if (rc && rc.replicas > 0 && rc.sync === 'async') M.stale += B * 0.005;
+      if (rc && rc.replicas > 0 && rc.sync !== 'sync') M.stale += B * 0.005;
 
       // 4. Бронь и оплата
       const last = pay.ok && nodes[pay.path[pay.path.length - 1].id];
@@ -744,12 +747,12 @@
         if (a.type === 'hotel' && b.type === 'resDB') ctx.warn('info', 'Hotel Service лезет в Reservation DB. У каждого сервиса своя БД, иначе сервисы связаны через схему.');
       });
       if (flows.find((f) => f.id === 'search').cached) ctx.warn('info', 'Кэш инвентаря только для показа доступности: он может отставать. Бронь всё равно проверяется в БД. Синхронизировать кэш удобно через CDC.');
-      if (M.dup > 0) ctx.warn('bad', `Около ${Math.round(M.dup)} дублей броней в день: повтор запроса создаёт новую бронь.`);
-      if (M.oversell > 0) ctx.warn('bad', `Около ${Math.round(M.oversell)} перепродаж в день: гонка «прочитал, проверил, записал».`);
-      if (M.stale > 1) ctx.warn('warn', `Около ${Math.round(M.stale)} раз в день кэш или реплика показывают свободный номер, которого уже нет: бронь получит отказ.`);
-      if (M.incons > 0) ctx.warn('bad', `Около ${Math.round(M.incons)} операций в день, где оплата и бронь разошлись.`);
+      if (M.dup > 0) ctx.warn('bad', `Около ${num(M.dup)} дублей броней в день: повтор запроса создаёт новую бронь.`);
+      if (M.oversell > 0) ctx.warn('bad', `Около ${num(M.oversell)} перепродаж в день: гонка «прочитал, проверил, записал».`);
+      if (M.stale > 1) ctx.warn('warn', `Около ${num(M.stale)} раз в день кэш или реплика показывают свободный номер, которого уже нет: бронь получит отказ.`);
+      if (M.incons > 0) ctx.warn('bad', `Около ${num(M.incons)} операций в день, где оплата и бронь разошлись.`);
       if (stage === 'base' && flows.every((f) => f.ok || f.optional) && Object.values(nodes).every((n) => n.rep === 1)) {
-        ctx.warn('info', `Как и показала оценка: всего ${d.tps.toFixed(1)} броней в секунду, и каждый блок справляется в одном экземпляре. Сложность впереди, в конкурентности.`);
+        ctx.warn('info', `Как и показала оценка: всего ${dec(d.tps)} броней в секунду, и каждый блок справляется в одном экземпляре. Сложность впереди, в конкурентности.`);
       }
     },
 
@@ -783,7 +786,7 @@
           { step: 'Масштаб', min: 4, text: (() => {
             const c = x.rc, cache = x.has('cache') || x.has('memcached') || x.has('pgcache'), R = c ? c.replicas : 0;
             const reads = cache ? `Чтения снимаю кэшем (cache-aside с TTL: страница отеля минуты, доступность секунды)${R ? ` и ${R} репл. Reservation DB` : ''}` : R ? `Чтения снимаю ${R} репл. Reservation DB` : 'Чтения сейчас идут в primary: при росте добавлю кэш и реплики';
-            const repl = !R ? '' : c.sync === 'sync' ? ' Реплики синхронные: свежие, но каждая запись ждёт их подтверждения.' : ' Реплики асинхронные, поэтому свою только что созданную бронь гость читает из primary.';
+            const repl = !R ? '' : c.sync === 'sync' ? ' Реплики синхронные: свежие, но каждая запись ждёт их подтверждения.' : c.sync === 'semi' ? ' Одна реплика полусинхронная, поэтому подтверждённая бронь переживает падение primary. Остальные асинхронные, и свою только что созданную бронь гость читает из primary.' : ' Реплики асинхронные, поэтому свою только что созданную бронь гость читает из primary. Одну стоит сделать полусинхронной, иначе падение primary может потерять подтверждённые брони.';
             const shard = x.shards > 1 ? (c.shardKey === 'hotel' ? `Reservation DB шардирую по hotel_id (шардов сейчас: ${x.shards}): бронь касается одного отеля, транзакция остаётся в одном шарде.` : `Reservation DB сейчас шардирована по дате (${x.shards} шард.), и это ошибка: бронь на несколько ночей попадает в разные шарды. Правильно шардировать по hotel_id.`) : 'Если запись упрётся в один primary, шардирую по hotel_id: бронь касается одного отеля, транзакция остаётся в одном шарде.';
             return `${reads}, но решающая проверка места всегда в БД.${repl} ${shard}`;
           })() },
