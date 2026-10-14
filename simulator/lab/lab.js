@@ -32,6 +32,10 @@
   const icon = (b) => (LOGO[b.logo] ? `<svg viewBox="0 0 24 24" fill="${LOGO[b.logo].color}" role="img" aria-label="${esc(b.name)}"><path d="${LOGO[b.logo].d}"/></svg>` : b.icon);
   const brand = (b) => { const c = b.brand || (LOGO[b.logo] && LOGO[b.logo].color); return c ? ` style="--c:${c}"` : ''; };
   const cls = (u) => (u > 0.9 ? 'bad' : u > 0.7 ? 'warn' : '');
+  // Что глава показывает в плитках задержки и считает главным потоком (по умолчанию как в главе 7: просмотр и бронь).
+  const KF = L.kpiFlows || [{ id: 'view', label: 'Просмотр' }, { id: 'book', label: 'Бронь' }];
+  const MAIN = KF.find((f) => f.id === (L.mainFlow || 'book')) || KF[KF.length - 1];
+  const CX = L.cx || [14, 20]; // пороги плитки «Сложность»: жёлтая и красная
 
   // ---------- состояние ----------
   function fresh() {
@@ -152,7 +156,7 @@
     const lvl = ['', 'влияет', 'определяет'];
     const startHtml = S ? `<section class="card rq-start"><h4 class="grp">🧭 ${esc(S.title)}</h4><p>${esc(S.text)}</p>
       <ol class="chain">${S.chain.map((c) => `<li><b>${esc(c.t)}</b><span>${esc(c.d)}</span></li>`).join('')}</ol>
-      <h4 class="grp">Чего не берём, потому что нагрузка маленькая</h4><div class="skips">${S.skip.map((c) => `<div><b>✗ ${esc(c.t)}</b><span>${esc(c.d)}</span></div>`).join('')}</div>
+      <h4 class="grp">${esc(S.skipTitle || 'Чего не берём, потому что нагрузка маленькая')}</h4><div class="skips">${S.skip.map((c) => `<div><b>✗ ${esc(c.t)}</b><span>${esc(c.d)}</span></div>`).join('')}</div>
       <p class="muted">${esc(S.revisit)}</p></section>` : '';
     const mapHtml = !frs.length ? '' : st.reqChecked ? `<section class="card"><h4 class="grp">🔗 Как FR формируют NFR</h4>
       <p class="muted">NFR не берутся из воздуха: каждое вырастает из конкретного действия пользователя. «Определяет» значит, что без этого FR требование было бы слабее или не нужно вовсе. Наведи на клетку, чтобы увидеть причину.</p>
@@ -277,7 +281,7 @@
   // ---------- 3. API и данные ----------
   // JSON с подсветкой: ключи, строки, числа.
   const jsonHtml = (o) => esc(JSON.stringify(o, null, 2)).replace(/(&quot;(?:[^&]|&(?!quot;))*?&quot;)(\s*:)?|\b(-?\d+(?:\.\d+)?|true|false|null)\b/g, (m, str, colon, lit) => str ? `<span class="${colon ? 'jk' : 'js'}">${str}</span>${colon || ''}` : `<span class="jn">${lit}</span>`);
-  const sqlHtml = (q) => esc(q).replace(/(--[^\n]*)/g, '<span class="jc">$1</span>').replace(/\b(BEGIN|COMMIT|ROLLBACK|WITH|AS|RETURNING|UPDATE|SET|WHERE|AND|INSERT INTO|VALUES|IN|SELECT|FROM|ON CONFLICT|DO NOTHING)\b/g, '<span class="jk">$1</span>');
+  const sqlHtml = (q) => esc(q).replace(/(--[^\n]*)/g, '<span class="jc">$1</span>').replace(/\b(BEGIN|COMMIT|ROLLBACK|WITH|AS|RETURNING|UPDATE|SET|WHERE|AND|INSERT INTO|VALUES|IN|SELECT|FROM|ON CONFLICT|DO NOTHING|DELETE|BATCH|APPLY|LIMIT|ORDER BY|CREATE TABLE|PRIMARY KEY|WITH CLUSTERING ORDER BY)\b/g, '<span class="jk">$1</span>');
   function apiView() {
     const A = L.api, fc = Object.fromEntries(L.flows.map((f) => [f.id, f])), byId = Object.fromEntries(A.endpoints.map((e) => [e.id, e]));
     const path = (p) => esc(p).replace(/\{(\w+)\}/g, '<i>{$1}</i>');
@@ -527,7 +531,7 @@
     const lat = (r, id) => { const f = r.flows.find((x) => x.id === id); return f && f.ok ? f.lat : null; };
     const dS = b.m.served - a.m.served;
     if (Math.abs(dS) > 0.005) chips.push([`выдерживаем ${dS > 0 ? '+' : '−'}${Math.round(Math.abs(dS) * 100)}%`, dS > 0]);
-    [['view', 'просмотр'], ['book', 'бронь']].forEach(([id, label]) => {
+    KF.map((f) => [f.id, f.label.toLowerCase()]).forEach(([id, label]) => {
       const x = lat(a, id), y = lat(b, id);
       if (x != null && y != null && Math.abs(y - x) >= 5) chips.push([`${label} ${y > x ? '+' : '−'}${ms(Math.abs(y - x))}`, y < x]);
       if (x == null && y != null) chips.push([`${label}: поток заработал`, true]);
@@ -648,8 +652,8 @@
       const B = c.brokers, P = c.partitions, on = (k) => Array.from({ length: P }, (_, p) => p).filter((p) => (k - (p % B) + B) % B < c.rf);
       const cons = consumersOf(r, n.id);
       return `<div class="cl"><div class="clr">✍️ ${esc(producersOf(r, n.id))} → топик, ${P} парт.</div>
-        <div class="brs">${Array.from({ length: B }, (_, k) => { const all = on(k), lead = all.filter((p) => p % B === k);
-          return `<div class="br" title="Брокер ${k + 1}: лидер для ${lead.length} партиций, копии ещё ${all.length - lead.length}"><span class="shn">B${k + 1}</span><span class="pts">${lead.slice(0, 6).map((p) => `<i class="ld">P${p}</i>`).join('')}${lead.length > 6 ? `<i>+${lead.length - 6}</i>` : ''}</span>${all.length > lead.length ? `<small>+${all.length - lead.length} коп.</small>` : ''}</div>`; }).join('')}</div>
+        ${P > 24 ? `<div class="clr">${B} брокеров, около ${Math.ceil(P / B)} партиций-лидеров на каждом</div>` : `<div class="brs">${Array.from({ length: Math.min(B, 8) }, (_, k) => { const all = on(k), lead = all.filter((p) => p % B === k);
+          return `<div class="br" title="Брокер ${k + 1}: лидер для ${lead.length} партиций, копии ещё ${all.length - lead.length}"><span class="shn">B${k + 1}</span><span class="pts">${lead.slice(0, 6).map((p) => `<i class="ld">P${p}</i>`).join('')}${lead.length > 6 ? `<i>+${lead.length - 6}</i>` : ''}</span>${all.length > lead.length ? `<small>+${all.length - lead.length} коп.</small>` : ''}</div>`; }).join('')}${B > 8 ? `<div class="br more">+${B - 8} брокеров</div>` : ''}</div>`}
         <div class="clk">${cons.length ? cons.map((x) => x.def.cache ? `<span>📥 ${esc(x.def.name)}: CDC</span>` : `<span>👥 ${esc(x.def.name)}: ${x.rep} потреб., ${x.rep >= P ? 'по 1 партиции' : `по ${Math.ceil(P / x.rep)} парт.`}${x.want > P ? `; нужно ${x.want}, но лишним не досталось бы партиций` : ''}</span>`).join('') : '<span>👥 потребителей нет</span>'}<span>RF ${c.rf}: лидер + ${c.rf - 1} коп.</span></div></div>`;
     }
     if (b.tune === 'rabbit') {
@@ -838,12 +842,11 @@
     const tiles = [
       { k: 'served', label: 'Выдерживаем', v: m.served, show: m.routed ? Math.round(m.served * 100) + '%' : '—', cls: !m.routed ? 'bad' : m.served >= 1 ? (m.maxU > 0.9 ? 'warn' : 'ok') : 'bad', sub: !m.routed ? 'схема не достроена' : m.bottleneck ? 'узкое место: ' + m.bottleneck.def.name : 'нет нагрузки', better: 1 },
       ...(m.bgU ? [{ k: 'bg', label: 'Фоновая очередь', v: m.bgU, show: pct(m.bgU), cls: m.bgU > 1 ? 'warn' : 'ok', sub: m.bgU > 1 ? 'не успевает, очередь растёт' : 'успевает', better: -1 }] : []),
-      { k: 'view', label: 'Просмотр', v: lat('view'), show: lat('view') == null ? '—' : ms(lat('view')), sub: 'задержка p50', better: -1 },
-      { k: 'book', label: 'Бронь', v: lat('book'), show: lat('book') == null ? '—' : ms(lat('book')), sub: 'задержка p50', better: -1 },
+      ...KF.map((f) => ({ k: f.id, label: f.label, v: lat(f.id), show: lat(f.id) == null ? '—' : ms(lat(f.id)), sub: 'задержка p50', better: -1 })),
       ...(deep ? L.metrics.map((x) => (m.routed ? { k: x.id, label: x.label, v: m[x.id] || 0, show: fmt(m[x.id] || 0), cls: m[x.id] > 0 ? (x.bad ? 'bad' : 'warn') : 'ok', sub: 'за день сценария', better: -1 }
         : { k: x.id, label: x.label, v: null, show: '—', sub: 'схема не достроена', better: -1 })) : []),
       { k: 'cost', label: 'Стоимость', v: m.cost, show: money(m.cost).replace('/мес', ''), sub: 'в месяц, условно', better: -1 },
-      { k: 'cx', label: 'Сложность', v: m.cx, show: m.cx.toFixed(1).replace('.', ','), cls: m.cx > 20 ? 'bad' : m.cx > 14 ? 'warn' : '', sub: 'условных баллов', better: -1 },
+      { k: 'cx', label: 'Сложность', v: m.cx, show: m.cx.toFixed(1).replace('.', ','), cls: m.cx > CX[1] ? 'bad' : m.cx > CX[0] ? 'warn' : '', sub: 'условных баллов', better: -1 },
     ];
     const kp = {};
     $('#kpis').innerHTML = tiles.map((t) => {
@@ -862,7 +865,7 @@
       const t = box.dataset.pset, g = st.graph.nodes.find((x) => x.type === t), n = g && r.nodes[g.id], def = L.blocks[t];
       if (!n) { box.innerHTML = `<p class="onote">«${esc(def.name)}» нет на карте.</p>`; return; }
       const c = n.cfg, key = c.shards > 1 && def.shardKeys ? `, ключ ${def.shardKeys.find((k) => k.v === c.shardKey).label}` : '';
-      box.closest('.prob').classList.toggle('solved', n.util <= 0.9 && c.shardKey !== 'date');
+      box.closest('.prob').classList.toggle('solved', n.util <= 0.9 && !(def.shardKeys || []).some((k) => k.skew && k.v === c.shardKey && c.shards > 1));
       box.innerHTML = `<p class="onote">Сейчас: ${c.shards} шард.${key}, реплик ${c.replicas}. Загрузка ${Math.round(n.util * 100)}%.</p><button class="btn sm" data-open="${g.id}">⚙️ Настроить ${esc(def.name)}</button>`;
       $('[data-open]', box).onclick = () => { select(g.id); $('#mapcard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
     });
@@ -886,9 +889,9 @@
   // Эталон и схема ученика под одним сценарием и одними решениями.
   function renderCmp(r) {
     const A = refFor(step().stage);
-    const k = (x) => { const b = x.flows.find((f) => f.id === 'book');
+    const k = (x) => { const b = x.flows.find((f) => f.id === MAIN.id);
       if (!x.m.routed) return '<span class="bad">схема не достроена: часть потоков не доходит до данных</span>';
-      return `<span class="${x.m.served >= 1 && x.m.maxU <= 0.9 ? 'ok' : 'bad'}">выдерживает ${pct(x.m.served)}, пик загрузки ${pct(x.m.maxU)}</span> · бронь ${b && b.ok ? ms(b.lat) : '—'} · ${money(x.m.cost)} · сложность ${x.m.cx.toFixed(1)}`; };
+      return `<span class="${x.m.served >= 1 && x.m.maxU <= 0.9 ? 'ok' : 'bad'}">выдерживает ${pct(x.m.served)}, пик загрузки ${pct(x.m.maxU)}</span> · ${esc(MAIN.label.toLowerCase())} ${b && b.ok ? ms(b.lat) : '—'} · ${money(x.m.cost)} · сложность ${x.m.cx.toFixed(1)}`; };
     $('#cmp').innerHTML = `<div class="cref ${A.ok ? '' : 'nok'}"><div class="ct"><b>${A.original ? '📘 Эталон: оригинал из книги' : `🔧 Эталон: адаптация под ${esc(scnText())}`}</b><small>${k(A.r)}</small></div>
       ${A.original ? '<p class="muted">При этом сценарии схема из книги выдерживает нагрузку без изменений.</p>'
         : `<details><summary>Чем отличается от книги (${A.changes.length})</summary><ul>${A.changes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul><p class="muted">Оригинал из книги здесь: ${k(A.before)}</p></details>`}
@@ -981,14 +984,15 @@
   function sumData() {
     const S = L.summary, r = analyze('deep'), ref = refFor('deep'), c = st.deep.choices, d = r.d;
     const has = (t) => st.graph.nodes.some((n) => n.type === t);
-    const resDB = st.graph.nodes.find((n) => n.type === 'resDB'), rc = resDB && E.tuneOf(L.blocks.resDB, resDB.cfg), book = r.flows.find((f) => f.id === 'book');
+    const cfgOf = (t) => { const n = st.graph.nodes.find((q) => q.type === t); return n && E.tuneOf(L.blocks[t], n.cfg); };
+    const rc = cfgOf(S.db || 'resDB'), book = r.flows.find((f) => f.id === MAIN.id);
     const choice = (key) => { const p = L.problems.find((q) => q.key === key), o = p.options.find((x) => x.v === c[key]) || p.options[0];
       return { p, o, ok: (p.best || []).includes(o.v), say: (S.says[key] || {})[o.v] || p.say }; };
     const names = (g) => [...new Set(g.nodes.map((n) => L.blocks[n.type].name))];
     const mine = names(st.graph), theirs = names(ref.graph);
-    const lbN = st.graph.nodes.find((n) => n.type === 'lb'), lbC = lbN && E.tuneOf(L.blocks.lb, lbN.cfg);
-    const x = { d, r, choice, has, fmt, lb: lbC ? `${lbC.layer === 'l7' ? 'L7' : 'L4'}, ${{ rr: 'round robin', least: 'least connections', hash: 'IP hash' }[lbC.alg]}` : '', shards: rc ? rc.shards : 1, rc, bookLat: book && book.ok ? book.lat : 0,
-      extras: mine.filter((n) => !['Клиент', 'API Gateway', 'Hotel Service', 'Reservation Service', 'Payment Service', 'Hotel DB', 'Reservation DB', 'Payment DB', 'Балансировщик нагрузки'].includes(n)) };
+    const lbC = L.blocks.lb && cfgOf('lb');
+    const x = { d, r, choice, has, fmt, cfgOf, lb: lbC ? `${lbC.layer === 'l7' ? 'L7' : 'L4'}, ${{ rr: 'round robin', least: 'least connections', hash: 'IP hash' }[lbC.alg]}` : '', shards: rc ? rc.shards : 1, rc, bookLat: book && book.ok ? book.lat : 0,
+      extras: mine.filter((n) => !(S.core || ['Клиент', 'API Gateway', 'Hotel Service', 'Reservation Service', 'Payment Service', 'Hotel DB', 'Reservation DB', 'Payment DB', 'Балансировщик нагрузки']).includes(n)) };
     return { S, r, ref, x, script: S.script(x), mine, theirs, onlyMine: mine.filter((n) => !theirs.includes(n)), onlyRef: theirs.filter((n) => !mine.includes(n)) };
   }
   function sumView() {
@@ -996,14 +1000,15 @@
     const goalsOk = (k, res) => (st.graph.nodes.length ? L.goals[k].filter((g) => g.check(res)).length : 0);
     const stepIdx = (kind, stage) => L.steps.findIndex((q) => q.kind === kind && (!stage || q.stage === stage));
     const card = (i, title, val, sub, ok) => `<button class="sstep ${ok === true ? 'ok' : ok === false ? 'no' : ''}" data-go="${i}"><small>${esc(title)}</small><b>${val}</b><span>${sub}</span></button>`;
-    const m = r.m, rm = ref.r.m, lat = (res) => { const f = res.flows.find((q) => q.id === 'book'); return f && f.ok ? Math.round(f.lat) + ' мс' : '—'; };
+    const m = r.m, rm = ref.r.m, lat = (res) => { const f = res.flows.find((q) => q.id === MAIN.id); return f && f.ok ? Math.round(f.lat) + ' мс' : '—'; };
     const row = (label, a, b, better) => `<tr><td>${label}</td><td class="num ${better === true ? 'good' : better === false ? 'badc' : ''}">${a}</td><td class="num">${b}</td></tr>`;
     const pct = (v, routed) => (routed ? Math.round(v * 100) + '%' : '—');
     const probs = L.problems.filter((p) => p.options);
+    const BAD = S.badRow || { label: 'Дубли и перепродажи за день', ids: ['dup', 'oversell'] }, bad = (mm) => BAD.ids.reduce((a, id) => a + (mm[id] || 0), 0);
     return `${head(step(), 'Итог собран из того, что ты сделал на предыдущих шагах: твоя схема против эталона, твои решения против книги и рассказ для интервью с твоими цифрами.')}
       <section class="card"><h4 class="grp first">Твой результат</h4><div class="ssteps">
         ${card(stepIdx('req'), 'Требования', st.reqChecked ? `${sc.ok} из ${sc.total}` : '—', st.reqChecked ? 'верных ответов' : 'не проверены', st.reqChecked ? sc.ok === sc.total : null)}
-        ${card(stepIdx('est'), 'Оценка нагрузки', `${fmt(x.d.tps * x.d.k)} броней/с`, esc(scnText()), null)}
+        ${card(stepIdx('est'), 'Оценка нагрузки', S.estCard ? esc(S.estCard(x.d, fmt)) : `${fmt(x.d.tps * x.d.k)} броней/с`, esc(scnText()), null)}
         ${card(stepIdx('map', 'base'), 'Дизайн', `${goalsOk('base', base)} из ${L.goals.base.length}`, 'целей выполнено', goalsOk('base', base) === L.goals.base.length)}
         ${card(stepIdx('map', 'deep'), 'Углубление', `${goalsOk('deep', r)} из ${L.goals.deep.length}`, 'целей выполнено', goalsOk('deep', r) === L.goals.deep.length)}
         ${card(stepIdx('map', 'deep'), 'Решения', `${probs.filter((p) => x.choice(p.key).ok).length} из ${probs.length}`, 'совпадают с книгой', probs.every((p) => x.choice(p.key).ok))}
@@ -1013,8 +1018,8 @@
           <p class="muted small">Эталон под тот же сценарий: ${esc(scnText())}.</p>
           <table class="tbl"><thead><tr><th></th><th>Твоя</th><th>Эталон</th></tr></thead><tbody>
           ${row('Выдерживает нагрузку', pct(m.served, m.routed), pct(rm.served, rm.routed), m.routed ? m.served >= rm.served : null)}
-          ${row('Бронь, задержка', lat(r), lat(ref.r), null)}
-          ${row('Дубли и перепродажи за день', m.routed ? fmt((m.dup || 0) + (m.oversell || 0)) : '—', fmt((rm.dup || 0) + (rm.oversell || 0)), m.routed ? (m.dup || 0) + (m.oversell || 0) <= (rm.dup || 0) + (rm.oversell || 0) : null)}
+          ${row(esc(MAIN.label) + ', задержка', lat(r), lat(ref.r), null)}
+          ${row(esc(BAD.label), m.routed ? fmt(bad(m)) : '—', fmt(bad(rm)), m.routed ? bad(m) <= bad(rm) : null)}
           ${row('Стоимость в месяц', money(m.cost).replace('/мес', ''), money(rm.cost).replace('/мес', ''), m.cost <= rm.cost * 1.05)}
           ${row('Сложность', m.cx.toFixed(1).replace('.', ','), rm.cx.toFixed(1).replace('.', ','), m.cx <= rm.cx + 0.5)}
           ${row('Блоков', D.mine.length, D.theirs.length, null)}</tbody></table>
