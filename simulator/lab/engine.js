@@ -9,22 +9,24 @@
 
   // Настройки «тяжёлых» блоков, общие для всех глав. book: так делают в книге (остальное эксперименты).
   // Блок включает их через def.tune: 'sql' или 'kafka'; варианты ключа шардирования задаёт глава (def.shardKeys).
+  // def.opts: { shards, brokers, partitions } переопределяет шаги размеров для блока главы (почта на миллиард ящиков крупнее отелей).
+  const optOf = (id, dflt) => (def) => (def && def.opts && def.opts[id]) || dflt;
   const TUNE = {
     sql: [
       { id: 'replicas', label: 'Реплики для чтения', book: true, opts: [0, 1, 2, 3, 5], value: 0,
         hint: 'Чтения делятся между primary и репликами. Запись всё равно идёт только в primary.' },
       { id: 'sync', label: 'Репликация', when: (c) => c.replicas > 0, value: 'async',
-        opts: [{ v: 'async', label: 'Асинхронная', note: 'Запись не ждёт реплик, но реплика может отставать на доли секунды.' }, { v: 'semi', label: 'Полусинхронная', note: 'Запись ждёт одну реплику, остальные догоняют асинхронно: подтверждённая бронь переживает падение primary, а запись медленнее всего на несколько мс.' }, { v: 'sync', label: 'Синхронная', note: 'Запись ждёт подтверждения реплики: данные свежие, но запись медленнее.' }] },
-      { id: 'shards', label: 'Шарды', book: true, opts: [1, 2, 4, 8, 16], value: 1,
+        opts: [{ v: 'async', label: 'Асинхронная', note: 'Запись не ждёт реплик, но реплика может отставать на доли секунды.' }, { v: 'semi', label: 'Полусинхронная', note: 'Запись ждёт одну реплику, остальные догоняют асинхронно: подтверждённая запись переживает падение primary, а запись медленнее всего на несколько мс.' }, { v: 'sync', label: 'Синхронная', note: 'Запись ждёт подтверждения реплики: данные свежие, но запись медленнее.' }] },
+      { id: 'shards', label: 'Шарды', book: true, opts: optOf('shards', [1, 2, 4, 8, 16]), value: 1,
         hint: 'Данные и запись делятся между независимыми БД. Масштабирует запись, но запросы через шарды становятся сложнее.' },
       { id: 'shardKey', label: 'Ключ шардирования', book: true, when: (c, def) => c.shards > 1 && def.shardKeys, opts: (def) => def.shardKeys, value: (def) => def.shardKeys && def.shardKeys[0].v },
       { id: 'partition', label: 'Партиционирование', value: 'none',
         opts: [{ v: 'none', label: 'Нет' }, { v: 'date', label: 'По дате', note: 'Таблица делится на части внутри одной БД: запросы читают меньше данных (+20% к запасу), старые даты легко архивировать.' }] },
     ],
     kafka: [
-      { id: 'brokers', label: 'Брокеры', opts: [1, 3, 5, 9], value: 3,
+      { id: 'brokers', label: 'Брокеры', opts: optOf('brokers', [1, 3, 5, 9]), value: 3,
         hint: 'Серверы кластера. Партиции и их копии раскладываются по брокерам; каждый брокер пишет на диск ограниченный поток.' },
-      { id: 'partitions', label: 'Партиции', opts: [1, 3, 6, 12, 24], value: 3,
+      { id: 'partitions', label: 'Партиции', opts: optOf('partitions', [1, 3, 6, 12, 24]), value: 3,
         hint: 'Единица параллелизма: в группе потребителей на одну партицию работает один потребитель. Больше партиций, больше потребителей.' },
       { id: 'rf', label: 'Репликация (RF)', opts: [1, 2, 3], value: 3,
         hint: 'Сколько брокеров хранят копию партиции. RF=1 дёшево, но падение брокера теряет события. Каждая копия это ещё одна запись на диск брокера.' },
@@ -40,7 +42,7 @@
         hint: 'Сколько неподтверждённых сообщений потребитель берёт за раз. 1: честно, но потребитель простаивает в ожидании. 100: быстро, но сообщения копятся у медленного потребителя.' },
     ],
     kv: [
-      { id: 'shards', label: 'Шарды (мастера)', opts: [1, 3, 6, 12, 24, 48], value: 1,
+      { id: 'shards', label: 'Шарды (мастера)', opts: optOf('shards', [1, 3, 6, 12, 24, 48]), value: 1,
         hint: 'Redis Cluster делит 16 384 хэш-слота между мастерами: ключ по хэшу попадает в свой шард, и каждый шард держит свою долю чтений. Memcached делит ключи так же, но на клиенте (consistent hashing).' },
       { id: 'replicas', label: 'Реплики на шард', when: (c, def) => !def.noRepl, opts: [0, 1, 2], value: 1,
         hint: 'Копии шарда для чтения и на случай падения мастера. Масштабируют чтение даже одного ключа, но реплика может отставать на доли секунды.' },
@@ -66,7 +68,7 @@
         opts: [{ v: 'l4', label: 'L4 (TCP)', note: 'Смотрит только IP и порт, TLS не расшифровывает. Очень быстрый и дешёвый, держит миллионы соединений, но не видит URL и не может разводить запросы по путям.' },
           { v: 'l7', label: 'L7 (HTTP)', note: 'Разбирает HTTP: видит путь, заголовки и cookie, сам снимает TLS, может слать /static и /api в разные пулы и повторять запрос. Дороже по CPU: в модели в 2,5 раза меньше запросов на копию и +1 мс.' }] },
       { id: 'alg', label: 'Алгоритм', value: 'rr',
-        opts: [{ v: 'rr', label: 'Round robin', note: 'По кругу: 1, 2, 3, 1, 2, 3. Просто, но не учитывает, что бронь тяжелее просмотра: часть копий за ним перегружена, полезно около 90% их мощности.' },
+        opts: [{ v: 'rr', label: 'Round robin', note: 'По кругу: 1, 2, 3, 1, 2, 3. Просто, но не учитывает, что запись тяжелее чтения: часть копий за ним перегружена, полезно около 90% их мощности.' },
           { v: 'least', label: 'Least connections', note: 'Шлёт туда, где меньше открытых запросов. Сам выравнивает долгие и короткие запросы: копии за ним загружены ровно.' },
           { v: 'hash', label: 'IP hash', note: 'Один клиент всегда попадает в одну копию (sticky). Нужно, если копия хранит сессию. Но клиенты за одним NAT (офис, мобильный оператор) садятся на одну копию: полезно около 80% мощности.' }] },
     ],
@@ -74,11 +76,12 @@
   const PREFETCH = { 1: 0.6, 10: 1, 100: 1.1 };
   const LBALG = { rr: 0.9, least: 1, hash: 0.8 };
   // Шаги размеров для подбора под нагрузку (от дешёвых к дорогим).
+  const opt = (tune, id, def) => optsOf(TUNE[tune].find((f) => f.id === id), def);
   const SIZES = {
-    sql: () => [1, 2, 4, 8, 16].flatMap((shards) => [0, 1, 2, 3, 5].map((replicas) => ({ shards, replicas, w: shards * (1 + 0.6 * replicas) }))),
-    kafka: () => [1, 3, 5, 9].flatMap((brokers) => [1, 3, 6, 12, 24].map((partitions) => ({ brokers, partitions, w: brokers * 3 + partitions * 0.1 }))),
+    sql: (def) => opt('sql', 'shards', def).flatMap((shards) => [0, 1, 2, 3, 5].map((replicas) => ({ shards, replicas, w: shards * (1 + 0.6 * replicas) }))),
+    kafka: (def) => opt('kafka', 'brokers', def).flatMap((brokers) => opt('kafka', 'partitions', def).map((partitions) => ({ brokers, partitions, w: brokers * 3 + partitions * 0.1 }))),
     rabbit: () => [1, 2, 4, 8].map((queues) => ({ queues, w: queues })),
-    kv: () => [1, 3, 6, 12, 24, 48].flatMap((shards) => [0, 1, 2].flatMap((replicas) => ['off', 'on'].map((near) => ({ shards, replicas, near, w: shards * (1 + replicas) + (near === 'on' ? 60 : 0) })))),
+    kv: (def) => opt('kv', 'shards', def).flatMap((shards) => [0, 1, 2].flatMap((replicas) => ['off', 'on'].map((near) => ({ shards, replicas, near, w: shards * (1 + replicas) + (near === 'on' ? 60 : 0) })))),
   };
   // absorb бывает функцией от оценки и настроек: доля, которую забирает виртуальная очередь, зависит от потока.
   const absorbOf = (def, d, cfg) => (typeof def.absorb === 'function' ? def.absorb(d, cfg || tuneOf(def)) : def.absorb) || {};
@@ -118,7 +121,7 @@
       let p = 1, lp = 1, sc = 1;
       const used = new Set();
       // side: поток идёт от блока, но не нагружает его (логи и метрики Gateway отправляет агент рядом с ним).
-      if (f.side) ops.push(() => r.path.push({ id: cur.id, p: 1, lp: 0 })); else touch(cur, p);
+      if (f.side) { const c0 = cur; ops.push(() => r.path.push({ id: c0.id, p: 1, lp: 0 })); } else touch(cur, p);
       for (let i = 1; i < f.chain.length; i++) {
         let nextId = out[cur.id].find((id) => has(f.chain[i], nodes[id].type));
         // Прозрачные блоки (via: роутер ячеек, балансировщик) стоят между шагами цепочки, их может быть несколько подряд.
@@ -197,7 +200,8 @@
         if (n.util > 0.9) {
           const wr = W * hot >= (Rd * hot) / (1 + R);
           n.limit = wr ? 'запись в primary' : 'чтения';
-          n.need = wr ? (s < 16 ? `больше шардов${hot > 1 / s + 1e-9 ? ' и ровный ключ шардирования' : ''}` : 'предел модели (16 шардов): нужна другая модель данных или очередь записи')
+          const sMax = Math.max(...opt('sql', 'shards', def));
+          n.need = wr ? (s < sMax ? `больше шардов${hot > 1 / s + 1e-9 ? ' и ровный ключ шардирования' : ''}` : `предел модели (${sMax} шардов): нужна другая модель данных или очередь записи`)
             : (R < 5 ? 'кэш перед БД или больше реплик' : 'кэш перед БД: реплик уже 5');
         }
         ctx.cost += (def.cost || 0) * s * (1 + 0.6 * R);
@@ -220,7 +224,7 @@
         if (n.util > 0.9) {
           const hotBound = hot > 1 / s + 1e-9;
           n.limit = hotBound ? 'горячий ключ в одном шарде' : 'шарды';
-          n.need = !hotBound && s < 48 ? 'больше шардов' : R < 2 && !def.noRepl ? 'реплики шарда для чтения' : !near ? 'локальный кэш в сервисе (L1)' : 'дробить горячий ключ на копии (hotel:42#1…#N) или кэшировать страницу на CDN';
+          n.need = !hotBound && s < Math.max(...opt('kv', 'shards', def)) ? 'больше шардов' : R < 2 && !def.noRepl ? 'реплики шарда для чтения' : !near ? 'локальный кэш в сервисе (L1)' : (def.hotFix || 'дробить горячий ключ на копии (hotel:42#1…#N) или кэшировать страницу на CDN');
         }
         ctx.cost += (def.cost || 0) * s * (1 + R);
         ctx.cx += (s > 1 ? 0.5 + 0.2 * Math.log2(s) : 0) + 0.2 * R + (near ? 1 : 0);
@@ -273,7 +277,7 @@
       n.bg = Object.keys(n.flows).length > 0 && Object.keys(n.flows).every((id) => flows.find((f) => f.id === id).optional);
       if (n.bg) {
         if (n.util > bgU) bgU = n.util;
-        if (n.util > 1) ctx.warn('warn', `Фоновая обработка в «${def.name}» не успевает: очередь растёт на ${rps(n.load - n.capTotal)} событий/с, доставка отстаёт всё сильнее. Бронь это не тормозит. Упёрся: ${n.limit}. Нужно: ${n.need}.`);
+        if (n.util > 1) ctx.warn('warn', `Фоновая обработка в «${def.name}» не успевает: очередь растёт на ${rps(n.load - n.capTotal)} событий/с, доставка отстаёт всё сильнее. ${lab.bgNote || 'Бронь это не тормозит.'} Упёрся: ${n.limit}. Нужно: ${n.need}.`);
         return;
       }
       if (n.util > maxU) { maxU = n.util; bottleneck = n; }
@@ -385,7 +389,7 @@
     const g0 = graph.nodes.find((n) => n.id === id), def = lab.blocks[g0.type], base = tuneOf(def, g0.cfg);
     const ids = [id].concat(graph.edges.filter((e) => e.from === id).map((e) => e.to));
     let best = null;
-    for (const s of SIZES[def.tune]().sort((a, b) => a.w - b.w)) {
+    for (const s of SIZES[def.tune](def).sort((a, b) => a.w - b.w)) {
       if ((s.brokers && s.brokers < base.rf) || (def.tune === 'kv' && !def.noRepl && s.replicas < base.replicas)) continue; // не жертвуем надёжностью ради подбора
       const cfg = Object.assign({}, base, s); delete cfg.w;
       const r = analyze(lab, { nodes: graph.nodes.map((n) => (n.id === id ? Object.assign({}, n, { cfg }) : n)), edges: graph.edges }, inputs, deep, stage);
@@ -436,8 +440,10 @@
     // Подбор размеров перегруженных БД, кэшей и брокеров.
     const size = (g, r) => {
       const maxed = new Set(), ch = [];
-      for (let i = 0; i < 20 && r.m.maxU > LIM; i++) {
-        const hot = Object.values(r.nodes).filter((n) => SIZES[n.def.tune] && n.util > LIM && !maxed.has(n.id)).sort((a, b) => b.util - a.util)[0];
+      // Горячий: перегружен сам или его потребители за брокером (фоновый воркер упирается в число партиций).
+      const heat = (r, n) => Math.max(n.util, ...g.edges.filter((e) => e.from === n.id && r.nodes[e.to]).map((e) => r.nodes[e.to].util));
+      for (let i = 0; i < 20; i++) {
+        const hot = Object.values(r.nodes).filter((n) => SIZES[n.def.tune] && heat(r, n) > LIM && !maxed.has(n.id)).sort((a, b) => heat(r, b) - heat(r, a))[0];
         if (!hot) break;
         const s = sizeFor(lab, g, inputs, deep, stage, hot.id), diff = TUNE[hot.def.tune].filter((f) => s.cfg[f.id] !== hot.cfg[f.id]);
         maxed.add(hot.id);
