@@ -4,6 +4,7 @@
   const CH = [
     { n: 7, dir: 'ch7', title: 'Hotel Reservation' },
     { n: 8, dir: 'ch8', title: 'Distributed Email Service' },
+    { n: 9, dir: 'ch9', title: 'S3-like Object Storage' },
   ];
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 

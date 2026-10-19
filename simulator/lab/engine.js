@@ -256,11 +256,13 @@
         ctx.cost += (def.cost || 0) * (c.qtype === 'quorum' ? 1.5 : 1) * (1 + 0.1 * (c.queues - 1));
       } else {
         n.want = Math.ceil(n.load / (cap * TARGET));
-        n.rep = Math.max(1, Math.min(n.maxRep, n.want));
+        // minRep: копий нужно не меньше по другой причине, чем запросы (узлы данных считают по объёму дисков).
+        n.rep = Math.max(1, n.minRep || 1, Math.min(n.maxRep, n.want));
         n.capTotal = cap * n.rep;
         n.util = n.load / n.capTotal;
         const P = n.consumerOf && n.consumerOf.def.tune === 'kafka' && n.consumerOf.cfg.partitions;
-        n.explain = n.load ? [`${rps(n.load)} rps ÷ ${rps(cap)} rps на копию: копий ${n.rep}${n.want > n.rep ? `, а нужно ${n.want}` : ', загрузка около 70%'}.`] : [];
+        n.explain = n.load ? [`${rps(n.load)} rps ÷ ${rps(cap)} rps на копию: копий ${n.rep}${n.want > n.rep ? `, а нужно ${n.want}` : n.rep > n.want ? `, по запросам хватило бы ${n.want}` : ', загрузка около 70%'}.`] : [];
+        if (n.minRepWhy && n.rep > n.want) n.explain.push(n.minRepWhy);
         if (def.tune === 'lb') n.explain.push(n.cfg.layer === 'l7' ? 'L7 разбирает HTTP и снимает TLS: копия держит в 2,5 раза меньше запросов, чем L4, и добавляет 1 мс.' : 'L4 только пересылает TCP-соединения: копия держит очень много запросов.');
         if (n.lbBy) n.explain.push(`Перед блоком балансировщик (${{ rr: 'round robin', least: 'least connections', hash: 'IP hash' }[n.lbBy.cfg.alg]}): копии загружены ${n.capMult < 1 ? `неровно, полезно ${Math.round(n.capMult * 100)}% их мощности` : 'ровно'}.`);
         if (P) n.explain.push(`Читает из Kafka: в группе потребителей не больше, чем партиций (${P}).`);
