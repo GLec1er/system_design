@@ -153,7 +153,7 @@
       while (todo.length) { const id = todo.pop(); if (seen.has(id)) continue; seen.add(id); nodes[id].cells = c.cfg.cells; todo.push(...out[id]); }
     });
     const shed = Object.values(nodes).some((n) => n.def.tune === 'gw' && n.cfg.shed === 'on');
-    const ctx = { d, deep, stage, graph, nodes, flows, out, cx: 0, cost: 0, metrics: {}, warnings: [] };
+    const ctx = { d, deep, stage, graph, nodes, flows, out, edgeLoad, cx: 0, cost: 0, metrics: {}, warnings: [] };
     ctx.warn = (lvl, text) => ctx.warnings.push({ lvl, text });
     const names = (spec) => [].concat(spec).map((t) => lab.blocks[t].name).join(' или ');
     flows.forEach((f) => {
