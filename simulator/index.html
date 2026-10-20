@@ -3,27 +3,39 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>System Design Lab</title>
+<title>System Design Lab · главы по шагам</title>
+<meta name="description" content="Главы System Design Interview, Vol. 2 по шагам, как на интервью: требования, оценка, API, схема на карте, углубление и итог.">
+<link rel="icon" type="image/svg+xml" href="img/brand-mark.svg">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="lab/lab.css">
 </head>
-<body>
-<header class="top">
-  <div class="wrap">
-    <div class="brand"><span class="logo">⚙️</span><div><h1>System Design Lab</h1><p>Собирай систему из блоков и смотри, как меняются нагрузка, цена и сложность · <span data-chlinks></span></p></div></div>
-    <nav id="tabs" class="tabs" aria-label="Главы"></nav>
-  </div>
-</header>
-<main class="wrap" id="app"></main>
-<footer class="wrap foot">Учебная модель: цифры правдоподобные, но не измерения. Смысл в том, чтобы почувствовать компромиссы. Сверяйся с книгой и конспектами в <code>chapters/</code>.</footer>
-<script src="engine.js"></script>
-<script src="scenarios/ch1.js"></script>
-<script src="scenarios/ch2.js"></script>
-<script src="scenarios/ch3.js"></script>
-<script src="scenarios/ch4.js"></script>
-<script src="scenarios/ch5.js"></script>
-<script src="scenarios/ch6.js"></script>
-<script src="app.js"></script>
+<body class="lab">
+<header data-shell="" data-root=""></header>
 <script src="chapters.js"></script>
-<script src="lang.js"></script>
+<main>
+  <section class="home-top">
+    <div class="home-intro">
+      <span class="eyebrow dot">System Design Interview, Vol. 2</span>
+      <h1>Собери систему <em>по шагам.</em></h1>
+      <p>Каждая глава проходит путь как на интервью: требования, оценка нагрузки, API и данные, схема на карте, углубление и итог. Двигаешь нагрузку и сразу видишь, где узкое место и чем платишь за решение.</p>
+      <div class="home-cta"><a class="cta" href="ch7/index.html">Начать с главы 7 <span aria-hidden="true">↗</span></a><a class="cta-2" href="#chapters">Все главы ↓</a></div>
+      <dl class="home-stats"><div><dt>3</dt><dd>главы</dd></div><div><dt>6</dt><dd>шагов в главе</dd></div><div><dt>0</dt><dd>зависимостей</dd></div></dl>
+    </div>
+    <div class="home-stage" id="octo-home"></div>
+  </section>
+  <section class="home-list wrap" id="chapters">
+    <span class="eyebrow">Главы · 7–9</span>
+    <h2>Выбери главу.</h2>
+    <ol class="ch-list" id="ch-list"></ol>
+  </section>
+</main>
+<footer class="wrap foot">Учебная модель: цифры правдоподобные, но не измерения. Прогресс хранится только в этом браузере. Конспекты глав лежат в <a href="../chapters/">chapters/</a>.</footer>
+<script>
+  document.getElementById('octo-home').innerHTML = SD_octoHTML('готов');
+  document.getElementById('ch-list').innerHTML = SD_CHAPTERS.map((c) => `<li><a href="${c.dir}/index.html">
+    <span class="ch-n">${String(c.n).padStart(2, '0')}</span>
+    <span class="ch-t"><small>Глава ${c.n}</small><b>${c.title}</b><span>${c.about}</span></span>
+    <span class="ch-go" aria-hidden="true">→</span></a></li>`).join('');
+</script>
 </body>
 </html>
