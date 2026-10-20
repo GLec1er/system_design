@@ -79,6 +79,8 @@
   function init() {
     document.title = `Глава ${L.n}. ${L.title}`;
     $('#chapter').innerHTML = `<small>Глава ${L.n}</small><b>${esc(L.title)}</b>`;
+    $('#hero').innerHTML = `<div class="hero-copy"><span class="eyebrow">Глава ${L.n} · System Design Interview, Vol. 2</span><h1>${esc(L.title)}</h1>
+      <div class="hero-meta" id="hero-meta"></div><span class="eyebrow">Задача</span><p>${esc(L.intro)}</p></div>${window.SD_octoHTML ? SD_octoHTML() : ''}`;
     const h = location.hash.slice(1), i = L.steps.findIndex((s) => s.id === h);
     if (i >= 0) st.step = i;
     renderSteps();
@@ -94,6 +96,7 @@
     renderSteps();
     renderStep();
     window.scrollTo({ top: 0 });
+    if (window.SD_octoCheer) SD_octoCheer();
   }
 
   // Шаг пройден по результату: требования проверены, цели карты выполнены; остальные шаги достаточно открыть.
@@ -104,6 +107,8 @@
     return true;
   }
   function renderSteps() {
+    const done = L.steps.filter(stepDone).length;
+    $('#hero-meta').innerHTML = `<span class="hchip">${L.steps.length} шагов</span><span class="hchip"><i class="ring" style="--p:${done / L.steps.length * 100}%"></i>пройдено ${done} / ${L.steps.length}</span><span class="hchip">шаг ${st.step + 1}: ${esc(step().title)}</span>`;
     $('#steps').innerHTML = L.steps.map((s, i) => { const done = i !== st.step && stepDone(s);
       return `<button class="stp ${done ? 'done' : ''}" data-i="${i}" aria-current="${i === st.step ? 'step' : 'false'}"><span class="num">${done ? '✓' : i + 1}</span><span class="stt"><b>${esc(s.title)}</b><small>${esc(s.sub || '')}</small></span></button>`; }).join('<span class="sline" aria-hidden="true"></span>');
     $$('#steps .stp').forEach((b) => (b.onclick = () => go(+b.dataset.i)));
@@ -116,7 +121,7 @@
 
   function head(s, intro, tips) {
     return `<section class="stage-head"><div class="sh"><span class="snum">${st.step + 1}</span><h2>${esc(s.title)}</h2><span class="spill">${esc(s.sub || '')}</span><span class="muted">шаг ${st.step + 1} из ${L.steps.length}</span></div>
-      ${st.step === 0 ? `<p class="lead">${esc(L.intro)}</p>` : ''}<p>${esc(intro)}</p>
+<p>${esc(intro)}</p>
       ${tips ? `<div class="tips">${tips.map((t) => `<span>${esc(t)}</span>`).join('')}</div>` : ''}</section>`;
   }
 
@@ -464,7 +469,9 @@
   function freePos([x, y]) {
     const rects = st.graph.nodes.map((n) => rectOf(n.id) || { x: n.x, y: n.y, w: 170, h: 110 });
     for (let i = 0; i < 400; i++) {
-      const c = { x: Math.max(0, Math.min(x + (i % 10) * 60 - 270, BW - NEW.w)), y: Math.max(0, y + Math.floor(i / 10) * 40), w: NEW.w, h: NEW.h };
+      // сначала ровно туда, куда просили (под курсор), потом всё дальше вправо-влево и ниже
+      const k = i % 10, dx = ((k + 1) >> 1) * 60 * (k % 2 ? 1 : -1);
+      const c = { x: Math.max(0, Math.min(x + dx, BW - NEW.w)), y: Math.max(0, y + Math.floor(i / 10) * 40), w: NEW.w, h: NEW.h };
       if (!rects.some((r) => hits(c, r))) return [Math.round(c.x / 10) * 10, Math.round(c.y / 10) * 10];
     }
     return [x, y];
@@ -557,7 +564,7 @@
       const done = onMap && !b.multi, chips = done ? [] : effects(r, analyzeG(E.addBlock(L, st.graph, t, [0, 0]).graph, step().stage));
       return `<div class="pwrap"><button class="pi cat-${b.cat}"${brand(b)} data-t="${t}" title="Перетащи на карту или нажми">
         <span class="pic">${icon(b)}</span><span class="pin"><b>${esc(b.name)}</b><span class="pmeta"><span class="ptag ${b.extra ? 'xp' : 'bk'}">${b.extra ? '🧪 эксперимент' : '📘 книга'}</span>${b.alsoExp ? '<span class="ptag xp">🧪 сравни с аналогами</span>' : ''}${onMap ? '<em>на карте</em>' : ''}</span><small>${esc(b.tag || '')}</small>
-        ${done ? '' : `<span class="chips">${chips.length ? chips.slice(0, 4).map(([t, good]) => `<span class="chip ${good ? 'good' : 'bad'}">${esc(t)}</span>`).join('') : '<span class="chip">сейчас без эффекта</span>'}</span>`}</span></button>
+        ${done ? '' : `<span class="chips">${chips.length ? chips.slice(0, 4).map(([t, good]) => `<span class="chip ${good ? 'good' : 'bad'}">${esc(t)}</span>`).join('') : '<span class="hchip">сейчас без эффекта</span>'}</span>`}</span></button>
         ${b.fit ? `<button class="pinfo" data-info="${t}" aria-expanded="${infoOpen.has(t)}" title="Для чего подходит, когда не стоит, ограничения">ⓘ</button>${infoOpen.has(t) ? `<div class="pfit">${fitHtml(b.fit)}</div>` : ''}` : ''}</div>`;
     };
     const side = (extra) => {

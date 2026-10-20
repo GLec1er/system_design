@@ -6,7 +6,7 @@
 Каждая глава строится по одному шаблону ([TEMPLATE.md](TEMPLATE.md)). Главный раздел — «Путь решения»: на каждом шаге **проблема → решение → что улучшилось → компромисс → альтернативы**. Диаграммы только иллюстрируют этот рассказ.
 
 ## 🎮 Симулятор
-В [simulator/](simulator/index.html) лежит интерактивный симулятор для глав 1–6: меняешь нагрузку, добавляешь и убираешь блоки (кэш, Kafka, шарды…) и сразу видишь узкое место, цену, сложность и риски. Открой `simulator/index.html` в браузере или включи GitHub Pages. Глава 7 сделана в новом формате: [шаги как в книге и карта архитектуры](simulator/ch7/index.html). Глава 8 тоже: [распределённая почта](simulator/ch8/index.html). Глава 9: [объектное хранилище в стиле S3](simulator/ch9/index.html). Подробности в [simulator/README.md](simulator/README.md).
+В [simulator/](simulator/index.html) лежат интерактивные главы 7–9 по шагам, как на интервью: требования, оценка, API, схема на карте с потоками, углубление и итог. Открой `simulator/index.html` в браузере или включи GitHub Pages. Главы: [7. Hotel Reservation](simulator/ch7/index.html), [8. Distributed Email](simulator/ch8/index.html), [9. S3-like Object Storage](simulator/ch9/index.html). Подробности в [simulator/README.md](simulator/README.md).
 
 ## Как повторять
 1. Закрыть конспект, нарисовать архитектуру по памяти.
