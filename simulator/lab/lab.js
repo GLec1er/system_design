@@ -873,7 +873,8 @@
       if (!n) { box.innerHTML = `<p class="onote">«${esc(def.name)}» нет на карте.</p>`; return; }
       const c = n.cfg, key = c.shards > 1 && def.shardKeys ? `, ключ ${def.shardKeys.find((k) => k.v === c.shardKey).label}` : '';
       box.closest('.prob').classList.toggle('solved', n.util <= 0.9 && !(def.shardKeys || []).some((k) => k.skew && k.v === c.shardKey && c.shards > 1));
-      box.innerHTML = `<p class="onote">Сейчас: ${c.shards} шард.${key}, реплик ${c.replicas}. Загрузка ${Math.round(n.util * 100)}%.</p><button class="btn sm" data-open="${g.id}">⚙️ Настроить ${esc(def.name)}</button>`;
+      const now = def.tune === 'kafka' ? `${c.brokers} брок., ${c.partitions} партиций, RF ${c.rf}` : def.tune === 'rabbit' ? `${c.queues} очеред.` : `${c.shards} шард.${key}, реплик ${c.replicas}`;
+      box.innerHTML = `<p class="onote">Сейчас: ${now}. Загрузка ${Math.round(n.util * 100)}%.</p><button class="btn sm" data-open="${g.id}">⚙️ Настроить ${esc(def.name)}</button>`;
       $('[data-open]', box).onclick = () => { select(g.id); $('#mapcard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
     });
     const d = r.d;
