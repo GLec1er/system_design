@@ -216,7 +216,7 @@
       <div class="est"><div>
         <h4 class="grp first">1. Допущения о бизнесе</h4><p class="muted small">Задают обычный день. Наведи на ползунок: справа подсветятся шаги, куда он входит.</p>
         ${L.estimate.inputs.map((i) => `<div class="dep" data-dep="${i.id}">${sliderHtml(i, st.est[i.id], 'data-est')}${aff(i.id)}</div>`).join('')}
-        <div class="scn"><h4 class="grp">2. Сценарий нагрузки</h4><p class="muted small">Умножает обычный день: рост бизнеса и пик распродажи. По этим числам считаются карта, узкие места и эталон во всей главе.</p>${L.scenario.map((x) => `<div class="dep" data-dep="${x.id}">${scnHtml(x)}<small class="muted shint">${esc(x.hint)}</small>${aff(x.id)}</div>`).join('')}</div>
+        <div class="scn"><h4 class="grp">2. Сценарий нагрузки</h4><p class="muted small">${esc(L.estimate.scnNote || 'Умножает обычный день: рост бизнеса и пик распродажи.')} По этим числам считаются карта, узкие места и эталон во всей главе.</p>${L.scenario.map((x) => `<div class="dep" data-dep="${x.id}">${scnHtml(x)}<small class="muted shint">${esc(x.hint)}</small>${aff(x.id)}</div>`).join('')}</div>
       </div>
       <div id="estOut"></div></div></section>`;
   }
@@ -315,7 +315,7 @@
     };
     return `${head(step(), A.intro)}
       <section class="card"><h4 class="grp first">Общие правила</h4><dl class="conv">${A.conventions.map((c) => `<div><dt>${esc(c.k)}</dt><dd>${esc(c.v)}</dd></div>`).join('')}</dl></section>
-      <section class="card"><h4 class="grp first">Путь гостя по ручкам</h4><ol class="jour">${A.journey.map((j) => `<li>${j.ep ? `<button class="jbtn" data-ep="${j.ep}">${ep(byId[j.ep])}</button>` : '<span class="mth m-int">внутри</span>'}<span>${esc(j.text)}</span></li>`).join('')}</ol></section>
+      <section class="card"><h4 class="grp first">${esc(A.journeyTitle || 'Путь пользователя по ручкам')}</h4><ol class="jour">${A.journey.map((j) => `<li>${j.ep ? `<button class="jbtn" data-ep="${j.ep}">${ep(byId[j.ep])}</button>` : '<span class="mth m-int">внутри</span>'}<span>${esc(j.text)}</span></li>`).join('')}</ol></section>
       <section class="card"><h4 class="grp first">Эндпоинты</h4><p class="muted small">Нажми на ручку, чтобы раскрыть контракт. <b class="req">*</b> обязательный параметр. Цветная метка показывает поток на карте, который создаёт эта ручка.</p><div class="eps">${A.endpoints.map(epHtml).join('')}</div></section>
       <section class="card"><h4 class="grp first">Схема данных</h4><p class="muted small">Таблицы сгруппированы по базам: у каждого сервиса своя БД, как на карте. 🔑 первичный ключ. Сплошная стрелка это FOREIGN KEY внутри одной БД. Пунктир это связь между разными БД: БД её не проверяет, за неё отвечает код сервиса. Нажми на таблицу, чтобы открыть подробности.</p>
         <div class="er" id="er"><svg class="erl" id="erl" aria-hidden="true"></svg>${A.dbs.map((d) => `<div class="erdb"><div class="erh"><b>${esc(d.name)}</b><small>${esc(d.owner)}</small></div>${A.tables.filter((t) => t.db === d.id).map((t) => `<button class="ert" data-tbl="${esc(t.name)}" id="er-${esc(t.name)}"><b>${esc(t.name)}</b>${t.cols.map((c) => `<span class="erc ${c.k ? 'key' : ''}" data-col="${esc(t.name)}.${esc(c.n)}"><i>${/PK/.test(c.k || '') ? '🔑' : ''}</i>${esc(c.n)}<em>${esc(c.t)}</em>${c.ref ? `<u class="${c.ref.soft ? 'soft' : ''}">→ ${esc(c.ref.t)}</u>` : ''}</span>`).join('')}</button>`).join('')}</div>`).join('')}</div></section>
@@ -850,7 +850,7 @@
       { k: 'served', label: 'Выдерживаем', v: m.served, show: m.routed ? Math.round(m.served * 100) + '%' : '—', cls: !m.routed ? 'bad' : m.served >= 1 ? (m.maxU > 0.9 ? 'warn' : 'ok') : 'bad', sub: !m.routed ? 'схема не достроена' : m.bottleneck ? 'узкое место: ' + m.bottleneck.def.name : 'нет нагрузки', better: 1 },
       ...(m.bgU ? [{ k: 'bg', label: 'Фоновая очередь', v: m.bgU, show: pct(m.bgU), cls: m.bgU > 1 ? 'warn' : 'ok', sub: m.bgU > 1 ? 'не успевает, очередь растёт' : 'успевает', better: -1 }] : []),
       ...KF.map((f) => ({ k: f.id, label: f.label, v: lat(f.id), show: lat(f.id) == null ? '—' : ms(lat(f.id)), sub: 'задержка p50', better: -1 })),
-      ...(deep ? L.metrics.map((x) => (m.routed ? { k: x.id, label: x.label, v: m[x.id] || 0, show: fmt(m[x.id] || 0), cls: m[x.id] > 0 ? (x.bad ? 'bad' : 'warn') : 'ok', sub: 'за день сценария', better: -1 }
+      ...(deep ? L.metrics.map((x) => (m.routed ? { k: x.id, label: x.label, v: m[x.id] || 0, show: fmt(m[x.id] || 0), cls: m[x.id] > 0 ? (x.bad ? 'bad' : 'warn') : 'ok', sub: x.sub || 'за день сценария', better: -1 }
         : { k: x.id, label: x.label, v: null, show: '—', sub: 'схема не достроена', better: -1 })) : []),
       { k: 'cost', label: 'Стоимость', v: m.cost, show: money(m.cost).replace('/мес', ''), sub: 'в месяц, условно', better: -1 },
       { k: 'cx', label: 'Сложность', v: m.cx, show: m.cx.toFixed(1).replace('.', ','), cls: m.cx > CX[1] ? 'bad' : m.cx > CX[0] ? 'warn' : '', sub: 'условных баллов', better: -1 },
@@ -873,7 +873,8 @@
       if (!n) { box.innerHTML = `<p class="onote">«${esc(def.name)}» нет на карте.</p>`; return; }
       const c = n.cfg, key = c.shards > 1 && def.shardKeys ? `, ключ ${def.shardKeys.find((k) => k.v === c.shardKey).label}` : '';
       box.closest('.prob').classList.toggle('solved', n.util <= 0.9 && !(def.shardKeys || []).some((k) => k.skew && k.v === c.shardKey && c.shards > 1));
-      box.innerHTML = `<p class="onote">Сейчас: ${c.shards} шард.${key}, реплик ${c.replicas}. Загрузка ${Math.round(n.util * 100)}%.</p><button class="btn sm" data-open="${g.id}">⚙️ Настроить ${esc(def.name)}</button>`;
+      const now = def.tune === 'kafka' ? `${c.brokers} брок., ${c.partitions} партиций, RF ${c.rf}` : def.tune === 'rabbit' ? `${c.queues} очеред.` : `${c.shards} шард.${key}, реплик ${c.replicas}`;
+      box.innerHTML = `<p class="onote">Сейчас: ${now}. Загрузка ${Math.round(n.util * 100)}%.</p><button class="btn sm" data-open="${g.id}">⚙️ Настроить ${esc(def.name)}</button>`;
       $('[data-open]', box).onclick = () => { select(g.id); $('#mapcard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
     });
     const d = r.d;
@@ -943,7 +944,7 @@
       return `<div class="tf"><div class="tfl">${esc(f.label)}<span class="${f.book ? 'bk' : 'xp'}">${f.book ? '📘 по книге' : '🧪 эксперимент'}</span></div>
         <div class="tseg">${opts.map((o) => { const no = f.id === 'rf' && o.v > n.cfg.brokers;
           return `<button class="${o === cur ? 'on' : ''}" data-tf="${f.id}" data-v="${esc(o.v)}" ${no ? `disabled title="Копий не может быть больше, чем брокеров (${n.cfg.brokers})"` : ''}>${esc(o.label)}</button>`; }).join('')}</div>
-        <p class="tnote">${esc((cur && cur.note) || f.hint || '')}</p></div>`;
+        <p class="tnote">${esc((cur && cur.note) || (def.hints && def.hints[f.id]) || f.hint || '')}</p></div>`;
     }).join('')}</div>
     ${E.sizable(def.tune) ? '<button class="btn sm" id="autoTune">✨ Подобрать под нагрузку</button>' : ''}`;
   }

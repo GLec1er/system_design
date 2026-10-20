@@ -558,7 +558,7 @@ h3.sec{margin:22px 0 10px;font-size:13px;letter-spacing:.04em;text-transform:upp
 .conv dt{font-size:12px;color:var(--muted);font-weight:600}
 .conv dd{margin:3px 0 0;font-size:13.5px}
 .mth{display:inline-block;min-width:58px;text-align:center;font:700 11.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;padding:5px 7px;border-radius:6px;color:var(--card)}
-.m-get{background:var(--f1)}.m-post{background:var(--f4)}.m-put{background:var(--c-db)}.m-delete{background:var(--bad)}.m-int{background:var(--card2);color:var(--muted);border:1px solid var(--line)}.m-ws{background:var(--f6)}.m-smtp{background:var(--f5)}.m-patch{background:var(--f2)}
+.m-get{background:var(--f1)}.m-post{background:var(--f4)}.m-put{background:var(--c-db)}.m-delete{background:var(--bad)}.m-int{background:var(--card2);color:var(--muted);border:1px solid var(--line)}.m-ws{background:var(--f6)}.m-smtp{background:var(--f5)}.m-patch{background:var(--f2)}.m-rpc{background:var(--f6)}.m-sub{background:var(--f5)}
 .lab code.path{background:none;border:0;padding:0;font-size:13.5px;font-weight:600;word-break:break-all}
 .lab code.path i{font-style:normal;color:var(--f2)}
 .jour{list-style:none;counter-reset:j;padding:0;margin:0;display:flex;flex-direction:column;gap:6px}

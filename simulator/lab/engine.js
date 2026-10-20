@@ -116,7 +116,9 @@
       // виртуальная очередь, rate limiter) не отвечает, а задерживает или отказывает: прошедшие запросы идут весь путь.
       const touch = (n, p, s = 1, lp = p) => ops.push(() => { const l = r.rate * p * s; r.steps.push({ id: n.id }); n.load += l; if (f.write) n.wload += l; n.flows[f.id] = (n.flows[f.id] || 0) + l; r.path.push({ id: n.id, p, lp }); });
       const edge = (a, b, p, s = 1) => ops.push(() => { const k = a + '>' + b; (edgeLoad[k] = edgeLoad[k] || {})[f.id] = r.rate * p * s; r.steps.push({ k, v: r.rate * p * s }); });
-      let cur = Object.values(nodes).find((n) => has(f.chain[0], n.type));
+      // Начало потока: из блоков нужного типа берём тот, у которого есть стрелка к следующему шагу (блок-замена мог оставить старый без стрелок).
+      const starts = Object.values(nodes).filter((n) => has(f.chain[0], n.type));
+      let cur = starts.find((n) => f.chain.length < 2 || out[n.id].some((id) => has(f.chain[1], nodes[id].type) || nodes[id].def.via)) || starts[0];
       if (!cur) { r.ok = false; r.missing = [null, f.chain[0]]; return r; }
       let p = 1, lp = 1, sc = 1;
       const used = new Set();
@@ -153,7 +155,7 @@
       while (todo.length) { const id = todo.pop(); if (seen.has(id)) continue; seen.add(id); nodes[id].cells = c.cfg.cells; todo.push(...out[id]); }
     });
     const shed = Object.values(nodes).some((n) => n.def.tune === 'gw' && n.cfg.shed === 'on');
-    const ctx = { d, deep, stage, graph, nodes, flows, out, cx: 0, cost: 0, metrics: {}, warnings: [] };
+    const ctx = { d, deep, stage, graph, nodes, flows, out, edgeLoad, cx: 0, cost: 0, metrics: {}, warnings: [] };
     ctx.warn = (lvl, text) => ctx.warnings.push({ lvl, text });
     const names = (spec) => [].concat(spec).map((t) => lab.blocks[t].name).join(' или ');
     flows.forEach((f) => {
