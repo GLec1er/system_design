@@ -20,6 +20,8 @@
   mq.addEventListener('change', applyTheme);
   // Маскота можно спрятать и вернуть в меню оформления.
   const octo = () => get('sd-octo', '1') === '1';
+  const motion = () => get('sd-octo-motion', '1') === '1';
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   document.documentElement.dataset.octo = octo() ? 'on' : 'off';
 
   const el = document.querySelector('[data-shell]');
@@ -36,10 +38,6 @@
     dark: '<path d="M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z"/>',
   };
   const REPO = 'https://github.com/GLec1er/system_design';
-  const i = CH.findIndex((c) => String(c.n) === cur);
-  const arrow = (c, sym, label) => c
-    ? `<a class="chnav-arr" href="${url(c)}" title="${label}: глава ${c.n}. ${esc(c.title)}" aria-label="${label}: глава ${c.n}">${sym}</a>`
-    : `<span class="chnav-arr" aria-hidden="true">${sym}</span>`;
   const en = /(^|;\s*)googtrans=\/ru\/en/.test(document.cookie);
   const THEMES = { system: 'Системная', light: 'Светлая', dark: 'Тёмная' };
 
@@ -56,7 +54,7 @@
     <div class="topbar">
       <a class="brand" href="${root}index.html" aria-label="System Design Lab: все главы"><img class="brand-mark" src="${root}img/brand-mark.svg" width="30" height="30" alt=""><span class="brand-word">System Design <b>Lab</b></span></a>
       ${cur ? `<span class="crumb" id="chapter"></span>
-      <nav class="chnav" aria-label="Главы">${arrow(CH[i - 1], '‹', 'Назад')}<select aria-label="Перейти к главе">${CH.map((c, k) => `<option value="${url(c)}"${k === i ? ' selected' : ''}>Глава ${c.n} · ${esc(c.title)}</option>`).join('')}</select>${arrow(CH[i + 1], '›', 'Дальше')}</nav>` : ''}
+      <nav class="chtabs" aria-label="Главы">${CH.map((c) => `<a href="${url(c)}" title="Глава ${c.n}. ${esc(c.title)}"${String(c.n) === cur ? ' aria-current="page"' : ''}>${String(c.n).padStart(2, '0')}</a>`).join('')}</nav>` : ''}
       <div class="topbar-right">
         <div class="lang-seg notranslate" role="group" aria-label="Язык"><button data-lang="en" aria-pressed="${en}">EN</button><button data-lang="ru" aria-pressed="${!en}">RU</button></div>
         <div class="appearance">
@@ -65,14 +63,13 @@
             <span class="eyebrow">ОФОРМЛЕНИЕ</span>
             <div class="theme-options">${Object.keys(THEMES).map((t) => `<label><input type="radio" name="sd-theme" value="${t}"${t === theme() ? ' checked' : ''}>${ic(I[t])}<span>${THEMES[t]}</span></label>`).join('')}</div>
             <label class="octo-pref"><input type="checkbox"${octo() ? ' checked' : ''}><span>Показывать Окто</span></label>
+            <label class="octo-pref anim"><input type="checkbox"${motion() ? ' checked' : ''}><span>Анимировать Окто</span></label>
+            ${reduced ? '<p class="octo-note">В системе включено уменьшение движения, Окто стоит на месте.</p>' : ''}
           </div>
         </div>
         <a class="github-link" href="${REPO}" target="_blank" rel="noreferrer" aria-label="Репозиторий GitHub">${ic(I.github)}</a>
       </div>
     </div>`;
-
-  const sel = el.querySelector('.chnav select');
-  if (sel) sel.onchange = (e) => (location.href = e.target.value);
 
   // Оформление: выпадающая панель с темой и маскотом.
   const btn = el.querySelector('.appearance-btn'), panel = el.querySelector('.appearance-panel');
@@ -84,10 +81,12 @@
     set('sd-theme', r.value); applyTheme(); btn.querySelector('svg').outerHTML = ic(I[r.value]);
   }));
   panel.querySelector('.octo-pref input').onchange = (e) => window.SD_OCTO(e.target.checked);
+  panel.querySelector('.octo-pref.anim input').onchange = (e) => { set('sd-octo-motion', e.target.checked ? '1' : '0'); octoLive(); };
   window.SD_OCTO = (on) => {
     set('sd-octo', on ? '1' : '0');
     document.documentElement.dataset.octo = on ? 'on' : 'off';
     panel.querySelector('.octo-pref input').checked = on;
+    octoLive();
   };
 
   // Язык: перевод на английский делает виджет Google Translate.
@@ -109,6 +108,25 @@
     document.head.appendChild(s);
   }
 
-  // Маскот Окто: <div data-octo></div> → картинка с подписью и кнопкой «спрятать».
-  window.SD_octoHTML = (caption) => `<aside class="octo"><img src="${root}img/octo.svg" width="240" height="224" alt="Окто, робот-осьминог"><div class="octo-cap"><span>ОКТО${caption ? ` <i>/</i> ${esc(caption)}` : ''}</span><button type="button" onclick="SD_OCTO(false)" aria-label="Спрятать Окто" title="Спрятать Окто · вернуть в оформлении">×</button></div></aside>`;
+  // Маскот Окто: статичный кадр img/octo.png, а поверх него живая 3D-модель из octo3d.js (three.js с CDN).
+  // Модель грузится, только когда Окто виден и анимация разрешена; без WebGL или сети остаётся картинка.
+  window.SD_octoHTML = (caption) => {
+    setTimeout(octoLive);
+    return `<aside class="octo"><div class="octo-art"><img src="${root}img/octo.png" width="240" height="224" alt="Окто, робот-осьминог"><canvas aria-hidden="true"></canvas></div><div class="octo-cap"><span>ОКТО${caption ? ` <i>/</i> ${esc(caption)}` : ''}</span><button type="button" onclick="SD_OCTO(false)" aria-label="Спрятать Окто" title="Спрятать Окто · вернуть в оформлении">×</button></div></aside>`;
+  };
+  let mod = null;
+  function octoLive() {
+    const on = octo() && motion() && !reduced;
+    document.querySelectorAll('.octo-art').forEach((host) => {
+      if (!on) { if (host.octo) { host.octo.stop(); host.octo = null; } return; }
+      if (host.octo || host.dataset.loading) return;
+      host.dataset.loading = '1';
+      (mod = mod || import(new URL('octo3d.js', document.querySelector('script[src$="chapters.js"]').src).href))
+        .then((m) => { if (octo() && motion() && host.isConnected) host.octo = m.mount(host); })
+        .catch(() => {}) // нет WebGL или CDN: остаётся картинка
+        .finally(() => delete host.dataset.loading);
+    });
+  }
+  // Смена шага: Окто поднимает щупальца.
+  window.SD_octoCheer = () => document.querySelectorAll('.octo-art').forEach((h) => h.octo && h.octo.cheer());
 })();

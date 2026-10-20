@@ -96,6 +96,7 @@
     renderSteps();
     renderStep();
     window.scrollTo({ top: 0 });
+    if (window.SD_octoCheer) SD_octoCheer();
   }
 
   // Шаг пройден по результату: требования проверены, цели карты выполнены; остальные шаги достаточно открыть.
@@ -468,7 +469,9 @@
   function freePos([x, y]) {
     const rects = st.graph.nodes.map((n) => rectOf(n.id) || { x: n.x, y: n.y, w: 170, h: 110 });
     for (let i = 0; i < 400; i++) {
-      const c = { x: Math.max(0, Math.min(x + (i % 10) * 60 - 270, BW - NEW.w)), y: Math.max(0, y + Math.floor(i / 10) * 40), w: NEW.w, h: NEW.h };
+      // сначала ровно туда, куда просили (под курсор), потом всё дальше вправо-влево и ниже
+      const k = i % 10, dx = ((k + 1) >> 1) * 60 * (k % 2 ? 1 : -1);
+      const c = { x: Math.max(0, Math.min(x + dx, BW - NEW.w)), y: Math.max(0, y + Math.floor(i / 10) * 40), w: NEW.w, h: NEW.h };
       if (!rects.some((r) => hits(c, r))) return [Math.round(c.x / 10) * 10, Math.round(c.y / 10) * 10];
     }
     return [x, y];
