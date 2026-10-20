@@ -3,6 +3,12 @@
 // Новая глава = одна строка в CH (по порядку) + папка chN/ с index.html.
 (function () {
   const CH = [
+    { n: 1, dir: 'ch1', title: 'Proximity Service', about: 'Поиск мест рядом, как Yelp: 5000 поисков в секунду, geohash или quadtree, кэш по ячейкам.' },
+    { n: 2, dir: 'ch2', title: 'Nearby Friends', about: 'Друзья рядом в реальном времени: 334 тысячи обновлений в секунду, WebSocket и Pub/Sub на каждого пользователя.' },
+    { n: 3, dir: 'ch3', title: 'Google Maps', about: 'Карты и навигация: миллиард пользователей, тайлы через CDN, граф дорог по тайлам, пробки через Kafka.' },
+    { n: 4, dir: 'ch4', title: 'Distributed Message Queue', about: 'Своя Kafka: партиции, лог на диске, pull, группы потребителей, репликация и ISR.' },
+    { n: 5, dir: 'ch5', title: 'Metrics Monitoring', about: 'Мониторинг метрик и алерты: 10 млн рядов, pull или push, TSDB со сжатием и downsampling.' },
+    { n: 6, dir: 'ch6', title: 'Ad Click Aggregation', about: 'Клики по рекламе: миллиард в день, потоковая агрегация, event time и watermark, exactly-once.' },
     { n: 7, dir: 'ch7', title: 'Hotel Reservation', about: 'Бронирование отелей: нельзя продать один номер дважды. Инвентарь по типу и дате, идемпотентность, транзакции.' },
     { n: 8, dir: 'ch8', title: 'Distributed Email Service', about: 'Почта масштаба Gmail: миллиард ящиков, SMTP на входе и выходе, сотни петабайт писем и вложений в год.' },
     { n: 9, dir: 'ch9', title: 'S3-like Object Storage', about: 'Объектное хранилище в стиле S3: 100 ПБ в год, шесть девяток надёжности, метаданные отдельно от байтов.' },
