@@ -850,7 +850,7 @@
       { k: 'served', label: 'Выдерживаем', v: m.served, show: m.routed ? Math.round(m.served * 100) + '%' : '—', cls: !m.routed ? 'bad' : m.served >= 1 ? (m.maxU > 0.9 ? 'warn' : 'ok') : 'bad', sub: !m.routed ? 'схема не достроена' : m.bottleneck ? 'узкое место: ' + m.bottleneck.def.name : 'нет нагрузки', better: 1 },
       ...(m.bgU ? [{ k: 'bg', label: 'Фоновая очередь', v: m.bgU, show: pct(m.bgU), cls: m.bgU > 1 ? 'warn' : 'ok', sub: m.bgU > 1 ? 'не успевает, очередь растёт' : 'успевает', better: -1 }] : []),
       ...KF.map((f) => ({ k: f.id, label: f.label, v: lat(f.id), show: lat(f.id) == null ? '—' : ms(lat(f.id)), sub: 'задержка p50', better: -1 })),
-      ...(deep ? L.metrics.map((x) => (m.routed ? { k: x.id, label: x.label, v: m[x.id] || 0, show: fmt(m[x.id] || 0), cls: m[x.id] > 0 ? (x.bad ? 'bad' : 'warn') : 'ok', sub: 'за день сценария', better: -1 }
+      ...(deep ? L.metrics.map((x) => (m.routed ? { k: x.id, label: x.label, v: m[x.id] || 0, show: fmt(m[x.id] || 0), cls: m[x.id] > 0 ? (x.bad ? 'bad' : 'warn') : 'ok', sub: x.sub || 'за день сценария', better: -1 }
         : { k: x.id, label: x.label, v: null, show: '—', sub: 'схема не достроена', better: -1 })) : []),
       { k: 'cost', label: 'Стоимость', v: m.cost, show: money(m.cost).replace('/мес', ''), sub: 'в месяц, условно', better: -1 },
       { k: 'cx', label: 'Сложность', v: m.cx, show: m.cx.toFixed(1).replace('.', ','), cls: m.cx > CX[1] ? 'bad' : m.cx > CX[0] ? 'warn' : '', sub: 'условных баллов', better: -1 },
