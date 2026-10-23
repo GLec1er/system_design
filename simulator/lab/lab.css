@@ -87,6 +87,7 @@ a{color:var(--accent)}
   .topbar-right{gap:12px}
   .github-link{display:grid}
   .chtabs{display:flex;order:5;flex:1 1 100%}
+  .chtabs a{flex:1 1 0;width:auto;max-width:38px} /* десять глав и больше влезают в 390 px */
 }
 
 /* шапка главы с маскотом */

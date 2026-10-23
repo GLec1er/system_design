@@ -6,7 +6,7 @@
 Каждая глава строится по одному шаблону ([TEMPLATE.md](TEMPLATE.md)). Главный раздел — «Путь решения»: на каждом шаге **проблема → решение → что улучшилось → компромисс → альтернативы**. Диаграммы только иллюстрируют этот рассказ.
 
 ## 🎮 Симулятор
-В [simulator/](simulator/index.html) лежат интерактивные главы 1–9 по шагам, как на интервью: требования, оценка, API, схема на карте с потоками, углубление и итог. Открой `simulator/index.html` в браузере или включи GitHub Pages. Главы: [1. Proximity Service](simulator/ch1/index.html), [2. Nearby Friends](simulator/ch2/index.html), [3. Google Maps](simulator/ch3/index.html), [4. Message Queue](simulator/ch4/index.html), [5. Metrics Monitoring](simulator/ch5/index.html), [6. Ad Click Aggregation](simulator/ch6/index.html), [7. Hotel Reservation](simulator/ch7/index.html), [8. Distributed Email](simulator/ch8/index.html), [9. S3-like Object Storage](simulator/ch9/index.html). Подробности в [simulator/README.md](simulator/README.md).
+В [simulator/](simulator/index.html) лежат интерактивные главы 1–10 по шагам, как на интервью: требования, оценка, API, схема на карте с потоками, углубление и итог. Открой `simulator/index.html` в браузере или включи GitHub Pages. Главы: [1. Proximity Service](simulator/ch1/index.html), [2. Nearby Friends](simulator/ch2/index.html), [3. Google Maps](simulator/ch3/index.html), [4. Message Queue](simulator/ch4/index.html), [5. Metrics Monitoring](simulator/ch5/index.html), [6. Ad Click Aggregation](simulator/ch6/index.html), [7. Hotel Reservation](simulator/ch7/index.html), [8. Distributed Email](simulator/ch8/index.html), [9. S3-like Object Storage](simulator/ch9/index.html), [10. Gaming Leaderboard](simulator/ch10/index.html). Подробности в [simulator/README.md](simulator/README.md).
 
 ## Как повторять
 1. Закрыть конспект, нарисовать архитектуру по памяти.
@@ -26,7 +26,7 @@
 | 7 | [Hotel Reservation System](chapters/07-hotel-reservation/README.md) | система бронирования отелей | 🟨 |
 | 8 | [Distributed Email Service](chapters/08-email-service/README.md) | распределённый почтовый сервис | ⬜ |
 | 9 | [S3-like Object Storage](chapters/09-object-storage/README.md) | объектное хранилище в стиле S3 | ⬜ |
-| 10 | [Real-time Gaming Leaderboard](chapters/10-gaming-leaderboard/README.md) | рейтинг игроков в реальном времени | ⬜ |
+| 10 | [Real-time Gaming Leaderboard](chapters/10-gaming-leaderboard/README.md) | рейтинг игроков в реальном времени | 🟨 |
 | 11 | [Payment System](chapters/11-payment-system/README.md) | платёжная система | ⬜ |
 | 12 | [Digital Wallet](chapters/12-digital-wallet/README.md) | цифровой кошелёк, переводы между счетами | ⬜ |
 | 13 | [Stock Exchange](chapters/13-stock-exchange/README.md) | биржа, матчинг заявок | ⬜ |
