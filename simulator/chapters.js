@@ -12,6 +12,7 @@
     { n: 7, dir: 'ch7', title: 'Hotel Reservation', about: 'Бронирование отелей: нельзя продать один номер дважды. Инвентарь по типу и дате, идемпотентность, транзакции.' },
     { n: 8, dir: 'ch8', title: 'Distributed Email Service', about: 'Почта масштаба Gmail: миллиард ящиков, SMTP на входе и выходе, сотни петабайт писем и вложений в год.' },
     { n: 9, dir: 'ch9', title: 'S3-like Object Storage', about: 'Объектное хранилище в стиле S3: 100 ПБ в год, шесть девяток надёжности, метаданные отдельно от байтов.' },
+    { n: 10, dir: 'ch10', title: 'Gaming Leaderboard', about: 'Рейтинг игроков в реальном времени: 25 млн игроков, sorted set в Redis вместо ORDER BY, шарды по диапазонам очков.' },
   ];
   window.SD_CHAPTERS = CH;
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);

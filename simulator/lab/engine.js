@@ -211,7 +211,8 @@
       } else if (def.tune === 'kv') {
         // Ключ по хэшу живёт в одном шарде: шарды делят ключи, но не один горячий ключ (популярный отель в распродажу).
         // Его чтения делят только реплики шарда и локальный кэш в сервисе.
-        const s = c.shards, R = def.noRepl ? 0 : c.replicas, near = c.near === 'on', f = near ? 0.4 : 1, hk = (def.hotKey || 0.04) * (near ? 0.25 : 1);
+        // Глава может задать долю горячего ключа узлу в model (n.hotKey): весь рейтинг в одном sorted set это один ключ, и L1 его запись не делит.
+        const s = c.shards, R = def.noRepl ? 0 : c.replicas, near = c.near === 'on', f = near ? 0.4 : 1, hk = n.hotKey !== undefined ? n.hotKey : (def.hotKey || 0.04) * (near ? 0.25 : 1);
         const hot = Math.max(1 / s, hk), Rd2 = Rd * f;
         const part = (sh) => ({ share: sh, pU: (Rd2 * sh / (1 + R) + W * sh) / cap, rU: R ? (Rd2 * sh) / (1 + R) / cap : 0 });
         n.rep = s * (1 + R);
