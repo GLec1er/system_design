@@ -24,26 +24,22 @@
     <div class="home-stage" id="octo-home"></div>
   </section>
   <section class="home-list wrap" id="chapters">
-    <span class="eyebrow">Главы · 1–13</span>
-    <h2>Выбери главу.</h2>
-    <ol class="ch-list" id="ch-list"></ol>
-  </section>
-  <section class="home-list wrap">
-    <span class="eyebrow">Свободный режим</span>
-    <h2>Или собери своё.</h2>
-    <ol class="ch-list"><li><a href="sandbox/index.html">
-      <span class="ch-n">∞</span>
-      <span class="ch-t"><small>Песочница</small><b>Свободная схема и сбои</b><span>Блоки из всех глав на одной карте: крути пользователей и нагрузку, раскладывай копии по трём дата-центрам, а потом отключай свет, взрывай трансформатор и рви оптику.</span></span>
-      <span class="ch-go" aria-hidden="true">→</span></a></li></ol>
+    <span class="eyebrow">Главы</span>
+    <div id="books"></div>
   </section>
 </main>
 <footer class="wrap foot">Учебная модель: цифры правдоподобные, но не измерения. Прогресс хранится только в этом браузере. Конспекты глав лежат в <a href="../chapters/">chapters/</a>.</footer>
 <script>
   document.getElementById('octo-home').innerHTML = SD_octoHTML('готов');
-  document.getElementById('ch-list').innerHTML = SD_CHAPTERS.map((c) => `<li><a href="${c.dir}/index.html">
+  // Каждая книга сворачивается, свёрнутость помним.
+  const item = (c) => `<li><a href="${c.dir}/index.html">
     <span class="ch-n">${String(c.n).padStart(2, '0')}</span>
     <span class="ch-t"><small>Глава ${c.n}</small><b>${c.title}</b><span>${c.about}</span></span>
-    <span class="ch-go" aria-hidden="true">→</span></a></li>`).join('');
+    <span class="ch-go" aria-hidden="true">→</span></a></li>`;
+  const closed = (id) => { try { return localStorage.getItem('sd-book-' + id) === '0'; } catch (e) { return false; } };
+  document.getElementById('books').innerHTML = SD_BOOKS.map((b) => { const list = SD_CHAPTERS.filter((c) => c.book === b.id); return `<details class="book" data-book="${b.id}"${closed(b.id) ? '' : ' open'}>
+    <summary><h2>${b.title}</h2><span class="book-n">${list.length} глав</span></summary><ol class="ch-list">${list.map(item).join('')}</ol></details>`; }).join('');
+  document.querySelectorAll('.book').forEach((d) => (d.ontoggle = () => { try { localStorage.setItem('sd-book-' + d.dataset.book, d.open ? '1' : '0'); } catch (e) {} }));
 </script>
 </body>
 </html>
