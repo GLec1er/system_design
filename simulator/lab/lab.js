@@ -125,18 +125,27 @@
       ${tips ? `<div class="tips">${tips.map((t) => `<span>${esc(t)}</span>`).join('')}</div>` : ''}</section>`;
   }
 
-  // Боковая панель: вся глава по шагам, текущий подсвечен
-  function guide() {
-    return `<aside class="side card"><h3 class="side-t">🧭 Как пройти главу</h3><div class="side-sub">ГЛАВА ПО ШАГАМ</div>
-      <ol class="tl">${L.steps.map((s, i) => `<li class="${i === st.step ? 'cur' : stepDone(s) ? 'done' : ''}"><span class="tn">${i !== st.step && stepDone(s) ? '✓' : i + 1}</span><div>
-        <span class="tag">${esc(s.tag || '')}</span><b data-go="${i}" role="link" tabindex="0">${esc(s.title)}</b><p>${esc(s.guide || '')}</p></div></li>`).join('')}</ol></aside>`;
+  // Вкладки: справка шага не тянет страницу вниз. Выбранная вкладка помнится, пока открыта страница.
+  const tabSel = {};
+  function tabsHtml(key, list, cls) {
+    list = list.filter(Boolean);
+    const cur = list.some((t) => t.id === tabSel[key]) ? tabSel[key] : list[0].id;
+    return `<section class="card tabcard ${cls || ''}" data-tabs="${key}"><div class="tabs" role="tablist">${list.map((t) => `<button type="button" role="tab" data-tab="${t.id}" aria-selected="${t.id === cur}">${esc(t.label)}${t.n ? ` <em>${t.n}</em>` : ''}</button>`).join('')}</div>
+      ${list.map((t) => `<div class="tabp" role="tabpanel" data-panel="${t.id}"${t.id === cur ? '' : ' hidden'}>${t.html}</div>`).join('')}</section>`;
   }
+  function showTab(box, id) {
+    tabSel[box.dataset.tabs] = id;
+    $$('[data-tab]', box).forEach((b) => b.setAttribute('aria-selected', b.dataset.tab === id));
+    $$('[data-panel]', box).forEach((p) => (p.hidden = p.dataset.panel !== id));
+  }
+  // Элемент во вкладке, которая сейчас закрыта: сначала открыть её.
+  function reveal(el) { const p = el && el.closest('[data-panel]'); if (p && p.hidden) showTab(p.closest('[data-tabs]'), p.dataset.panel); }
 
   function renderStep() {
     const s = step(), box = $('#app');
-    const body = ({ req: reqView, est: estView, api: apiView, map: mapView, sum: sumView }[s.kind])() + nav();
-    box.innerHTML = s.kind === 'map' ? body : `<div class="page"><div class="main">${body}</div>${guide()}</div>`;
+    box.innerHTML = ({ req: reqView, est: estView, api: apiView, map: mapView, sum: sumView }[s.kind])() + nav();
     $$('[data-go]', box).forEach((b) => (b.onclick = () => go(+b.dataset.go)));
+    $$('[data-tabs]', box).forEach((t) => $$('[data-tab]', t).forEach((b) => (b.onclick = () => showTab(t, b.dataset.tab))));
     ({ req: bindReq, est: bindEst, api: bindApi, map: bindMap, sum: bindSum }[s.kind])();
   }
 
@@ -159,37 +168,37 @@
     const S = R.start, frs = R.groups.flatMap((g) => g.items).filter((it) => it.shapes);
     const cols = (R.nfr || []).map((n) => n.id).filter((id) => frs.some((it) => it.shapes.some((x) => x[0] === id)));
     const lvl = ['', 'влияет', 'определяет'];
-    const startHtml = S ? `<section class="card rq-start"><h4 class="grp">🧭 ${esc(S.title)}</h4><p>${esc(S.text)}</p>
-      <ol class="chain">${S.chain.map((c) => `<li><b>${esc(c.t)}</b><span>${esc(c.d)}</span></li>`).join('')}</ol>
-      <h4 class="grp">${esc(S.skipTitle || 'Чего не берём, потому что нагрузка маленькая')}</h4><div class="skips">${S.skip.map((c) => `<div><b>✗ ${esc(c.t)}</b><span>${esc(c.d)}</span></div>`).join('')}</div>
-      <p class="muted">${esc(S.revisit)}</p></section>` : '';
-    const mapHtml = !frs.length ? '' : st.reqChecked ? `<section class="card"><h4 class="grp">🔗 Как FR формируют NFR</h4>
+    const startTab = S && { id: 'start', label: S.title, html: `<p>${esc(S.text)}</p>
+      <ol class="chain">${S.chain.map((c) => `<li><b>${esc(c.t)}</b><span>${esc(c.d)}</span></li>`).join('')}</ol>` };
+    const skipTab = S && { id: 'skip', label: 'Чего не берём', n: S.skip.length, html: `<h4 class="grp first">${esc(S.skipTitle || 'Чего не берём, потому что нагрузка маленькая')}</h4><div class="skips">${S.skip.map((c) => `<div><b>✗ ${esc(c.t)}</b><span>${esc(c.d)}</span></div>`).join('')}</div>
+      <p class="muted">${esc(S.revisit)}</p>` };
+    const mapTab = frs.length && { id: 'frmap', label: 'Как FR формируют NFR', html: st.reqChecked ? `
       <p class="muted">NFR не берутся из воздуха: каждое вырастает из конкретного действия пользователя. «Определяет» значит, что без этого FR требование было бы слабее или не нужно вовсе. Наведи на клетку, чтобы увидеть причину.</p>
       <div class="frx"><table class="tbl frm"><thead><tr><th>FR</th>${cols.map((id) => `<th>${esc(N[id].name)}</th>`).join('')}</tr></thead><tbody>
       ${frs.map((it) => `<tr><td>${esc(it.text)}</td>${cols.map((id) => { const x = it.shapes.find((q) => q[0] === id); return x ? `<td class="l${x[1]}" title="${esc(x[2])}">${lvl[x[1]]}</td>` : '<td></td>'; }).join('')}</tr>`).join('')}
       </tbody></table></div>
       <div class="frmaps">${frs.map((it) => `<div class="frmap"><b>${esc(it.text)}</b>${it.to ? `<small class="muted">→ ${esc(it.to)}</small>` : ''}
-        <ul>${it.shapes.map((x) => `<li class="l${x[1]}">${chip(x[0])}<em>${lvl[x[1]]}</em> ${esc(x[2])}</li>`).join('')}</ul></div>`).join('')}</div></section>`
-      : `<section class="card muted">🔗 После «Проверить» здесь откроется карта: какое FR формирует какое NFR и почему.</section>`;
-    const futHtml = R.future ? `<section class="card rq-fut"><h4 class="grp">⚠️ Будущие FR, которые ломают NFR</h4>
+        <ul>${it.shapes.map((x) => `<li class="l${x[1]}">${chip(x[0])}<em>${lvl[x[1]]}</em> ${esc(x[2])}</li>`).join('')}</ul></div>`).join('')}</div>`
+      : '<p class="muted">🔗 После «Проверить» здесь откроется карта: какое FR формирует какое NFR и почему.</p>' };
+    const futTab = R.future && { id: 'fut', label: 'Будущие FR, которые ломают NFR', n: R.future.length, html: `
       <p class="muted">Архитектура верна, пока верны требования. Бизнес добавляет одну «простую» функцию, и задержка, ожидание, доступность или согласованность перестают держаться. На интервью это хороший ответ на вопрос «что изменится, если…».</p>
       <div class="futs">${R.future.map((f) => `<div class="fut"><b>${esc(f.fr)}</b><div class="fchips">ломает: ${f.breaks.map((id) => chip(id, 'bad')).join('')}</div>
-        <dl><dt>Сейчас держит</dt><dd>${esc(f.now)}</dd><dt>Что ломается</dt><dd>${esc(f.why)}</dd><dt>Что придётся добавить</dt><dd>${esc(f.fix)}</dd></dl></div>`).join('')}</div></section>` : '';
-    return `${head(step(), R.intro)}${startHtml}<div class="reqcols">
+        <dl><dt>Сейчас держит</dt><dd>${esc(f.now)}</dd><dt>Что ломается</dt><dd>${esc(f.why)}</dd><dt>Что придётся добавить</dt><dd>${esc(f.fix)}</dd></dl></div>`).join('')}</div>` };
+    const nfrTab = R.nfr && { id: 'nfr', label: 'Понятия NFR', n: R.nfr.length, html: `<p class="muted">Подсвечены свойства, которые решают эту главу. Остальные тоже стоит назвать на интервью хотя бы одной фразой.</p>
+        <div class="nfrs">${R.nfr.map((n) => `<div class="nfr ${n.key ? 'key' : ''}" id="nfr-${n.id}"><b>${esc(n.name)} <span class="muted">${esc(n.en)}</span>${n.key ? ' <em>важно здесь</em>' : ''}</b>
+          <p>${esc(n.what)}</p><dl><dt>Как меряют</dt><dd>${esc(n.metric)}</dd><dt>На что влияет</dt><dd>${esc(n.drives)}</dd><dt>В этой главе</dt><dd>${esc(n.here)}</dd></dl></div>`).join('')}</div>` };
+    return `${head(step(), R.intro)}<div class="reqcols">
       ${R.groups.map((g, gi) => `<section class="card rq-${g.kind || 'fr'}"><h4 class="grp">${esc(g.title)}${g.q ? ` <span class="muted">· ${esc(g.q)}</span>` : ''}</h4>${g.desc ? `<p class="muted">${esc(g.desc)}</p>` : ''}<div class="reqs">${g.items.map((it, ii) => {
         const k = gi + '.' + ii, s = reqState(it, k), n = N[it.nfr];
         return `<label class="ri ${s}"><input type="checkbox" data-k="${k}" ${st.req[k] ? 'checked' : ''}><span>${n ? `<button type="button" class="nchip" data-nfr="${n.id}" title="${esc(n.what)}">${esc(n.name)} · ${esc(n.en)}</button>` : ''}<b>${esc(it.text)}</b>${s ? `<small><em>${mark[s]}.</em> ${esc(it.why)}${it.to && it.in ? `<br>→ ${esc(it.to)}` : ''}</small>` : ''}</span></label>`;
       }).join('')}</div></section>`).join('')}</div>
       <section class="card"><div class="row-btns"><button class="btn primary" id="reqCheck">${st.reqChecked ? 'Скрыть ответы' : 'Проверить'}</button>${st.reqChecked ? `<span class="score">Верно ${sc.ok} из ${sc.total}</span>` : ''}</div>
       ${st.reqChecked ? `<div class="w info">${esc(R.conclusion)}</div>` : ''}</section>
-      ${mapHtml}${futHtml}
-      ${R.nfr ? `<section class="card"><h4 class="grp">📖 Понятия NFR и за что они отвечают</h4><p class="muted">Подсвечены свойства, которые решают эту главу. Остальные тоже стоит назвать на интервью хотя бы одной фразой.</p>
-        <div class="nfrs">${R.nfr.map((n) => `<div class="nfr ${n.key ? 'key' : ''}" id="nfr-${n.id}"><b>${esc(n.name)} <span class="muted">${esc(n.en)}</span>${n.key ? ' <em>важно здесь</em>' : ''}</b>
-          <p>${esc(n.what)}</p><dl><dt>Как меряют</dt><dd>${esc(n.metric)}</dd><dt>На что влияет</dt><dd>${esc(n.drives)}</dd><dt>В этой главе</dt><dd>${esc(n.here)}</dd></dl></div>`).join('')}</div></section>` : ''}`;
+      ${[startTab, skipTab, mapTab, futTab, nfrTab].some(Boolean) ? tabsHtml('req', [startTab, skipTab, mapTab, futTab, nfrTab]) : ''}`;
   }
   function bindReq() {
     $$('.ri input').forEach((c) => (c.onchange = () => { st.req[c.dataset.k] = c.checked; save(); renderStep(); }));
-    $$('.nchip').forEach((b) => (b.onclick = (e) => { e.preventDefault(); const el = $('#nfr-' + b.dataset.nfr); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }));
+    $$('.nchip').forEach((b) => (b.onclick = (e) => { e.preventDefault(); const el = $('#nfr-' + b.dataset.nfr); reveal(el); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }));
     $('#reqCheck').onclick = () => { st.reqChecked = !st.reqChecked; save(); renderSteps(); renderStep(); };
   }
 
@@ -211,8 +220,7 @@
   }
   function estView() {
     const aff = (id) => `<div class="aff" id="aff_${id}"></div>`;
-    return `${head(step(), L.estimate.intro)}<section class="card">
-      <ol class="howread"><li><b>Слева</b> то, что мы предполагаем: размер бизнеса и сценарий пика.</li><li><b>Справа</b> расчёт сверху вниз: каждый шаг берёт результат предыдущего, в формулу подставлены твои числа.</li><li><b>Внизу</b> три числа, которые уходят на карту, и вывод о технологиях.</li></ol>
+    return `${head(step(), L.estimate.intro)}<section class="card tomap" id="estTop"></section><section class="card">
       <div class="est"><div>
         <h4 class="grp first">1. Допущения о бизнесе</h4><p class="muted small">Задают обычный день. Наведи на ползунок: справа подсветятся шаги, куда он входит.</p>
         ${L.estimate.inputs.map((i) => `<div class="dep" data-dep="${i.id}">${sliderHtml(i, st.est[i.id], 'data-est')}${aff(i.id)}</div>`).join('')}
@@ -250,16 +258,16 @@
         : `→ ${R.direct.map((k) => `<span class="ach">шаг ${k + 1} · ${esc(rows[k].short)}</span>`).join('')}${R.down.length ? `<span>потом шаги ${R.down.map((k) => k + 1).join(', ')}</span>` : ''}${idle ? '<span class="later">при пике ×1 ничего не меняет</span>' : ''}`;
     });
     const vals = rows.map(val), chg = (k) => estPrev && Math.abs(estPrev[k] - vals[k]) > 1e-9 * Math.max(1, Math.abs(vals[k]));
-    $('#estOut').innerHTML = `<h4 class="grp first">3. Расчёт по шагам</h4><div class="csteps">${rows.map((r, k) => {
+    $('#estTop').innerHTML = `<h4 class="grp first">Что уходит на карту</h4><div class="tm">${L.flows.map((f) => { const k = rows.findIndex((r) => (r.flows || []).includes(f.id)); return k < 0 ? '' : `<div>${dot(f.id)}<span>${esc(f.label)}</span><b>${fmt(vals[k])}/с</b><small>шаг ${k + 1} расчёта</small></div>`; }).join('')}</div>
+      <div class="w info">${esc(L.estimate.conclusion(d))}</div>`;
+    $('#estOut').innerHTML = `<h4 class="grp first">3. Расчёт по шагам</h4><p class="muted small">Каждый шаг берёт результат предыдущего, в формулу подставлены твои числа.</p><div class="csteps">${rows.map((r, k) => {
       const base = rowsNow[k].v, scnDiff = Math.abs(base - val(r)) > 1e-9 * Math.max(1, base);
       return `<div class="cstep" data-row="${k}"><div class="ch"><span class="cn">${k + 1}</span><b>${esc(r.label)}</b><span class="cv ${chg(k) ? 'chg' : ''}">${fmt(val(r))}${r.peak ? '/с' : ''}</span></div>
         <div class="calc">${esc(r.calc(d, st.est, fmt))}</div>
         <p class="cwhy">${esc(r.why)}</p>
         <div class="cfoot"><span>из: ${r.uses.map((u) => `<span class="cin">${esc(nm[u])}</span>`).join('')}${r.from.map((x) => `<span class="cin st">шаг ${x + 1}</span>`).join('')}</span>
           <span class="cto">${(r.flows || []).map(dot).join('')}→ ${esc(r.to)}</span>${scnDiff ? `<span class="cnow">без сценария было бы ${fmt(base)}${r.peak ? '/с' : ''}</span>` : ''}</div></div>`;
-    }).join('')}</div>
-      <div class="tomap"><h4 class="grp first">4. Что уходит на карту</h4><div class="tm">${L.flows.map((f) => { const k = rows.findIndex((r) => (r.flows || []).includes(f.id)); return k < 0 ? '' : `<div>${dot(f.id)}<span>${esc(f.label)}</span><b>${fmt(vals[k])}/с</b><small>шаг ${k + 1}</small></div>`; }).join('')}</div>
-      <div class="w info">${esc(L.estimate.conclusion(d))}</div></div>`;
+    }).join('')}</div>`;
     estPrev = vals;
     $$('#estOut .cstep').forEach((el) => {
       el.addEventListener('pointerenter', () => estHighlight(null, +el.dataset.row));
@@ -296,7 +304,7 @@
     const tname = (n) => A.tables.find((t) => t.name.split(', ').includes(n)) || {};
     const epHtml = (e) => {
       const f = fc[e.flow];
-      return `<details class="ep ${e.key ? 'key' : ''}" id="ep-${e.id}" ${e.key ? 'open' : ''}><summary>${ep(e)}<span class="ept">${esc(e.title)}</span>${f ? `<span class="epf" title="Поток на карте"><i style="background:${f.color}"></i>${esc(f.label)}</span>` : ''}<span class="epw">${esc(e.who)}</span></summary>
+      return `<div class="ep" id="ep-${e.id}"><div class="eph">${ep(e)}<span class="ept">${esc(e.title)}</span>${f ? `<span class="epf" title="Поток на карте"><i style="background:${f.color}"></i>${esc(f.label)}</span>` : ''}<span class="epw">${esc(e.who)}</span></div>
         <p>${esc(e.about)}</p>${e.extra ? `<p class="muted small">📎 ${esc(e.extra)}</p>` : ''}
         <div class="rr"><div><h5>Запрос</h5>
           ${e.example ? `<pre class="code">${esc(e.example)}</pre>` : ''}
@@ -311,30 +319,46 @@
           ${e.fields ? tbl(null, e.fields.map(([n, d]) => `<tr><td><code>${esc(n)}</code></td><td>${esc(d)}</td></tr>`)) : ''}</div></div>
         <h5>Ошибки</h5>${tbl(['HTTP', 'code', 'Когда'], e.errors.map(([h, c, d]) => `<tr><td><span class="st ${h < 400 ? 'ok' : h < 500 ? 'bad' : 'warn'}">${h}</span></td><td><code>${esc(c)}</code></td><td>${esc(d)}</td></tr>`))}
         ${e.sql ? `<h5>Что происходит в БД</h5><pre class="code sql">${sqlHtml(e.sql)}</pre>` : ''}
-        <div class="rw">${e.writes.map((t) => `<button class="tchip w" data-tbl="${esc(tname(t).name || t)}">✏️ пишет ${esc(t)}</button>`).join('')}${e.reads.map((t) => `<button class="tchip" data-tbl="${esc(tname(t).name || t)}">👁 читает ${esc(t)}</button>`).join('')}</div></details>`;
+        <div class="rw">${e.writes.map((t) => `<button class="tchip w" data-tbl="${esc(tname(t).name || t)}">✏️ пишет ${esc(t)}</button>`).join('')}${e.reads.map((t) => `<button class="tchip" data-tbl="${esc(tname(t).name || t)}">👁 читает ${esc(t)}</button>`).join('')}</div></div>`;
     };
+    apiPane = (id) => epHtml(byId[id]);
+    if (!byId[apiSel]) apiSel = (A.endpoints.find((e) => e.key) || A.endpoints[0]).id;
+    // Слева путь пользователя по ручкам, справа контракт выбранной. Ручки вне пути идут в конце списка.
+    const inJour = new Set(A.journey.map((j) => j.ep));
+    const list = [...A.journey, ...A.endpoints.filter((e) => !inJour.has(e.id)).map((e) => ({ ep: e.id, text: e.title }))];
     return `${head(step(), A.intro)}
       <section class="card"><h4 class="grp first">Общие правила</h4><dl class="conv">${A.conventions.map((c) => `<div><dt>${esc(c.k)}</dt><dd>${esc(c.v)}</dd></div>`).join('')}</dl></section>
-      <section class="card"><h4 class="grp first">${esc(A.journeyTitle || 'Путь пользователя по ручкам')}</h4><ol class="jour">${A.journey.map((j) => `<li>${j.ep ? `<button class="jbtn" data-ep="${j.ep}">${ep(byId[j.ep])}</button>` : '<span class="mth m-int">внутри</span>'}<span>${esc(j.text)}</span></li>`).join('')}</ol></section>
-      <section class="card"><h4 class="grp first">Эндпоинты</h4><p class="muted small">Нажми на ручку, чтобы раскрыть контракт. <b class="req">*</b> обязательный параметр. Цветная метка показывает поток на карте, который создаёт эта ручка.</p><div class="eps">${A.endpoints.map(epHtml).join('')}</div></section>
-      <section class="card"><h4 class="grp first">Схема данных</h4><p class="muted small">Таблицы сгруппированы по базам: у каждого сервиса своя БД, как на карте. 🔑 первичный ключ. Сплошная стрелка это FOREIGN KEY внутри одной БД. Пунктир это связь между разными БД: БД её не проверяет, за неё отвечает код сервиса. Нажми на таблицу, чтобы открыть подробности.</p>
-        <div class="er" id="er"><svg class="erl" id="erl" aria-hidden="true"></svg>${A.dbs.map((d) => `<div class="erdb"><div class="erh"><b>${esc(d.name)}</b><small>${esc(d.owner)}</small></div>${A.tables.filter((t) => t.db === d.id).map((t) => `<button class="ert" data-tbl="${esc(t.name)}" id="er-${esc(t.name)}"><b>${esc(t.name)}</b>${t.cols.map((c) => `<span class="erc ${c.k ? 'key' : ''}" data-col="${esc(t.name)}.${esc(c.n)}"><i>${/PK/.test(c.k || '') ? '🔑' : ''}</i>${esc(c.n)}<em>${esc(c.t)}</em>${c.ref ? `<u class="${c.ref.soft ? 'soft' : ''}">→ ${esc(c.ref.t)}</u>` : ''}</span>`).join('')}</button>`).join('')}</div>`).join('')}</div></section>
-      <section class="card"><h4 class="grp first">Какая ручка какие таблицы трогает</h4><p class="muted small">👁 читает, ✏️ пишет. Нажми на ручку или таблицу, чтобы перейти к ней.</p>
+      <div class="apix"><section class="card"><h4 class="grp first">${esc(A.journeyTitle || 'Путь пользователя по ручкам')}</h4><p class="muted small">Нажми на ручку, чтобы увидеть контракт. Цветная метка показывает поток на карте.</p>
+        <ol class="jour">${list.map((j) => `<li>${j.ep ? `<button class="jbtn" data-ep="${j.ep}" aria-pressed="${j.ep === apiSel}">${ep(byId[j.ep])}<span>${esc(j.text)}</span></button>` : `<span class="jint"><span class="mth m-int">внутри</span><span>${esc(j.text)}</span></span>`}</li>`).join('')}</ol></section>
+        <section class="card" id="epPane">${apiPane(apiSel)}</section></div>
+      ${tabsHtml('api', [
+        { id: 'er', label: 'Схема данных', html: `<p class="muted small">Таблицы сгруппированы по базам: у каждого сервиса своя БД, как на карте. 🔑 первичный ключ. Сплошная стрелка это FOREIGN KEY внутри одной БД. Пунктир это связь между разными БД: БД её не проверяет, за неё отвечает код сервиса. Нажми на таблицу, чтобы открыть подробности.</p>
+        <div class="er" id="er"><svg class="erl" id="erl" aria-hidden="true"></svg>${A.dbs.map((d) => `<div class="erdb"><div class="erh"><b>${esc(d.name)}</b><small>${esc(d.owner)}</small></div>${A.tables.filter((t) => t.db === d.id).map((t) => `<button class="ert" data-tbl="${esc(t.name)}" id="er-${esc(t.name)}"><b>${esc(t.name)}</b>${t.cols.map((c) => `<span class="erc ${c.k ? 'key' : ''}" data-col="${esc(t.name)}.${esc(c.n)}"><i>${/PK/.test(c.k || '') ? '🔑' : ''}</i>${esc(c.n)}<em>${esc(c.t)}</em>${c.ref ? `<u class="${c.ref.soft ? 'soft' : ''}">→ ${esc(c.ref.t)}</u>` : ''}</span>`).join('')}</button>`).join('')}</div>`).join('')}</div>` },
+        { id: 'mx', label: 'Ручки и таблицы', html: `<p class="muted small">👁 читает, ✏️ пишет. Нажми на ручку или таблицу, чтобы перейти к ней.</p>
         <div class="tscroll"><table class="tbl mx"><thead><tr><th>Ручка</th>${A.tables.map((t) => `<th><button class="lnk" data-tbl="${esc(t.name)}">${esc(t.name)}</button></th>`).join('')}</tr></thead><tbody>
-        ${A.endpoints.map((e) => `<tr><td><button class="lnk" data-ep="${e.id}">${ep(e)}</button></td>${A.tables.map((t) => { const w = e.writes.includes(t.name), r = e.reads.includes(t.name); return `<td class="${w ? 'mw' : r ? 'mr' : ''}">${w ? '✏️' : r ? '👁' : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div></section>
-      <section class="card"><h4 class="grp first">Таблицы подробно</h4><div class="schemas">${A.tables.map((t) => { const db = A.dbs.find((d) => d.id === t.db) || {}; return `<div class="schema" id="tbl-${esc(t.name)}"><div class="sh2"><code>${esc(t.name)}</code><span class="dbtag">${esc(db.name || '')}</span><span class="muted small">${esc(t.rows || '')}</span></div><p>${esc(t.why)}</p>
+        ${A.endpoints.map((e) => `<tr><td><button class="lnk" data-ep="${e.id}">${ep(e)}</button></td>${A.tables.map((t) => { const w = e.writes.includes(t.name), r = e.reads.includes(t.name); return `<td class="${w ? 'mw' : r ? 'mr' : ''}">${w ? '✏️' : r ? '👁' : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>` },
+        { id: 'tbls', label: 'Таблицы подробно', n: A.tables.length, html: `<div class="schemas">${A.tables.map((t) => { const db = A.dbs.find((d) => d.id === t.db) || {}; return `<div class="schema" id="tbl-${esc(t.name)}"><div class="sh2"><code>${esc(t.name)}</code><span class="dbtag">${esc(db.name || '')}</span><span class="muted small">${esc(t.rows || '')}</span></div><p>${esc(t.why)}</p>
         ${tbl(['Колонка', 'Тип', 'Ключ и ограничения', 'Смысл'], t.cols.map((c) => `<tr><td><code>${esc(c.n)}</code></td><td class="muted">${esc(c.t)}</td><td>${(c.k || '').split(' ').filter(Boolean).map((k) => `<span class="kb ${k.toLowerCase()}">${k}</span>`).join('')}${c.c ? `<span class="cons">${esc(c.c)}</span>` : ''}${c.ref ? `<button class="lnk ref ${c.ref.soft ? 'soft' : ''}" data-tbl="${esc(c.ref.t)}" title="${c.ref.soft ? 'Другая БД: связь держит код, а не FOREIGN KEY' : 'FOREIGN KEY'}">→ ${esc(c.ref.t)}.${esc(c.ref.c)}</button>` : ''}</td><td>${esc(c.d)}</td></tr>`))}
         ${t.extra ? `<ul class="small">${t.extra.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
         ${(() => { const back = A.tables.flatMap((o) => o.cols.filter((c) => c.ref && c.ref.t === t.name).map((c) => [o, c])); return back.length ? `<p class="small muted">На неё ссылаются: ${back.map(([o, c]) => `<button class="lnk ${c.ref.soft ? 'soft' : ''}" data-tbl="${esc(o.name)}">${esc(o.name)}.${esc(c.n)}</button>`).join(', ')}</p>` : ''; })()}
-        <div class="rw">${usage(t.name).filter(([e, m]) => !(m === 'r' && e.writes.includes(t.name))).map(([e, m]) => `<button class="tchip ${m}" data-ep="${e.id}">${m === 'w' ? '✏️' : '👁'} ${e.method} ${esc(e.path)}</button>`).join('') || '<span class="muted small">Ни одна ручка главы не трогает её напрямую.</span>'}</div></div>`; }).join('')}</div></section>
-      ${A.more ? `<section class="card"><h4 class="grp first">Что можно добавить</h4><p>${esc(A.more.intro)}</p><div class="mores"><div><h5>Таблицы</h5>${A.more.tables.map((t) => `<div class="mo"><code>${esc(t.name)}</code><p>${esc(t.when)}</p><small class="muted">${esc(t.cols)}</small></div>`).join('')}</div>
-        <div><h5>Ручки</h5>${A.more.endpoints.map((t) => `<div class="mo"><code>${esc(t.ep)}</code><p>${esc(t.when)}</p></div>`).join('')}</div></div></section>` : ''}
-      <section class="card"><h4 class="grp first">Проверь себя</h4><div class="quiz">${A.quiz.map((q) => `<details><summary>${esc(q.q)}</summary><p>${esc(q.a)}</p></details>`).join('')}</div></section>`;
+        <div class="rw">${usage(t.name).filter(([e, m]) => !(m === 'r' && e.writes.includes(t.name))).map(([e, m]) => `<button class="tchip ${m}" data-ep="${e.id}">${m === 'w' ? '✏️' : '👁'} ${e.method} ${esc(e.path)}</button>`).join('') || '<span class="muted small">Ни одна ручка главы не трогает её напрямую.</span>'}</div></div>`; }).join('')}</div>` },
+        A.more && { id: 'more', label: 'Что можно добавить', html: `<p>${esc(A.more.intro)}</p><div class="mores"><div><h5>Таблицы</h5>${A.more.tables.map((t) => `<div class="mo"><code>${esc(t.name)}</code><p>${esc(t.when)}</p><small class="muted">${esc(t.cols)}</small></div>`).join('')}</div>
+        <div><h5>Ручки</h5>${A.more.endpoints.map((t) => `<div class="mo"><code>${esc(t.ep)}</code><p>${esc(t.when)}</p></div>`).join('')}</div></div>` },
+        { id: 'quiz', label: 'Проверь себя', n: A.quiz.length, html: `<div class="quiz">${A.quiz.map((q) => `<details><summary>${esc(q.q)}</summary><p>${esc(q.a)}</p></details>`).join('')}</div>` },
+      ])}`;
   }
+  let apiSel = null, apiPane = null;
   function bindApi() {
-    const jump = (el) => { if (!el) return; if (el.tagName === 'DETAILS') el.open = true; el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); };
-    $$('[data-ep]').forEach((b) => (b.onclick = () => jump(document.getElementById('ep-' + b.dataset.ep))));
-    $$('[data-tbl]').forEach((b) => (b.onclick = () => jump(document.getElementById('tbl-' + b.dataset.tbl))));
+    const jump = (el) => { if (!el) return; reveal(el); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); };
+    const tbl = (root) => $$('[data-tbl]', root).forEach((b) => (b.onclick = () => jump(document.getElementById('tbl-' + b.dataset.tbl))));
+    $$('[data-ep]').forEach((b) => (b.onclick = () => {
+      const fromList = !!b.closest('.jour');
+      apiSel = b.dataset.ep;
+      $('#epPane').innerHTML = apiPane(apiSel); tbl($('#epPane'));
+      $$('.jour [data-ep]').forEach((x) => x.setAttribute('aria-pressed', x.dataset.ep === apiSel));
+      if (!fromList) jump($('#ep-' + apiSel));
+    }));
+    tbl(document);
     erLines();
     if (window.ResizeObserver && $('#er')) new ResizeObserver(erLines).observe($('#er'));
   }
@@ -368,7 +392,10 @@
       <div class="kpis" id="kpis"></div>
       <section class="broken" id="broken" hidden></section>
       <div class="lab-grid">
-        <aside class="card pal-card pal-book"><div class="palh"><b>📘 По книге</b><small>Этих блоков хватает для ответа на интервью.</small></div><div id="palBook"></div></aside>
+        ${tabsHtml('pal', [
+          { id: 'book', label: '📘 По книге', html: '<p class="palh">Этих блоков хватает для ответа на интервью.</p><div id="palBook"></div>' },
+          { id: 'exp', label: '🧪 Эксперименты', html: '<p class="palh">В книге их нет. Добавь и посмотри, что станет лучше, а что хуже.</p><div id="palExp"></div>' },
+        ], 'pal-card')}
         <section class="card mapcard" id="mapcard">
           <div class="toolbar">
             <div class="scnbar">${L.scenario.map(scnHtml).join('')}<span class="scnsrc" id="scnsrc"></span></div>
@@ -380,8 +407,7 @@
           </div>
           <div class="cmp" id="cmp"></div>
           <div class="bookline" id="bookline"></div>
-          <div class="legend" id="legend"></div>
-          <p class="lghelp">Стрелка значит «вызывает»: запрос идёт по стрелке, ответ возвращается обратно. Точки на стрелке это запросы, цвет показывает поток, число это запросов в секунду. Серый пунктир: по стрелке ничего не идёт, а на блоке написано почему: 🔌 не подключён (не хватает стрелки) или 💤 не нужен в этой схеме. Нажми на стрелку или блок, чтобы увидеть подробности.</p>
+          <details class="lghelp"><summary>Как читать карту</summary>Стрелка значит «вызывает»: запрос идёт по стрелке, ответ возвращается обратно. Точки на стрелке это запросы, цвет показывает поток, число это запросов в секунду. Серый пунктир: по стрелке ничего не идёт, а на блоке написано почему: 🔌 не подключён (не хватает стрелки) или 💤 не нужен в этой схеме. Нажми на стрелку или блок, чтобы увидеть подробности.</details>
           <div class="board-wrap" id="wrap">
             <div class="board" id="board" style="width:${W}px;height:${H}px">
               <svg id="edges" class="notranslate" width="${W}" height="${H}" aria-hidden="true"><defs>
@@ -394,13 +420,11 @@
             <aside class="insp" id="insp" hidden></aside>
           </div>
         </section>
-        <aside class="card pal-card pal-exp"><div class="palh"><b>🧪 Эксперименты</b><small>В книге их нет. Добавь и посмотри, что станет лучше, а что хуже.</small></div><div id="palExp"></div></aside>
+        <aside class="card chk"><h3>Проверка схемы</h3><div id="goals"></div>
+          <h4 class="grp">Потоки</h4><p class="muted small">Нажми на поток, чтобы оставить на карте только его.</p><div class="legend" id="legend"></div>
+          <h4 class="grp">Подсказки</h4><div class="warns" id="warns"></div></aside>
       </div>
       ${deep ? '<h3 class="sec">Проблемы углубления</h3><div class="probs" id="probs"></div>' : ''}
-      <div class="below">
-        <section class="card"><h3>Цели</h3><div id="goals"></div></section>
-        <section class="card"><h3>Подсказки и предупреждения</h3><div class="warns" id="warns"></div></section>
-      </div>
       <div class="toast" id="toast" role="status" hidden></div>`;
   }
 
