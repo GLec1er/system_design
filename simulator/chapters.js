@@ -1,6 +1,7 @@
 // Общая оболочка всех страниц: боковая полоса, шапка, тема, язык и список глав.
 // Подключается сразу после <header data-shell="7" data-root="../">, чтобы тема встала до отрисовки страницы.
 // Новая глава = одна строка в CH (по порядку) + папка chN/ с index.html.
+// Главы собраны в книги: глава из другой книги или свой разбор получает book с id из BOOKS.
 (function () {
   const CH = [
     { n: 1, dir: 'ch1', title: 'Proximity Service', about: 'Поиск мест рядом, как Yelp: 5000 поисков в секунду, geohash или quadtree, кэш по ячейкам.' },
@@ -17,7 +18,10 @@
     { n: 12, dir: 'ch12', title: 'Digital Wallet', about: 'Кошелёк на миллион переводов в секунду: тысячи шардов, TC/C или Saga, event sourcing на Raft-группах.' },
     { n: 13, dir: 'ch13', title: 'Stock Exchange', about: 'Биржа: 215 тысяч заявок в секунду в пик, matching engine и sequencer на одном сервере, путь заявки за микросекунды.' },
   ];
+  const BOOKS = [{ id: 'sdi2', title: 'System Design Interview, Vol. 2', short: 'V2' }];
+  CH.forEach((c) => (c.book = c.book || 'sdi2'));
   window.SD_CHAPTERS = CH;
+  window.SD_BOOKS = BOOKS;
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const get = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
   const set = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
@@ -46,10 +50,12 @@
     system: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/>',
     light: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
     dark: '<path d="M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z"/>',
-    sandbox: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M10 6.5h4.5a3 3 0 0 1 3 3V14"/>',
   };
-  // Песочница: свободная карта из блоков всех глав, ссылка стоит после глав.
-  const sandbox = () => `<a href="${root}sandbox/index.html" title="Песочница: свободная схема и сбои" aria-label="Песочница"${cur === 'sandbox' ? ' aria-current="page"' : ''}>${ic(I.sandbox)}</a>`;
+  // Книга в боковой полосе сворачивается; свёрнутость помним, книгу текущей главы держим открытой.
+  const curBook = (CH.find((c) => String(c.n) === cur) || {}).book;
+  const railBook = (b) => `<details class="rail-book" data-book="${b.id}"${b.id === curBook || get('sd-book-' + b.id, '1') === '1' ? ' open' : ''}>
+    <summary title="${esc(b.title)}" aria-label="${esc(b.title)}">${esc(b.short)}</summary>
+    ${CH.filter((c) => c.book === b.id).map((c) => `<a href="${url(c)}" class="rail-ch" title="Глава ${c.n}. ${esc(c.title)}" aria-label="Глава ${c.n}"${String(c.n) === cur ? ' aria-current="page"' : ''}>${String(c.n).padStart(2, '0')}</a>`).join('')}</details>`;
   const REPO = 'https://github.com/GLec1er/system_design';
   const en = /(^|;\s*)googtrans=\/ru\/en/.test(document.cookie);
   const THEMES = { system: 'Системная', light: 'Светлая', dark: 'Тёмная' };
@@ -60,15 +66,14 @@
       <a class="rail-brand" href="${root}index.html" aria-label="System Design Lab"><img src="${root}img/brand-mark.svg" width="46" height="46" alt=""></a>
       <nav aria-label="Главы">
         <a href="${root}index.html" title="Все главы" aria-label="Все главы"${cur ? '' : ' aria-current="page"'}>${ic(I.home)}</a>
-        ${CH.map((c) => `<a href="${url(c)}" class="rail-ch" title="Глава ${c.n}. ${esc(c.title)}" aria-label="Глава ${c.n}"${String(c.n) === cur ? ' aria-current="page"' : ''}>${String(c.n).padStart(2, '0')}</a>`).join('')}
-        ${sandbox()}
+        ${BOOKS.map(railBook).join('')}
       </nav>
       <a class="rail-source" href="${REPO}" target="_blank" rel="noreferrer" title="GitHub" aria-label="Репозиторий GitHub">${ic(I.github)}</a>
     </aside>
     <div class="topbar">
       <a class="brand" href="${root}index.html" aria-label="System Design Lab: все главы"><img class="brand-mark" src="${root}img/brand-mark.svg" width="30" height="30" alt=""><span class="brand-word">System Design <b>Lab</b></span></a>
       ${cur ? `<span class="crumb" id="chapter"></span>
-      <nav class="chtabs" aria-label="Главы">${CH.map((c) => `<a href="${url(c)}" title="Глава ${c.n}. ${esc(c.title)}"${String(c.n) === cur ? ' aria-current="page"' : ''}>${String(c.n).padStart(2, '0')}</a>`).join('')}${sandbox()}</nav>` : ''}
+      <nav class="chtabs" aria-label="Главы">${CH.filter((c) => c.book === curBook).map((c) => `<a href="${url(c)}" title="Глава ${c.n}. ${esc(c.title)}"${String(c.n) === cur ? ' aria-current="page"' : ''}>${String(c.n).padStart(2, '0')}</a>`).join('')}</nav>` : ''}
       <div class="topbar-right">
         <div class="lang-seg notranslate" role="group" aria-label="Язык"><button data-lang="en" aria-pressed="${en}">EN</button><button data-lang="ru" aria-pressed="${!en}">RU</button></div>
         <div class="appearance">
@@ -84,6 +89,8 @@
         <a class="github-link" href="${REPO}" target="_blank" rel="noreferrer" aria-label="Репозиторий GitHub">${ic(I.github)}</a>
       </div>
     </div>`;
+
+  el.querySelectorAll('.rail-book').forEach((d) => (d.ontoggle = () => set('sd-book-' + d.dataset.book, d.open ? '1' : '0')));
 
   // Оформление: выпадающая панель с темой и маскотом.
   const btn = el.querySelector('.appearance-btn'), panel = el.querySelector('.appearance-panel');
