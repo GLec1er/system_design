@@ -54,12 +54,8 @@ a{color:var(--accent)}
 .brand-mark{display:none;width:30px;height:30px}
 .brand-word{font-size:16px;font-weight:600;letter-spacing:-.4px}
 .brand-word b{color:var(--muted);font-weight:400}
-.crumb{display:flex;align-items:baseline;gap:10px;min-width:0;padding-left:20px;border-left:1px solid var(--line)}
-.crumb small{font:10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
-.crumb b{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chtabs{display:none;gap:4px}
-.chtabs a{display:grid;place-items:center;width:38px;height:32px;border:1px solid transparent;border-radius:4px;color:var(--muted);font:600 11px var(--mono);text-decoration:none}
-.chtabs a[aria-current]{color:var(--accent);background:var(--card2);border-color:var(--line)}
+.chsel{min-width:0;max-width:280px;height:36px;padding:0 30px 0 12px;border:1px solid var(--line);border-radius:4px;background:var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 12px center;color:var(--ink);font-family:inherit;font-size:14px;font-weight:500;appearance:none;cursor:pointer}
+.chsel:hover{border-color:var(--accent)}
 .topbar-right{display:flex;align-items:center;gap:20px;margin-left:auto}
 .lang-seg{display:flex;padding-left:12px;border-left:1px solid var(--line)}
 .lang-seg button{position:relative;width:34px;height:32px;border:0;background:none;color:var(--muted);font:10px var(--mono);cursor:pointer}
@@ -82,7 +78,6 @@ a{color:var(--accent)}
 .octo-pref.anim{margin-top:0;padding-top:0;border-top:0}
 .octo-pref input{accent-color:var(--accent);width:15px;height:15px;margin:0}
 .github-link{display:none;color:var(--muted)}
-@media (max-width:1100px){.crumb{display:none}}
 @media (max-width:760px){
   body.lab{padding-left:0}
   .rail{display:none}
@@ -91,8 +86,7 @@ a{color:var(--accent)}
   .appearance-btn span,.appearance-btn small{display:none}
   .topbar-right{gap:12px}
   .github-link{display:grid}
-  .chtabs{display:flex;order:5;flex:1 1 100%}
-  .chtabs a{flex:1 1 0;width:auto;max-width:38px} /* десять глав и больше влезают в 390 px */
+  .chsel{order:5;flex:1 1 100%;max-width:none}
 }
 
 /* шапка главы с маскотом */
@@ -695,7 +689,7 @@ h3.sec{margin:22px 0 10px;font-size:13px;letter-spacing:.04em;text-transform:upp
 .book+.book{margin-top:22px}
 .ch-list a{display:grid;grid-template-columns:76px minmax(0,1fr) auto;align-items:center;gap:20px;padding:22px 8px;border-bottom:1px solid var(--line);color:var(--ink);text-decoration:none;transition:background .15s}
 .ch-list a:hover{background:var(--card)}
-.ch-n{font:32px/1 var(--mono);color:var(--accent)}
+.ch-n{font:600 20px/1 var(--mono);color:var(--accent)}
 .ch-t{display:flex;flex-direction:column;gap:2px;min-width:0}
 .ch-t small{font:10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .ch-t b{font-size:19px;font-weight:600;letter-spacing:-.02em}
@@ -710,8 +704,24 @@ h3.sec{margin:22px 0 10px;font-size:13px;letter-spacing:.04em;text-transform:upp
   .home-stage{padding:24px;border-top:1px solid var(--line)}
   .home-stage .octo{width:150px}
   .ch-list a{grid-template-columns:44px minmax(0,1fr) auto;gap:12px;padding:18px 0}
-  .ch-n{font-size:22px}
+  .ch-n{font-size:15px}
 }
 
 /* английский через Google Translate: новый текст ждёт перевода прозрачным (chapters.js) */
 [data-gt]{opacity:0}
+
+/* главная: фильтр по технологиям и чипы на карточках */
+.filters{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px;margin:14px 0 22px}
+.tech-filter{display:flex;flex-wrap:wrap;gap:6px;flex:1 1 0;min-width:0}
+.tech-filter button{min-height:32px;padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink);font:500 13px var(--sans,inherit);font-family:inherit;cursor:pointer}
+.tech-filter button small{color:var(--muted);font:11px var(--mono)}
+.tech-filter button:hover{border-color:var(--accent)}
+.tech-filter button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent);color:var(--bg)}
+.tech-filter button[aria-pressed="true"] small{color:inherit}
+#sort{height:32px;padding:0 10px;border:1px solid var(--line);border-radius:4px;background:var(--card);color:var(--ink);font-family:inherit;font-size:13px}
+.ch-tech{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.ch-tech i{padding:1px 8px;border:1px solid var(--line);border-radius:999px;font:500 11.5px var(--mono);font-style:normal;color:var(--muted)}
+.ch-tech i.on{border-color:var(--accent);color:var(--accent)}
+.ch-t>small{margin-top:4px}
+.empty{color:var(--muted)}
+@media (max-width:760px){.tech-filter{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.tech-filter button{flex:none}}
