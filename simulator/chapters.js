@@ -113,7 +113,25 @@
     ['', '; domain=' + location.hostname, '; domain=.' + location.hostname].forEach((d) => (document.cookie = 'googtrans=' + (toEn ? '/ru/en' : '') + tail + '; path=/' + d));
     location.reload();
   }));
+  // Числа с единицами на карте рисуются сразу на нужном языке и помечены notranslate: переводчик их не трогает.
+  window.SD_EN = en;
+  window.SD_unit = (s) => (en ? s.replace(' млрд', ' B').replace(' млн', ' M').replace(' тыс', 'k').replace(' мкс', ' µs').replace(' мс', ' ms').replace(/ с$/, ' s').replace('/мес', '/mo').replace(/(\d),(\d)/g, '$1.$2') : s);
   if (en) {
+    // Виджет переводит новый текст с задержкой: свежий innerHTML (инспектор блока, панели, тосты) на миг
+    // показывался по-русски, и при каждом клике текст мигал RU → EN. Пока в новом куске есть непереведённая
+    // кириллица, держим его прозрачным (data-gt в lab.css), но не дольше 0,8 с: без сети остаётся русский.
+    const RU = /[а-яё]/i, skip = 'font, .notranslate, script, style, svg, #gt';
+    const raw = (el) => { const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); for (let t; (t = w.nextNode());) if (RU.test(t.data) && !t.parentElement.closest(skip)) return true; return false; };
+    const hold = (el) => {
+      if (el.dataset.gt) return;
+      el.dataset.gt = '1';
+      const t0 = Date.now();
+      (function poll() { if (!el.isConnected || !raw(el) || Date.now() - t0 > 800) delete el.dataset.gt; else setTimeout(poll, 60); })();
+    };
+    new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => {
+      const x = n.nodeType === 1 ? n : n.parentElement;
+      if (x && x !== document.body && !x.closest(skip) && raw(x)) hold(x);
+    }))).observe(document.body, { childList: true, subtree: true });
     const box = document.createElement('div');
     box.id = 'gt'; box.hidden = true; document.body.appendChild(box);
     window.gtInit = () => new google.translate.TranslateElement({ pageLanguage: 'ru', includedLanguages: 'en', autoDisplay: false }, 'gt');

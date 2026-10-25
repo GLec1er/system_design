@@ -12,7 +12,8 @@
   let BW = W, BH = H;
 
   // Дробь в тексте через запятую, как принято в русском.
-  const fmt = (n) => fmt0(n).replace('.', ',');
+  const U = window.SD_unit || ((x) => x);
+  const fmt = (n) => U(fmt0(n).replace('.', ','));
   function fmt0(n) {
     if (!isFinite(n)) return '∞';
     const a = Math.abs(n);
@@ -24,8 +25,8 @@
     if (a >= 10) return n.toFixed(1).replace(/\.0$/, '');
     return n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '') || '0';
   }
-  const ms = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + ' с' : n > 0 && n < 1 ? Math.round(n * 1000) + ' мкс' : Math.round(n) + ' мс'); // биржа живёт в микросекундах
-  const money = (n) => '$' + (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : Math.round(n)) + '/мес';
+  const ms = (n) => U(n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + ' с' : n > 0 && n < 1 ? Math.round(n * 1000) + ' мкс' : Math.round(n) + ' мс'); // биржа живёт в микросекундах
+  const money = (n) => U('$' + (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : Math.round(n)) + '/мес');
   const pct = (u) => (u < 10 ? Math.round(u * 100) + '%' : '×' + fmt(u)); // ×1800 читается легче, чем 180 000%
   // Логотип технологии (lab/logos.js) вместо эмодзи и её фирменный цвет для рамки и подложки.
   const LOGO = window.LOGOS || {};
@@ -384,7 +385,7 @@
           <p class="lghelp">Стрелка значит «вызывает»: запрос идёт по стрелке, ответ возвращается обратно. Точки на стрелке это запросы, цвет показывает поток, число это запросов в секунду. Серый пунктир: по стрелке ничего не идёт, а на блоке написано почему: 🔌 не подключён (не хватает стрелки) или 💤 не нужен в этой схеме. Нажми на стрелку или блок, чтобы увидеть подробности.</p>
           <div class="board-wrap" id="wrap">
             <div class="board" id="board" style="width:${W}px;height:${H}px">
-              <svg id="edges" width="${W}" height="${H}" aria-hidden="true"><defs>
+              <svg id="edges" class="notranslate" width="${W}" height="${H}" aria-hidden="true"><defs>
                 <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="var(--edge)"/></marker>
                 <marker id="arrS" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="var(--accent)"/></marker></defs><g id="eg"></g></svg>
               <div id="nodes"></div><button class="edel" id="edel" hidden aria-label="Удалить стрелку">×</button>
