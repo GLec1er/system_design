@@ -43,7 +43,10 @@
     system: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/>',
     light: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
     dark: '<path d="M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z"/>',
+    sandbox: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M10 6.5h4.5a3 3 0 0 1 3 3V14"/>',
   };
+  // Песочница: свободная карта из блоков всех глав, ссылка стоит после глав.
+  const sandbox = () => `<a href="${root}sandbox/index.html" title="Песочница: свободная схема и сбои" aria-label="Песочница"${cur === 'sandbox' ? ' aria-current="page"' : ''}>${ic(I.sandbox)}</a>`;
   const REPO = 'https://github.com/GLec1er/system_design';
   const en = /(^|;\s*)googtrans=\/ru\/en/.test(document.cookie);
   const THEMES = { system: 'Системная', light: 'Светлая', dark: 'Тёмная' };
@@ -55,13 +58,14 @@
       <nav aria-label="Главы">
         <a href="${root}index.html" title="Все главы" aria-label="Все главы"${cur ? '' : ' aria-current="page"'}>${ic(I.home)}</a>
         ${CH.map((c) => `<a href="${url(c)}" class="rail-ch" title="Глава ${c.n}. ${esc(c.title)}" aria-label="Глава ${c.n}"${String(c.n) === cur ? ' aria-current="page"' : ''}>${String(c.n).padStart(2, '0')}</a>`).join('')}
+        ${sandbox()}
       </nav>
       <a class="rail-source" href="${REPO}" target="_blank" rel="noreferrer" title="GitHub" aria-label="Репозиторий GitHub">${ic(I.github)}</a>
     </aside>
     <div class="topbar">
       <a class="brand" href="${root}index.html" aria-label="System Design Lab: все главы"><img class="brand-mark" src="${root}img/brand-mark.svg" width="30" height="30" alt=""><span class="brand-word">System Design <b>Lab</b></span></a>
       ${cur ? `<span class="crumb" id="chapter"></span>
-      <nav class="chtabs" aria-label="Главы">${CH.map((c) => `<a href="${url(c)}" title="Глава ${c.n}. ${esc(c.title)}"${String(c.n) === cur ? ' aria-current="page"' : ''}>${String(c.n).padStart(2, '0')}</a>`).join('')}</nav>` : ''}
+      <nav class="chtabs" aria-label="Главы">${CH.map((c) => `<a href="${url(c)}" title="Глава ${c.n}. ${esc(c.title)}"${String(c.n) === cur ? ' aria-current="page"' : ''}>${String(c.n).padStart(2, '0')}</a>`).join('')}${sandbox()}</nav>` : ''}
       <div class="topbar-right">
         <div class="lang-seg notranslate" role="group" aria-label="Язык"><button data-lang="en" aria-pressed="${en}">EN</button><button data-lang="ru" aria-pressed="${!en}">RU</button></div>
         <div class="appearance">
