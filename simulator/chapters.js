@@ -13,6 +13,9 @@
     { n: 8, dir: 'ch8', title: 'Distributed Email Service', about: 'Почта масштаба Gmail: миллиард ящиков, SMTP на входе и выходе, сотни петабайт писем и вложений в год.' },
     { n: 9, dir: 'ch9', title: 'S3-like Object Storage', about: 'Объектное хранилище в стиле S3: 100 ПБ в год, шесть девяток надёжности, метаданные отдельно от байтов.' },
     { n: 10, dir: 'ch10', title: 'Gaming Leaderboard', about: 'Рейтинг игроков в реальном времени: 25 млн игроков, sorted set в Redis вместо ORDER BY, шарды по диапазонам очков.' },
+    { n: 11, dir: 'ch11', title: 'Payment System', about: 'Платежи маркетплейса через PSP: 10 в секунду, но ровно одно списание, ledger с двойной записью и ежедневная сверка.' },
+    { n: 12, dir: 'ch12', title: 'Digital Wallet', about: 'Кошелёк на миллион переводов в секунду: тысячи шардов, TC/C или Saga, event sourcing на Raft-группах.' },
+    { n: 13, dir: 'ch13', title: 'Stock Exchange', about: 'Биржа: 215 тысяч заявок в секунду в пик, matching engine и sequencer на одном сервере, путь заявки за микросекунды.' },
   ];
   window.SD_CHAPTERS = CH;
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);

@@ -24,7 +24,7 @@
     if (a >= 10) return n.toFixed(1).replace(/\.0$/, '');
     return n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '') || '0';
   }
-  const ms = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + ' с' : Math.round(n) + ' мс');
+  const ms = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + ' с' : n > 0 && n < 1 ? Math.round(n * 1000) + ' мкс' : Math.round(n) + ' мс'); // биржа живёт в микросекундах
   const money = (n) => '$' + (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : Math.round(n)) + '/мес';
   const pct = (u) => (u < 10 ? Math.round(u * 100) + '%' : '×' + fmt(u)); // ×1800 читается легче, чем 180 000%
   // Логотип технологии (lab/logos.js) вместо эмодзи и её фирменный цвет для рамки и подложки.
@@ -976,7 +976,7 @@
       return `<article class="card prob ${solved ? 'solved' : ''}"><div class="ph"><span class="pnum">${i + 1}</span><h4>${p.icon} ${esc(p.title)}</h4></div><p class="pr">${esc(p.problem)}</p>
         ${(p.params || []).map((x) => sliderHtml(x, D.params[x.id], 'data-par')).join('')}
         ${p.hint ? `<p class="note">${esc(p.hint)}</p>` : ''}
-        <div class="seg" role="radiogroup" aria-label="Решение">${p.options.map((o) => `<label class="opt ${o === cur ? 'on' : ''}"><input type="radio" name="${p.key}" value="${o.v}" ${o === cur ? 'checked' : ''}>${esc(o.label)}</label>`).join('')}</div>
+        <div class="seg" role="radiogroup" aria-label="Решение">${p.options.map((o) => `<label class="opt ${o === cur ? 'on' : ''}"><input type="radio" name="${p.key}" value="${o.v}" ${o === cur ? 'checked' : ''}>${esc(o.label)}${o.ext ? ' 🧪' : ''}</label>`).join('')}</div>
         <p class="onote">${esc(cur.note)}</p>
         <details><summary>🗣️ Как сказать на интервью</summary><p>${esc(p.say)}</p></details></article>`;
     }).join('');
@@ -1008,7 +1008,7 @@
     const goalsOk = (k, res) => (st.graph.nodes.length ? L.goals[k].filter((g) => g.check(res)).length : 0);
     const stepIdx = (kind, stage) => L.steps.findIndex((q) => q.kind === kind && (!stage || q.stage === stage));
     const card = (i, title, val, sub, ok) => `<button class="sstep ${ok === true ? 'ok' : ok === false ? 'no' : ''}" data-go="${i}"><small>${esc(title)}</small><b>${val}</b><span>${sub}</span></button>`;
-    const m = r.m, rm = ref.r.m, lat = (res) => { const f = res.flows.find((q) => q.id === MAIN.id); return f && f.ok ? Math.round(f.lat) + ' мс' : '—'; };
+    const m = r.m, rm = ref.r.m, lat = (res) => { const f = res.flows.find((q) => q.id === MAIN.id); return f && f.ok ? ms(f.lat) : '—'; };
     const row = (label, a, b, better) => `<tr><td>${label}</td><td class="num ${better === true ? 'good' : better === false ? 'badc' : ''}">${a}</td><td class="num">${b}</td></tr>`;
     const pct = (v, routed) => (routed ? Math.round(v * 100) + '%' : '—');
     const probs = L.problems.filter((p) => p.options);
@@ -1035,7 +1035,7 @@
           ${D.onlyRef.length ? `<p class="small">📘 Есть в эталоне, но нет у тебя: ${D.onlyRef.map(esc).join(', ')}.</p>` : ''}
           ${!D.onlyMine.length && !D.onlyRef.length ? '<p class="small">Набор блоков совпадает с эталоном.</p>' : ''}</section>
         <section class="card"><h4 class="grp first">Твои решения против книги</h4><div class="decs">${probs.map((p) => { const q = x.choice(p.key);
-          return `<div class="dec ${q.ok ? 'ok' : 'no'}"><b>${p.icon} ${esc(p.title)}</b><span>Ты: <em>${esc(q.o.label)}</em> ${q.ok ? '✔' : `· в книге: ${esc(p.options.filter((o) => (p.best || []).includes(o.v)).map((o) => o.label).join(' или '))}`}</span><small>${esc(q.say)}</small></div>`; }).join('')}</div></section>
+          return `<div class="dec ${q.ok ? 'ok' : 'no'}"><b>${p.icon} ${esc(p.title)}</b><span>Ты: <em>${esc(q.o.label)}</em> ${q.ok ? '✔' : `· в книге: ${esc(p.options.filter((o) => (p.best || []).includes(o.v) && !o.ext).map((o) => o.label).join(' или '))}`}</span><small>${esc(q.say)}</small></div>`; }).join('')}</div></section>
       </div>
       <section class="card"><h4 class="grp first">Рассказ на интервью с твоими цифрами</h4><p class="muted small">Около ${S.script(x).reduce((a, s) => a + s.min, 0)} минут: столько обычно и есть на дизайн-секцию. Рассказ меняется вместе со схемой и решениями.</p>
         <ol class="script2">${D.script.map((s) => `<li><span class="sst">${esc(s.step)}<small>~${s.min} мин</small></span><span>${esc(s.text)}</span></li>`).join('')}</ol>

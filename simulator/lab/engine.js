@@ -187,8 +187,9 @@
       if (def.tune === 'sql') {
         // Размер задаёт ученик. Запись идёт только в primary своего шарда, чтения делятся между primary и репликами.
         // Неровный ключ шардирования (skew) отдаёт горячему шарду больше своей доли, считаем по нему.
+        // Глава может задать долю горячего ключа узлу в model (n.hotKey): горячий счёт кошелька живёт в одном шарде.
         const s = c.shards, R = c.replicas, key = s > 1 && def.shardKeys && def.shardKeys.find((k) => k.v === c.shardKey);
-        const hot = s > 1 ? Math.max(1 / s, (key && key.skew) || 0) : 1, one = cap * (c.partition !== 'none' ? 1.2 : 1);
+        const hot = s > 1 ? Math.max(1 / s, n.hotKey !== undefined ? n.hotKey : (key && key.skew) || 0) : 1, one = cap * (c.partition !== 'none' ? 1.2 : 1);
         const part = (sh) => ({ share: sh, pU: (Rd * sh / (1 + R) + W * sh) / one, rU: R ? (Rd * sh) / (1 + R) / one : 0 });
         n.rep = s;
         n.util = part(hot).pU;
@@ -197,7 +198,7 @@
         n.explain = [
           `Запись ${rps(W)} rps идёт только в primary${s > 1 ? ' своего шарда' : ''}: реплики её не снимают.`,
           R ? `Чтение ${rps(Rd)} rps делится между primary и ${R} репл.: на каждую копию ${rps((Rd * hot) / (1 + R))} rps.` : `Чтение ${rps(Rd)} rps тоже идёт в primary: реплик нет.`,
-          s > 1 ? (hot > 1 / s + 1e-9 ? `Ключ «${key.label}» неровный: горячий шард получает ${Math.round(hot * 100)}% запросов вместо ${Math.round(100 / s)}%.` : `Каждый из ${s} шардов хранит 1/${s} данных и получает 1/${s} запросов.`) : 'Шард один: весь объём и вся запись на одном primary.',
+          s > 1 ? (hot > 1 / s + 1e-9 ? `${key && n.hotKey === undefined ? `Ключ «${key.label}» неровный` : 'Горячий ключ'}: горячий шард получает ${Math.round(hot * 100)}% запросов вместо ${Math.round(100 / s)}%.` : `Каждый из ${s} шардов хранит 1/${s} данных и получает 1/${s} запросов.`) : 'Шард один: весь объём и вся запись на одном primary.',
         ];
         if (n.util > 0.9) {
           const wr = W * hot >= (Rd * hot) / (1 + R);
@@ -260,6 +261,7 @@
       } else {
         n.want = Math.ceil(n.load / (cap * TARGET));
         // minRep: копий нужно не меньше по другой причине, чем запросы (узлы данных считают по объёму дисков).
+        // Глава может урезать maxRep в model и назвать причину (n.limitWhy, n.needWhy): горячий счёт не делится по партициям.
         n.rep = Math.max(1, n.minRep || 1, Math.min(n.maxRep, n.want));
         n.capTotal = cap * n.rep;
         n.util = n.load / n.capTotal;
@@ -270,7 +272,7 @@
         if (n.lbBy) n.explain.push(`Перед блоком балансировщик (${{ rr: 'round robin', least: 'least connections', hash: 'IP hash' }[n.lbBy.cfg.alg]}): копии загружены ${n.capMult < 1 ? `неровно, полезно ${Math.round(n.capMult * 100)}% их мощности` : 'ровно'}.`);
         if (P) n.explain.push(`Читает из Kafka: в группе потребителей не больше, чем партиций (${P}).`);
         if (n.consumerOf && n.consumerOf.def.tune === 'rabbit') n.explain.push(`Читает из RabbitMQ: потребители конкурируют за очередь, их число не ограничено. Prefetch ${n.consumerOf.cfg.prefetch} даёт ${Math.round(n.capMult * 100)}% скорости.`);
-        if (n.util > 0.9) { n.limit = P ? `потребителей не больше, чем партиций (${P})` : `предел модели: ${n.maxRep} копий`; n.need = def.overload || lab.overload || 'снять нагрузку раньше (кэш, CDN, rate limiter) или делить систему по регионам, в модели этого нет'; }
+        if (n.util > 0.9) { n.limit = n.limitWhy || (P ? `потребителей не больше, чем партиций (${P})` : `предел модели: ${n.maxRep} копий`); n.need = n.needWhy || def.overload || lab.overload || 'снять нагрузку раньше (кэш, CDN, rate limiter) или делить систему по регионам, в модели этого нет'; }
         ctx.cost += (def.cost || 0) * n.rep;
         if (n.rep > 1 && (def.db || def.cache)) ctx.cx += 0.3 * Math.log2(n.rep); // stateless-реплики почти бесплатны по сложности
       }
