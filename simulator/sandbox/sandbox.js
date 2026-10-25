@@ -93,70 +93,89 @@
     const v = st.env[x.id], i = x.stops.reduce((b, s, k) => (Math.abs(s - v) < Math.abs(x.stops[b] - v) ? k : b), 0);
     return `<label class="load"><span>${esc(x.label)}</span><input type="range" data-load="${x.id}" min="0" max="${x.stops.length - 1}" step="1" value="${i}" aria-label="${esc(x.label)}"><output id="ld_${x.id}">${x.val(x.stops[i])}</output></label>`;
   }
+  const stepHead = (n, title, sub) => `<div class="sb-step"><span class="sb-num">${n}</span><div><b>${title}</b><small id="sub${n}">${sub}</small></div></div>`;
 
+  // Три шага: собери схему → задай условия → сломай и проверь. Шаги 2 и 3 открываются, когда схема заработала.
   function view() {
-    return `<section class="sb-head"><div><span class="eyebrow">Свободный режим · все блоки глав</span><h1>Песочница</h1></div>
-      <div class="tips"><span>Перетащи блок на карту или нажми на него</span><span>Тяни стрелку от кружка на краю блока</span><span>Нажми на блок: ДЦ, копии, кэш</span><span>Ломай справа: свет, трансформатор, оптика</span></div></section>
-      <div class="kpis" id="kpis"></div>
-      <div class="lab-grid sb-grid">
-        <aside class="card pal-card"><div class="palh"><b>🧱 Блоки</b><small>Базовые и из всех глав, по группам.</small></div>
-          <div class="sb-filter"><input type="search" id="q" placeholder="Найти: Redis, Kafka, CDN…" value="${esc(st.q)}" aria-label="Поиск блока">
-          <select id="chf" aria-label="Откуда блоки"><option value="all">Все блоки</option><option value="base">Базовые</option>${CHS.map((c) => `<option value="${c.n}">Глава ${c.n}. ${esc(c.title)}</option>`).join('')}</select></div>
+    return `<section class="sb-head"><div><span class="eyebrow">Свободный режим · блоки глав 1–${CHS.length}</span><h1>Песочница</h1></div>
+      <details class="sb-how"><summary>Как пользоваться</summary><ol>
+        <li><b>Собери схему.</b> Добавь «Пользователи», потом вход и сервис, протяни стрелки от кружка на краю блока. Или начни с готовой схемы.</li>
+        <li><b>Задай условия.</b> Сколько людей онлайн, как часто они ходят, сколько пишут. Пик, сутки или хаос со случайными сбоями.</li>
+        <li><b>Сломай и проверь.</b> Выбери дата-центр и устрой сбой. Сверху видно, выдержала ли схема и что изменил последний клик.</li></ol></details></section>
+      <section class="sb-verdict" id="verdict" aria-live="polite"></section>
+      <div class="sb-grid">
+        <aside class="card sb-col" id="step1">${stepHead(1, 'Собери схему', '')}
+          <div class="sb-next" id="next"></div>
+          <div class="sb-ex"><span>Начать с готовой:</span><button class="btn sm ghost" data-ex="one">Сайт в одном ДЦ</button><button class="btn sm ghost" data-ex="multi">Три ДЦ и резерв</button></div>
+          <div class="sb-tabs" role="tablist"><button role="tab" data-tab="base">Базовые</button><button role="tab" data-tab="ch">Из глав 1–${CHS.length}</button></div>
+          <input type="search" class="sb-q" id="q" placeholder="Найти: Redis, Kafka, CDN…" value="${esc(st.q)}" aria-label="Поиск блока">
           <div id="pal"></div></aside>
-        <section class="card mapcard" id="mapcard">
-          <div class="toolbar">
-            <div class="scnbar">${LOADS.map(loadSlider).join('')}</div>
-            <div class="tb">
-              <button class="btn sm" id="play" title="Прогнать сутки: ночью четверть нагрузки, пик около 16:00">▶ Сутки</button><output class="sb-hour" id="hour" title="Время суток">пик</output>
-              <button class="btn sm ghost" id="chaos" aria-pressed="false" title="Пока идут сутки, сбои случаются и чинятся сами">🐒 Хаос</button>
-              <button class="ib" data-z="-1" aria-label="Уменьшить" title="Уменьшить">−</button><button class="ib" data-z="0" title="Вписать">⤢</button><button class="ib" data-z="1" aria-label="Увеличить" title="Увеличить">+</button>
-              <button class="ib" id="full" title="Во весь экран">⛶</button>
-              <select class="sb-ex" id="ex" aria-label="Примеры схем"><option value="">Примеры…</option><option value="one">Сайт в одном ДЦ</option><option value="multi">Три ДЦ и резерв</option></select>
-              <button class="btn sm ghost" id="clr">Очистить</button>
+        <div class="sb-center">
+          <section class="card sb-cond" id="step2">${stepHead(2, 'Условия', 'Нагрузка на схему')}
+            <fieldset id="cond"><div class="scnbar">${LOADS.map(loadSlider).join('')}</div>
+              <div class="sb-mode" role="radiogroup" aria-label="Режим">${[['peak', 'Пик'], ['day', 'Сутки'], ['chaos', 'Хаос']].map(([v, l]) => `<button role="radio" data-mode="${v}">${l}</button>`).join('')}<output class="sb-hour" id="hour"></output></div>
+              <p class="tnote" id="modeNote"></p></fieldset>
+            <div class="sb-lock" id="lock2"></div></section>
+          <section class="card mapcard" id="mapcard">
+            <div class="board-wrap" id="wrap">
+              <div class="board" id="board" style="width:${W}px;height:${H}px">
+                <svg id="edges" class="notranslate" width="${W}" height="${H}" aria-hidden="true"><defs>
+                  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="var(--edge)"/></marker>
+                  <marker id="arrS" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="var(--accent)"/></marker></defs><g id="eg"></g></svg>
+                <div id="nodes"></div><button class="edel" id="edel" hidden aria-label="Удалить стрелку">×</button>
+              </div>
+              <div class="hint" id="hint" hidden></div>
+              <div class="empty-map" id="emptyMap" hidden><b>Карта пустая</b><span>Слева выбери «Пользователи» или готовую схему.</span></div>
             </div>
-          </div>
-          <p class="lghelp">Стрелка значит «вызывает». Синие точки это запросы пользователя, серые это фоновые события после очереди, красный пунктир ведёт в упавший блок. Цветные метки A, B, C на блоке показывают, в каких дата-центрах его копии.</p>
-          <div class="board-wrap" id="wrap">
-            <div class="board" id="board" style="width:${W}px;height:${H}px">
-              <svg id="edges" class="notranslate" width="${W}" height="${H}" aria-hidden="true"><defs>
-                <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="var(--edge)"/></marker>
-                <marker id="arrS" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="var(--accent)"/></marker></defs><g id="eg"></g></svg>
-              <div id="nodes"></div><button class="edel" id="edel" hidden aria-label="Удалить стрелку">×</button>
-            </div>
-            <div class="hint" id="hint" hidden></div>
-            <div class="empty-map" id="emptyMap" hidden><b>Карта пустая</b><span>Перетащи сюда «Пользователи» и что угодно из палитры или выбери пример.</span></div>
-            <aside class="insp" id="insp" hidden></aside>
-          </div>
-        </section>
-        <aside class="card sb-side" id="side"></aside>
+            <div class="sb-maptools"><div class="sb-legend"><span><i class="srv"></i>запрос пользователя</span><span><i class="bgl"></i>фоновое событие</span><span><i class="ev"></i>в упавший блок</span><span><b class="sb-dc" style="--d:var(--f1)">A</b><b class="sb-dc" style="--d:var(--f2)">B</b><b class="sb-dc" style="--d:var(--f3)">C</b> копии в ДЦ</span></div>
+              <div class="tb"><button class="ib" data-z="-1" aria-label="Уменьшить" title="Уменьшить">−</button><button class="ib" data-z="0" title="Вписать">⤢</button><button class="ib" data-z="1" aria-label="Увеличить" title="Увеличить">+</button><button class="ib" id="full" title="Во весь экран">⛶</button><button class="btn sm ghost" id="clr">Очистить</button></div></div>
+            <div class="sb-sel" id="sel"></div>
+          </section>
+        </div>
+        <aside class="card sb-col sb-side" id="step3">${stepHead(3, 'Сломай и проверь', 'Сбои и что выдержит схема')}
+          <div id="side"></div><div class="sb-lock" id="lock3"></div></aside>
       </div>
       <div class="below">
         <section class="card"><h3>Подсказки и предупреждения</h3><div class="warns" id="warns"></div></section>
-        <section class="card"><h3>Журнал</h3><div id="chart"></div><ol class="sb-log" id="log"></ol></section>
+        <section class="card" id="journal"><h3>Журнал</h3><div id="chart"></div><ol class="sb-log" id="log"></ol></section>
       </div>
       <div class="toast" id="toast" role="status" hidden></div>`;
   }
 
   function bind() {
-    $$('[data-load]').forEach((el) => (el.oninput = () => {
-      const x = LOADS.find((l) => l.id === el.dataset.load), v = x.stops[+el.value];
-      st.env[x.id] = v; $('#ld_' + x.id).textContent = x.val(v); changed();
-    }));
+    $$('[data-load]').forEach((el) => {
+      el.oninput = () => { const x = LOADS.find((l) => l.id === el.dataset.load); $('#ld_' + x.id).textContent = x.val(x.stops[+el.value]); };
+      el.onchange = () => { const x = LOADS.find((l) => l.id === el.dataset.load), v = x.stops[+el.value]; st.env[x.id] = v; changed(`${x.label}: ${x.val(v)}`); };
+    });
     $('#q').oninput = (e) => { st.q = e.target.value; save(); renderPalette(); };
-    $('#chf').value = st.chf;
-    $('#chf').onchange = (e) => { st.chf = e.target.value; save(); renderPalette(); };
-    $('#play').onclick = () => (timer ? stop() : play());
-    $('#chaos').onclick = () => { chaos = !chaos; $('#chaos').setAttribute('aria-pressed', chaos); $('#chaos').classList.toggle('on', chaos); toast(chaos ? 'Хаос включён: пока идут сутки, сбои случаются и чинятся сами. Запусти «▶ Сутки».' : 'Хаос выключен.'); };
+    $$('[data-tab]').forEach((b) => (b.onclick = () => { st.tab = b.dataset.tab; st.q = ''; $('#q').value = ''; save(); renderPalette(); }));
+    $$('[data-ex]').forEach((b) => (b.onclick = () => example(b.dataset.ex)));
+    $$('[data-mode]').forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
     $$('[data-z]').forEach((b) => (b.onclick = () => { const z = +b.dataset.z; zoom = z ? Math.max(0.5, Math.min(2.5, zoom + z * 0.15)) : 1; fit(!z); }));
     $('#full').onclick = () => { $('#mapcard').classList.toggle('full'); document.body.classList.toggle('noscroll'); fit(true); };
-    $('#ex').onchange = (e) => { if (e.target.value) example(e.target.value); e.target.value = ''; };
-    $('#clr').onclick = () => { if (confirm('Убрать все блоки и стрелки с карты?')) { st.graph = { nodes: [], edges: [] }; st.env.inc = []; selNode = null; changed(); } };
-    $('#edel').onclick = () => { if (selEdge != null) { st.graph.edges.splice(selEdge, 1); selEdge = null; changed(); } };
+    $('#clr').onclick = () => { if (confirm('Убрать все блоки и стрелки с карты?')) { stop(); st.graph = { nodes: [], edges: [] }; st.env.inc = []; selNode = null; changed('Карта очищена'); } };
+    $('#edel').onclick = () => { if (selEdge != null) { st.graph.edges.splice(selEdge, 1); selEdge = null; changed('Стрелка удалена'); } };
     window.onresize = () => fit(true);
     bindBoard();
   }
 
-  function changed() { save(); update(); }
+  // Каждое действие видно: итог сверху сравнивает «до» и «после», а блоки, чьё состояние изменилось, мигают.
+  let lastAct = null;
+  const state = (n) => (n.down ? 'down' : n.split ? 'split' : n.util > 1 ? 'over' : n.util > 0.7 ? 'warm' : n.load ? 'ok' : 'idle');
+  function changed(label) {
+    const before = last && { ok: ready(), m: last.m, spof: res.spof.length, st: Object.fromEntries(Object.values(last.nodes).map((n) => [n.id, state(n)])) };
+    save(); update();
+    if (!label || !before) return;
+    lastAct = { label, ok: before.ok && ready(), b: before.m, a: last.m, bs: before.spof, as: res.spof.length };
+    renderVerdict();
+    Object.values(last.nodes).forEach((n) => {
+      const el = $(`.node[data-id="${CSS.escape(n.id)}"]`);
+      if (el && before.st[n.id] && before.st[n.id] !== state(n)) { el.classList.remove('sb-flash'); void el.offsetWidth; el.classList.add('sb-flash'); }
+    });
+  }
+
+  // Шаг 2 открывается, когда запросы пользователей доходят хотя бы до одного блока.
+  const ready = () => last.m.routed && Object.values(last.nodes).some((n) => n.role !== 'client' && n.load > 0);
 
   function update() {
     res = M.resilience(st.graph, CAT, env());
@@ -165,56 +184,73 @@
     renderNodes();
     sizeBoard();
     drawEdges();
-    renderKpis();
+    renderVerdict();
+    renderNext();
+    renderCond();
     renderSide();
     renderWarns();
-    renderInspector();
+    renderSel();
     renderPalette();
     sample();
   }
 
-  // ---------- KPI ----------
-  let prevKpi = null;
-  function renderKpis() {
-    const m = last.m, spof = res.spof.length, dl = res.dcLoss, ok = dl.filter((x) => x.served > 0.99).length;
-    const t = (v, good, bad) => (v >= good ? 't-ok' : v >= bad ? 't-warn' : 't-bad');
-    const k = [
-      ['Нагрузка', fmt(m.total) + ' rps', `${fmt(st.env.users)} онлайн${timer ? `, ${hour}:00` : ', пиковый час'}`, 't-acc'],
-      ['Обслужено', m.routed ? servedTxt(m.served) : '—', m.routed ? (m.served > 0.999 ? 'все запросы получают ответ' : `теряем ${fmt(m.total * (1 - m.served))} rps`) : 'нет пользователей', m.routed ? t(m.served, 0.999, 0.95) : 't-warn'],
-      ['Задержка', m.routed && m.served ? ms(m.lat) : '—', 'средний ответ пользователю', m.lat < 100 ? 't-ok' : m.lat < 300 ? 't-warn' : 't-bad'],
-      ['Цена', money(m.cost), 'копии блоков и резервное питание', 't-acc'],
-      ['Точки отказа', String(spof), spof ? 'один сервер роняет часть ответов' : 'один сервер ничего не ломает', spof ? 't-bad' : 't-ok'],
-      ['Потеря ДЦ', dl.length ? `${ok} из ${dl.length}` : '—', dl.length ? 'ДЦ, без которых всё работает' : 'нет блоков в ДЦ', !dl.length ? 't-warn' : ok === dl.length ? 't-ok' : ok ? 't-warn' : 't-bad'],
-    ];
-    const now = { s: m.served, l: m.lat, r: m.routed };
-    const dlt = (i) => {
-      if (!prevKpi || !prevKpi.r || !m.routed) return '';
-      const d = i === 1 ? now.s - prevKpi.s : i === 2 ? now.l - prevKpi.l : 0;
-      if (i === 1 && Math.abs(d) > 0.005) return `<span class="dlt ${d > 0 ? 'up' : 'down'}">${d > 0 ? '+' : '−'}${Math.round(Math.abs(d) * 100)}%</span>`;
-      if (i === 2 && Math.abs(d) >= 5) return `<span class="dlt ${d < 0 ? 'up' : 'down'}">${d > 0 ? '+' : '−'}${ms(Math.abs(d))}</span>`;
-      return '';
-    };
-    html($('#kpis'), k.map(([a, v, s, c], i) => `<div class="kpi ${c}"><div class="k"><i></i>${a}</div><div class="v">${v}${dlt(i)}</div><div class="s" title="${esc(s)}">${esc(s)}</div></div>`).join(''));
-    prevKpi = now;
+  // ---------- итог ----------
+  // Самое слабое место для пользователя: лежащий блок или самый перегруженный на пути запросов.
+  function worst() {
+    const sync = Object.values(last.nodes).filter((n) => n.role !== 'client' && n.sync > 0);
+    return sync.find((n) => n.down) || sync.find((n) => n.split) || sync.filter((n) => n.util > 1).sort((a, b) => b.util - a.util)[0];
+  }
+  function renderVerdict() {
+    const m = last.m, ok = ready(), w = ok && worst(), spof = res.spof.length, dl = res.dcLoss, dlOk = dl.filter((x) => x.served > 0.99).length;
+    const tone = !st.graph.nodes.length ? 'idle' : !ok ? 'warn' : m.served >= 0.999 ? 'ok' : m.served >= 0.95 ? 'warn' : 'bad';
+    const head = { idle: ['🧱', 'Собери схему', 'Слева шаг 1: добавь пользователей и сервис или начни с готовой схемы.'], warn: ['⚠️', ok ? 'Система почти справляется' : 'Запросы никуда не доходят', ''], ok: ['✅', 'Система справляется', 'Все запросы получают ответ.'], bad: ['⛔', 'Система не справляется', ''] }[tone];
+    const why = w ? `Причина: «${w.def.name}» ${w.down ? 'лежит' : w.split ? 'остановил запись (split brain)' : `перегружен на ${pct(w.util)}`}.` : !ok && st.graph.nodes.length ? 'Протяни стрелки от «Пользователи» к сервису: шаг 1 подскажет.' : head[2];
+    const stat = (k, v, c, s) => `<div class="sb-stat"><span>${k}</span><b class="${c || ''}">${v}</b>${s ? `<small>${s}</small>` : ''}</div>`;
+    const d = lastAct, delta = (a, b, f, good) => (Math.abs(a - b) > 1e-9 ? `<span class="chip ${good(b, a) ? 'good' : 'bad'}">${f(a)} → ${f(b)}</span>` : '');
+    const chg = d ? (d.ok ? [delta(d.b.served, d.a.served, servedTxt, (b, a) => b > a), d.b.served && d.a.served ? (Math.abs(d.a.lat - d.b.lat) >= 1 ? delta(d.b.lat, d.a.lat, ms, (b, a) => b < a) : '') : '', Math.abs(d.a.cost - d.b.cost) >= 1 ? delta(d.b.cost, d.a.cost, money, (b, a) => b < a) : '', d.as !== d.bs ? `<span class="chip ${d.as < d.bs ? 'good' : 'bad'}">точек отказа ${d.bs} → ${d.as}</span>` : ''] : [Math.abs(d.a.cost - d.b.cost) >= 1 ? delta(d.b.cost, d.a.cost, money, (b, a) => b < a) : '', !ready() ? '' : '<span class="chip good">схема заработала</span>']).join('') : '';
+    $('#verdict').className = 'sb-verdict t-' + tone;
+    html($('#verdict'), `<div class="sb-vmain"><span class="sb-vi">${head[0]}</span><div><b>${head[1]}</b><p>${esc(why)}${w ? ` <button class="lnk" data-show="${esc(w.id)}">Показать на карте</button>` : ''}</p></div></div>
+      ${tone === 'idle' ? '' : `<div class="sb-vstats">${stat('Нагрузка', fmt(m.total) + ' rps', '', timer ? String(hour).padStart(2, '0') + ':00' : 'пиковый час')}${stat('Обслужено', ok ? servedTxt(m.served) : '—', tone === 'ok' ? 'ok' : tone)}${stat('Задержка', ok && m.served ? ms(m.lat) : '—')}${stat('Цена', money(m.cost))}${stat('Точки отказа', ok ? String(spof) : '—', ok ? (spof ? 'bad' : 'ok') : '', 'упадёт 1 сервер')}${stat('Потеря ДЦ', ok && dl.length ? `${dlOk} из ${dl.length}` : '—', ok && dl.length ? (dlOk === dl.length ? 'ok' : 'bad') : '', 'переживёт')}</div>`}
+      ${d ? `<div class="sb-last"><span class="muted">Последнее действие:</span> <b>${esc(d.label)}</b> ${chg || '<span class="muted">на итог не повлияло</span>'}</div>` : ''}`);
+    const show = $('[data-show]');
+    if (show) show.onclick = () => { select(show.dataset.show); const el = $(`.node[data-id="${CSS.escape(show.dataset.show)}"]`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' }); };
   }
 
-  // ---------- палитра ----------
+  // Подсказка следующего действия в шаге 1.
+  function renderNext() {
+    const N = Object.values(last.nodes), cl = N.find((n) => n.role === 'client'), ok = ready();
+    const t = !N.length ? ['Начни с «Пользователи» из группы «Клиенты» или с готовой схемы.', '']
+      : !cl ? ['Добавь «Пользователи»: от них пойдут запросы.', '']
+      : !st.graph.edges.some((e) => e.from === cl.id) ? ['Протяни стрелку от кружка справа на «Пользователи» к балансировщику или сервису.', '']
+      : !ok ? ['Запросы не доходят: соедини цепочку до сервиса.', '']
+      : !N.some((n) => n.role === 'db' && n.load) ? ['Запросы доходят. Добавь хранилище за сервисом или сразу меняй нагрузку в шаге 2.', 'ok']
+      : ['Схема работает. Шаги 2 и 3 открыты: меняй нагрузку и ломай.', 'ok'];
+    $('#sub1').textContent = ok ? 'готово' : 'начни отсюда';
+    html($('#next'), `<p class="sb-tip ${t[1]}">${t[1] ? '✓ ' : '→ '}${esc(t[0])}</p>`);
+  }
+
+  // ---------- палитра: базовые блоки по ролям или блоки глав, по одной открытой группе ----------
   const GROUPS = ['Клиенты', 'Балансировка и DNS', 'CDN и защита', 'Сервисы', 'Кэш', 'Хранилища', 'Очереди и потоки', 'Наблюдаемость'];
   function renderPalette() {
-    const q = st.q.trim().toLowerCase();
-    const list = Object.entries(CAT).filter(([t, b]) => (st.chf === 'all' || (st.chf === 'base' ? M.BASE[t] : b.from.includes(+st.chf))) && (!q || (b.name + ' ' + b.tag).toLowerCase().includes(q)));
+    const q = st.q.trim().toLowerCase(), tab = st.tab || 'base';
+    $$('[data-tab]').forEach((b) => b.setAttribute('aria-selected', b.dataset.tab === tab && !q));
     const item = ([t, b]) => `<button class="pi cat-${b.cat}" style="${brandStyle(b)}" data-t="${esc(t)}" title="Перетащи на карту или нажми">
-      <span class="pic">${icon(b)}</span><span class="pin"><b>${esc(b.name)}</b><span class="pmeta">${M.BASE[t] ? '<span class="ptag bk">базовый</span>' : ''}${b.from.length ? `<span class="ptag xp">гл. ${b.from.join(', ')}</span>` : ''}</span>
-      <small>${esc(b.tag)}${b.cap ? `${b.tag ? ' · ' : ''}≈${fmt(b.cap)} rps на копию` : ''}</small></span></button>`;
-    if (!html($('#pal'), GROUPS.map((g) => {
-      const items = list.filter(([, b]) => b.group === g);
-      if (!items.length) return '';
-      return `<details class="pgroup" data-g="${esc(g)}" ${st.palClosed[g] && !q ? '' : 'open'}><summary>${esc(g)}<span>${items.length}</span></summary>${items.map(item).join('')}</details>`;
-    }).join('') || '<p class="muted small">Ничего не нашлось.</p>')) return;
+      <span class="pic">${icon(b)}</span><span class="pin"><b>${esc(b.name)}</b><small>${esc(M.ROLES[b.role].label)}${b.cap ? ` · ≈${fmt(b.cap)} rps на копию` : ''}</small></span></button>`;
+    const group = (key, title, items, sub) => `<details class="pgroup" name="sbpal" data-g="${esc(key)}" ${(st.open === undefined ? first : st.open) === key ? 'open' : ''}><summary>${esc(title)}<span>${items.length}</span>${sub ? `<small>${esc(sub)}</small>` : ''}</summary>${items.map(item).join('')}</details>`;
+    const all = Object.entries(CAT), first = 'b:' + GROUPS[0];
+    let h;
+    if (q) {
+      const found = all.filter(([, b]) => (b.name + ' ' + b.tag).toLowerCase().includes(q));
+      h = found.length ? `<p class="tnote">Найдено ${found.length}</p>${found.slice(0, 40).map(item).join('')}` : '<p class="muted small">Ничего не нашлось.</p>';
+    } else if (tab === 'base') {
+      h = GROUPS.map((g) => { const items = all.filter(([t, b]) => M.BASE[t] && b.group === g); return items.length ? group('b:' + g, g, items) : ''; }).join('');
+    } else {
+      h = CHS.map((c) => group('c:' + c.n, `Глава ${c.n}. ${c.title}`, all.filter(([, b]) => b.from.includes(c.n)))).join('');
+    }
+    if (!html($('#pal'), h)) return;
     $$('#pal .pi').forEach(bindPaletteItem);
-    $$('#pal details').forEach((d) => (d.ontoggle = () => { if (!q) { st.palClosed[d.dataset.g] = !d.open; save(); } }));
+    $$('#pal details').forEach((d) => (d.ontoggle = () => { if (d.open) st.open = d.dataset.g; else if (st.open === d.dataset.g) st.open = null; save(); }));
   }
-
   function bindPaletteItem(el) {
     let dragged = false;
     el.onclick = () => { if (dragged) { dragged = false; return; } addNode(el.dataset.t); };
@@ -257,7 +293,7 @@
     st.graph.nodes.push({ id, type, x: p[0], y: p[1], dcs: b.role === 'client' ? [] : [st.dcSel], rep: b.role === 'svc' || b.role === 'lb' ? 2 : 1 });
     selNode = id; selEdge = null;
     toast(`Добавлен «${b.name}» в ${b.role === 'client' ? 'интернет' : M.DC[st.dcSel].name}. ${b.role === 'client' ? 'Протяни от него стрелку к входу системы.' : 'Протяни к нему стрелку от того, кто его вызывает.'}`);
-    changed();
+    changed(`Добавлен «${b.name}»`);
   }
 
   // ---------- узлы ----------
@@ -347,7 +383,7 @@
   function select(id) {
     selNode = id; selEdge = null;
     $$('.node').forEach((n) => n.classList.toggle('sel', n.dataset.id === id));
-    drawEdges(); renderInspector();
+    drawEdges(); renderSel(); renderSide();
   }
   function link(from, to) {
     if (from === to) return;
@@ -356,11 +392,12 @@
     st.graph.edges.push({ from, to });
   }
   function removeNode(id) {
+    const name = nameOf(id);
     st.graph.nodes = st.graph.nodes.filter((n) => n.id !== id);
     st.graph.edges = st.graph.edges.filter((x) => x.from !== id && x.to !== id);
     st.env.inc = st.env.inc.filter((i) => i.id !== id);
     if (selNode === id) selNode = null;
-    selEdge = null; changed();
+    selEdge = null; changed(`Удалён «${name}»`);
   }
 
   function bindBoard() {
@@ -370,7 +407,7 @@
       const mv = (ev) => onMove(ev), up = (ev) => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); onUp(ev); };
       addEventListener('pointermove', mv); addEventListener('pointerup', up);
     };
-    const addEdge = (from, to) => { pendingFrom = null; hint(null); link(from, to); changed(); };
+    const addEdge = (from, to) => { pendingFrom = null; hint(null); link(from, to); changed(`Стрелка «${nameOf(from)}» → «${nameOf(to)}»`); };
     board.onpointerdown = (e) => {
       if (e.button > 0) return;
       const nodeEl = e.target.closest('.node');
@@ -407,7 +444,7 @@
       }
       const ge = e.target.closest('.edge');
       selEdge = ge ? +ge.dataset.e : null;
-      if (!ge) { selNode = null; renderInspector(); $$('.node.sel').forEach((n) => n.classList.remove('sel')); }
+      if (!ge) { selNode = null; renderSel(); renderSide(); $$('.node.sel').forEach((n) => n.classList.remove('sel')); }
       pendingFrom = null;
       hint(ge ? edgeText(st.graph.edges[selEdge]) + ' Delete или × удаляет стрелку.' : null);
       drawEdges();
@@ -417,40 +454,68 @@
       if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
       if (e.key === 'Escape') { pendingFrom = null; selEdge = null; hint(null); if ($('#mapcard').classList.contains('full')) $('#full').click(); drawEdges(); }
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selEdge != null) { st.graph.edges.splice(selEdge, 1); selEdge = null; changed(); }
+        if (selEdge != null) { st.graph.edges.splice(selEdge, 1); selEdge = null; changed('Стрелка удалена'); }
         else if (selNode) removeNode(selNode);
       }
     };
   }
 
-  // ---------- инспектор ----------
-  function renderInspector() {
-    const box = $('#insp'), g = selNode && st.graph.nodes.find((n) => n.id === selNode);
-    if (!g) { box.hidden = true; return; }
+
+  // ---------- шаг 2: условия ----------
+  let mode = 'peak';
+  const MODE_NOTE = {
+    peak: 'Считаем самый нагруженный час суток. Поменяй ползунок и отпусти: итог сверху покажет, что изменилось.',
+    day: 'Прокручиваем сутки по часу в секунду: ночью нагрузка падает, вечером пик. Следи за графиком в журнале.',
+    chaos: 'Сутки идут по кругу, и раз в несколько часов случается случайный сбой: свет, оптика, сервер, флешмоб.',
+  };
+  function renderCond() {
+    const ok = ready();
+    $('#cond').disabled = !ok;
+    $('#step2').classList.toggle('locked', !ok);
+    html($('#lock2'), ok ? '' : '🔒 Откроется, когда запросы пользователей дойдут до сервиса (шаг 1).');
+    $$('[data-mode]').forEach((b) => b.setAttribute('aria-checked', b.dataset.mode === mode));
+    $('#hour').textContent = timer ? String(hour).padStart(2, '0') + ':00' : '';
+    $('#modeNote').textContent = MODE_NOTE[mode];
+    $('#sub2').textContent = ok ? `${fmt(last.m.total)} rps в ${timer ? 'этот час' : 'пик'}` : 'закрыто';
+  }
+  function setMode(m) {
+    if (!ready()) return;
+    const was = mode;
+    mode = m; chaos = m === 'chaos';
+    if (m === 'peak') { stop(); renderCond(); if (was !== 'peak') addLog('⏹ Обратно к пиковому часу', last.m.served); }
+    else if (!timer) play();
+    else { addLog(chaos ? '🐒 Включили хаос' : '🐒 Хаос выключен', last.m.served); renderCond(); }
+  }
+
+  // ---------- выбранный блок, под картой ----------
+  function renderSel() {
+    const box = $('#sel'), g = selNode && st.graph.nodes.find((n) => n.id === selNode);
+    if (!g) { html(box, `<p class="muted small">${st.graph.nodes.length ? 'Нажми на блок на карте: здесь появятся его копии, дата-центры и кнопка «Уронить сервер».' : 'Здесь будут настройки выбранного блока.'}</p>`); return; }
     const n = last.nodes[g.id], b = n.def, client = n.role === 'client', R = M.ROLES[n.role];
     const status = n.down ? `<div class="why sb-why-bad">💀 Лежит: ${esc(n.down)}.</div>` : n.split ? '<div class="why sb-why-bad">🧠 Split brain: ДЦ два, primary отрезан, большинства нет. Запись остановлена.</div>'
-      : n.failover ? `<div class="why">🔀 Primary переехал в ${M.DC[n.failover].name}. Последние секунды асинхронной записи могли потеряться.</div>` : n.util > 1 ? `<div class="why">🔥 Перегружен: ${pct(n.util)}.${n.sync ? '' : ' Это фон: растёт очередь, ответы пользователю не страдают.'}</div>` : '';
+      : n.failover ? `<div class="why">🔀 Primary переехал в ${M.DC[n.failover].name}. Последние секунды асинхронной записи могли потеряться.</div>` : n.util > 1 ? `<div class="why">🔥 Перегружен: ${pct(n.util)}.${n.sync ? ' Добавь копий или нажми «Подобрать».' : ' Это фон: растёт очередь, ответы пользователю не страдают.'}</div>` : '';
     const stats = client ? '' : `<div class="istats"><div><span>Нагрузка</span><b>${fmt(n.load)} rps</b></div><div><span>Загрузка</span><b class="${n.down ? 'bad' : cls(n.util)}">${n.down ? 'лежит' : pct(n.util)}</b></div>
-      <div><span>Живых копий</span><b>${Math.max(0, n.live)} из ${n.rep}</b></div><div><span>Задержка блока</span><b>${ms(b.lat * n.q)}</b></div>${n.role === 'db' ? `<div><span>Запись в primary</span><b>${fmt(n.w)} rps</b></div><div><span>Чтение</span><b>${fmt(n.r + n.j)} rps</b></div>` : ''}</div>`;
-    const dcSeg = client ? '' : `<h5>Дата-центры</h5><div class="tseg">${Object.keys(M.DC).map((k) => `<button data-dc="${k}" class="${n.dcs.includes(k) ? 'on' : ''}" title="${M.DC[k].where}">${k}</button>`).join('')}</div>
-      <p class="tnote">${n.role === 'db' && !b.leaderless ? `Primary в ${M.DC[n.dcs[0]].name} (первый выбранный), реплики в остальных. ` : ''}Копии делятся между ДЦ поровну. A и B рядом (2 мс), C в другом регионе (+40 мс).</p>`;
-    const repSeg = client ? '' : `<h5>Копии</h5><div class="tseg"><button data-rep="-1" ${n.auto || g.rep <= 1 ? 'disabled' : ''} aria-label="Меньше копий">−</button><button disabled>${n.rep}</button><button data-rep="1" ${n.auto ? 'disabled' : ''} aria-label="Больше копий">+</button><button data-fit>Подобрать</button></div>
-      ${M.STATELESS.has(n.role) ? `<label class="sb-check"><input type="checkbox" data-auto ${g.auto ? 'checked' : ''}> Автомасштаб: копий под нагрузку, упавшие заменяются</label>` : `<p class="tnote">${n.role === 'db' || n.role === 'cache' ? 'Со состоянием: копию не поднять за секунду, их число задаёшь ты.' : 'Число копий задаёшь ты.'}</p>`}`;
-    const hitSeg = n.role === 'cache' || n.role === 'cdn' ? `<h5>Попадания (hit ratio)</h5><label class="sb-range"><input type="range" data-hit min="0" max="99" value="${Math.round(n.hit * 100)}"><output>${Math.round(n.hit * 100)}%</output></label>` : '';
-    box.hidden = false;
-    box.innerHTML = `<div class="ih" style="${brandStyle(b)}"><span class="ni">${icon(b)}</span><div><b>${esc(b.name)}</b><small>${R.label}${b.from.length ? ` · из глав ${b.from.join(', ')}` : ' · базовый'}</small></div><button class="nx" data-close aria-label="Закрыть">×</button></div>
-      ${status}${stats}${dcSeg}${repSeg}${hitSeg}
-      <h5>Как работает в песочнице</h5><p class="tnote">${esc(R.what)}</p>${b.what ? `<details class="more"><summary>Из книги</summary><p>${esc(b.what)}</p></details>` : ''}
-      <div class="row-btns">${client ? '' : '<button class="btn sm" data-kill>🖥️ Уронить сервер</button>'}<button class="btn sm danger" data-rm>Удалить</button></div>`;
-    $('[data-close]', box).onclick = () => { selNode = null; box.hidden = true; $$('.node.sel').forEach((x) => x.classList.remove('sel')); };
+      <div><span>Живых копий</span><b>${Math.max(0, n.live)} из ${n.rep}</b></div><div><span>Задержка</span><b>${ms(b.lat * n.q)}</b></div>${n.role === 'db' ? `<div><span>Запись в primary</span><b>${fmt(n.w)} rps</b></div><div><span>Чтение</span><b>${fmt(n.r + n.j)} rps</b></div>` : ''}</div>`;
+    const ctl = client ? '<p class="tnote">Пользователи только отправляют запросы. Их число задаётся в шаге 2.</p>' : `<div class="sb-ctl">
+      <div><h5>Копии</h5><div class="tseg"><button data-rep="-1" ${n.auto || g.rep <= 1 ? 'disabled' : ''} aria-label="Меньше копий">−</button><button disabled>${n.rep}</button><button data-rep="1" ${n.auto ? 'disabled' : ''} aria-label="Больше копий">+</button><button data-fit>Подобрать</button></div>
+        ${M.STATELESS.has(n.role) ? `<label class="sb-check"><input type="checkbox" data-auto ${g.auto ? 'checked' : ''}> Автомасштаб</label>` : `<p class="tnote">${n.role === 'db' || n.role === 'cache' ? 'Со состоянием: копии задаёшь ты.' : 'Число копий задаёшь ты.'}</p>`}</div>
+      <div><h5>Дата-центры</h5><div class="tseg">${Object.keys(M.DC).map((k) => `<button data-dc="${k}" class="${n.dcs.includes(k) ? 'on' : ''}" title="${M.DC[k].where}">${k}</button>`).join('')}</div>
+        <p class="tnote">${n.role === 'db' && !b.leaderless ? `Primary в ${M.DC[n.dcs[0]].name}. ` : ''}A и B рядом, C в другом регионе (+40 мс).</p></div>
+      ${n.role === 'cache' || n.role === 'cdn' ? `<div><h5>Попадания</h5><label class="sb-range"><input type="range" data-hit min="0" max="99" value="${Math.round(n.hit * 100)}" aria-label="Доля попаданий"><output>${Math.round(n.hit * 100)}%</output></label></div>` : ''}</div>`;
+    const mine = last.warnings.filter((w) => w.text.includes(b.name));
+    html(box, `<div class="sb-selh" style="${brandStyle(b)}"><span class="ni">${icon(b)}</span><div><b>${esc(b.name)}</b><small>${R.label}${b.from.length ? ` · из глав ${b.from.join(', ')}` : ' · базовый'}</small></div>
+        <div class="row-btns">${client ? '' : '<button class="btn sm" data-kill>🖥️ Уронить сервер</button>'}<button class="btn sm danger" data-rm>Удалить</button><button class="nx" data-close aria-label="Закрыть">×</button></div></div>
+      ${status}${stats}${ctl}${mine.map((w) => `<div class="w ${w.lvl}">${esc(w.text)}</div>`).join('')}
+      <details class="more"><summary>Как работает${b.what ? ' и что в книге' : ''}</summary><p>${esc(R.what)}</p>${b.what ? `<p>${esc(b.what)}</p>` : ''}</details>`);
+    $('[data-close]', box).onclick = () => { selNode = null; $$('.node.sel').forEach((x) => x.classList.remove('sel')); renderSel(); };
     $$('[data-dc]', box).forEach((x) => (x.onclick = () => {
       const k = x.dataset.dc, has = g.dcs.includes(k);
       if (has && g.dcs.length === 1) return toast('Блок должен жить хотя бы в одном ДЦ.');
       g.dcs = has ? g.dcs.filter((d) => d !== k) : g.dcs.concat(k);
       g.rep = Math.max(g.rep || 1, g.dcs.length);
-      changed();
+      changed(`«${b.name}»: ${has ? 'убрали из' : 'добавили в'} ${M.DC[k].name}`);
     }));
-    $$('[data-rep]', box).forEach((x) => (x.onclick = () => { g.rep = Math.max(1, (g.rep || 1) + +x.dataset.rep); changed(); }));
+    $$('[data-rep]', box).forEach((x) => (x.onclick = () => { g.rep = Math.max(1, (g.rep || 1) + +x.dataset.rep); changed(`«${b.name}»: копий ${g.rep}`); }));
     const fitB = $('[data-fit]', box);
     if (fitB) fitB.onclick = () => {
       const cap = b.cap * M.TARGET;
@@ -460,18 +525,18 @@
         else want = Math.ceil((n.r + n.j) / (cap - n.w)) || 1;
       }
       g.rep = Math.max(n.dcs.length, Math.min(want, 500));
-      changed();
+      changed(`«${b.name}»: подобрали ${g.rep} коп.`);
     };
     const au = $('[data-auto]', box);
-    if (au) au.onchange = () => { g.auto = au.checked; changed(); };
+    if (au) au.onchange = () => { g.auto = au.checked; changed(`«${b.name}»: автомасштаб ${g.auto ? 'вкл' : 'выкл'}`); };
     const hit = $('[data-hit]', box);
-    if (hit) { hit.oninput = () => { hit.nextElementSibling.textContent = hit.value + '%'; }; hit.onchange = () => { g.hit = +hit.value / 100; changed(); }; }
+    if (hit) { hit.oninput = () => { hit.nextElementSibling.textContent = hit.value + '%'; }; hit.onchange = () => { g.hit = +hit.value / 100; changed(`«${b.name}»: попаданий ${hit.value}%`); }; }
     const kill = $('[data-kill]', box);
     if (kill) kill.onclick = () => incident({ kind: 'node', id: g.id });
     $('[data-rm]', box).onclick = () => removeNode(g.id);
   }
 
-  // ---------- сбои и ДЦ ----------
+  // ---------- шаг 3: сбои ----------
   const fixText = (i) => `🔧 Починили: ${i.kind === 'node' ? 'сервер «' + nameOf(i.id) + '»' : INC[i.kind].label.toLowerCase() + (i.dc ? ' в ' + M.DC[i.dc].name : '')}`;
   const incKey = (i) => i.kind + ':' + (i.dc || i.id || '');
   function incident(i, quiet) {
@@ -480,54 +545,54 @@
     if (on && i.kind !== 'node') st.env.inc = st.env.inc.filter((x) => incKey(x) !== incKey(i));
     else st.env.inc.push(i);
     const before = last.m.served;
-    changed();
     const txt = on && i.kind !== 'node' ? `Починили: ${INC[i.kind].say(i.dc, i.id).replace(/^./, (c) => c.toLowerCase())}` : INC[i.kind].say(i.dc, i.id);
+    changed(`${INC[i.kind].icon} ${txt}`);
     addLog(`${INC[i.kind].icon} ${txt}`, before);
     if (!quiet) toast(`${txt}. Обслужено ${servedTxt(last.m.served)}${Math.abs(last.m.served - before) > 0.005 ? ` (было ${servedTxt(before)})` : ', ответы не пострадали'}.`);
   }
 
   function renderSide() {
+    const ok = ready();
+    $('#step3').classList.toggle('locked', !ok);
+    html($('#lock3'), ok ? '' : '🔒 Сначала собери работающую схему: ломать пока нечего.');
+    if (!ok) { html($('#side'), ''); $('#sub3').textContent = 'закрыто'; return; }
     const k = st.dcSel, d = last.dcs[k], o = st.env.dc[k] = st.env.dc[k] || {};
-    const used = (dc) => Object.values(last.nodes).some((n) => n.dcs.includes(dc));
-    const active = st.env.inc;
-    const on = (kind, dc) => active.some((i) => i.kind === kind && (i.dc || '') === (dc || ''));
-    const spof = res.spof, dl = res.dcLoss;
-    $('#side').innerHTML = `<h3>⚠️ Сбои</h3>
-      <div class="sb-dcsel" role="group" aria-label="Где случится сбой">${Object.keys(M.DC).map((x) => `<button data-sel="${x}" class="${x === k ? 'on' : ''}" style="--d:${DC_COLORS[x]}">${M.DC[x].name}${used(x) ? '' : ' <small>пуст</small>'}</button>`).join('')}</div>
-      <div class="sb-fails">${['power', 'trafo', 'fire', 'cut'].map((x) => `<button class="sb-fail ${on(x, k) ? 'on' : ''}" data-inc="${x}" aria-pressed="${on(x, k)}"><span>${INC[x].icon}</span>${INC[x].label}</button>`).join('')}</div>
-      <div class="sb-fails">${['flash', 'ddos'].map((x) => `<button class="sb-fail ${on(x) ? 'on' : ''}" data-inc="${x}" aria-pressed="${on(x)}"><span>${INC[x].icon}</span>${INC[x].label}</button>`).join('')}<button class="sb-fail" data-inc="node"><span>🖥️</span>Уронить сервер</button></div>
-      ${active.length ? `<div class="sb-active">${active.map((i, n) => `<span class="sb-inc">${INC[i.kind].icon} ${esc(i.kind === 'node' ? nameOf(i.id) : i.dc ? INC[i.kind].label + ' · ' + i.dc : INC[i.kind].label)}<button data-fix="${n}" aria-label="Починить">×</button></span>`).join('')}</div><button class="btn sm" id="fixAll">🔧 Починить всё</button>` : '<p class="tnote">Сбоев нет. Выбери ДЦ и нажми на сбой, второе нажатие чинит.</p>'}
-      <h3 class="sb-h">🏢 ${M.DC[k].name} <small>${M.DC[k].where}</small></h3>
-      <div class="sb-state ${d.down ? 'bad' : d.iso ? 'bad' : d.backup ? 'warn' : 'ok'}">${d.down ? '💀 ' + esc(d.down) : d.iso ? '✂️ Отрезан от сети' : d.backup ? `🔋 На ${d.backup}` : '✅ Работает'}</div>
-      <label class="sb-check"><input type="checkbox" data-pw="ups" ${o.ups ? 'checked' : ''}> ИБП, батареи на 15 минут (+$${M.POWER.ups}/мес)</label>
-      <label class="sb-check"><input type="checkbox" data-pw="diesel" ${o.diesel ? 'checked' : ''}> Дизель-генератор, держит часами (+$${M.POWER.diesel}/мес)</label>
-      <p class="tnote">Короткое отключение света переживёт ИБП или дизель. Взрыв трансформатора надолго: спасёт только дизель. Пожар и обрыв оптики не спасает ничто внутри ДЦ: нужны копии в другом.</p>
-      <h3 class="sb-h">🧯 Устойчивость</h3>
-      <div class="sb-res"><b>Упадёт один сервер</b>${!last.m.routed ? '<p class="tnote">Добавь пользователей и схему.</p>' : spof.length ? `<ul>${spof.map((x) => `<li><span>${esc(x.name)}</span><b class="${x.served < 0.95 ? 'bad' : 'warn'}">${servedTxt(x.served)}</b></li>`).join('')}</ul><p class="tnote">Единые точки отказа: одна копия или нет запаса мощности (N+1).</p>` : '<p class="ok">✓ Ни один сервер не роняет ответы</p>'}</div>
-      <div class="sb-res"><b>Сгорит целый ДЦ</b>${dl.length ? `<ul>${dl.map((x) => `<li><span>${M.DC[x.dc].name}</span><b class="${x.served > 0.99 ? 'ok' : x.served > 0.5 ? 'warn' : 'bad'}">${servedTxt(x.served)}</b></li>`).join('')}</ul>` : '<p class="tnote">Нет живых ДЦ с блоками.</p>'}</div>`;
+    const cnt = (dc) => Object.values(last.nodes).filter((n) => n.dcs.includes(dc)).length, empty = !cnt(k);
+    const active = st.env.inc, on = (kind, dc) => active.some((i) => i.kind === kind && (i.dc || '') === (dc || ''));
+    const dstate = (x) => { const s = last.dcs[x]; return s.down ? ['bad', 'лежит'] : s.iso ? ['bad', 'отрезан'] : s.backup ? ['warn', 'на ' + s.backup] : cnt(x) ? ['ok', 'работает'] : ['', 'пуст']; };
+    const sel = selNode && last.nodes[selNode] && last.nodes[selNode].role !== 'client' && last.nodes[selNode];
+    const fail = (x, dc, dis) => `<button class="sb-fail ${on(x, dc) ? 'on' : ''}" data-inc="${x}" aria-pressed="${on(x, dc)}" ${dis ? 'disabled' : ''}><span>${INC[x].icon}</span>${on(x, dc) ? 'Починить: ' + INC[x].label.toLowerCase() : INC[x].label}</button>`;
+    const bar = (name, s) => `<li><span>${esc(name)}</span><i class="sb-bar"><i class="${s > 0.99 ? 'ok' : s > 0.5 ? 'warn' : 'bad'}" style="width:${Math.round(s * 100)}%"></i></i><b class="${s > 0.99 ? 'ok' : s > 0.5 ? 'warn' : 'bad'}">${servedTxt(s)}</b></li>`;
+    $('#sub3').textContent = active.length ? `сбоев: ${active.length}` : 'выбери ДЦ и сбой';
+    html($('#side'), `<h5>Где случится</h5>
+      <div class="sb-dcsel" role="group" aria-label="Где случится сбой">${Object.keys(M.DC).map((x) => { const [c, t] = dstate(x); return `<button data-sel="${x}" class="${x === k ? 'on' : ''}" style="--d:${DC_COLORS[x]}"><b>${M.DC[x].name}</b><small class="${c}">${t}</small><small>блоков: ${cnt(x)}</small></button>`; }).join('')}</div>
+      <p class="tnote">${esc(M.DC[k].where)}${empty ? '. В этом ДЦ нет блоков: ломать нечего. Добавь блок в него через панель под картой.' : ''}</p>
+      <div class="sb-fails">${['power', 'trafo', 'fire', 'cut'].map((x) => fail(x, k, empty && !on(x, k))).join('')}</div>
+      <h5>Везде</h5>
+      <div class="sb-fails">${['flash', 'ddos'].map((x) => fail(x)).join('')}<button class="sb-fail wide" data-inc="node" ${sel ? '' : 'disabled'}><span>🖥️</span>${sel ? `Уронить сервер «${esc(sel.def.name)}»` : 'Уронить сервер: выбери блок на карте'}</button></div>
+      ${active.length ? `<div class="sb-active">${active.map((i, n) => `<span class="sb-inc">${INC[i.kind].icon} ${esc(i.kind === 'node' ? nameOf(i.id) : i.dc ? INC[i.kind].label + ' · ' + i.dc : INC[i.kind].label)}<button data-fix="${n}" aria-label="Починить">×</button></span>`).join('')}</div><button class="btn sm" id="fixAll">🔧 Починить всё</button>` : ''}
+      <h5>Защита ${M.DC[k].name}</h5>
+      <label class="sb-check"><input type="checkbox" data-pw="ups" ${o.ups ? 'checked' : ''} ${empty ? 'disabled' : ''}> ИБП, 15 минут на батареях <small>+$${M.POWER.ups}/мес</small></label>
+      <label class="sb-check"><input type="checkbox" data-pw="diesel" ${o.diesel ? 'checked' : ''} ${empty ? 'disabled' : ''}> Дизель, держит часами <small>+$${M.POWER.diesel}/мес</small></label>
+      <p class="tnote">Свет переживёт ИБП или дизель, трансформатор только дизель. От пожара и оптики спасают копии в другом ДЦ.</p>
+      <h5>Что выдержит</h5>
+      <ul class="sb-res">${res.spof.length ? res.spof.map((x) => bar('1 сервер «' + x.name + '»', x.served)).join('') : '<li class="ok">✓ Падение одного сервера ответы не роняет</li>'}${res.dcLoss.map((x) => bar('Потеря ' + M.DC[x.dc].name, x.served)).join('')}</ul>`);
     $$('[data-sel]').forEach((b) => (b.onclick = () => { st.dcSel = b.dataset.sel; save(); renderSide(); }));
     $$('[data-inc]').forEach((b) => (b.onclick = () => {
       const kind = b.dataset.inc;
-      if (kind === 'node') {
-        const g = selNode && st.graph.nodes.find((n) => n.id === selNode && last.nodes[n.id].role !== 'client');
-        const pool = Object.values(last.nodes).filter((n) => n.role !== 'client' && !n.down && n.load > 0);
-        const pick = g ? last.nodes[g.id] : pool[Math.floor(Math.random() * pool.length)];
-        if (!pick) return toast('Ронять нечего: нет блоков с нагрузкой.');
-        return incident({ kind: 'node', id: pick.id });
-      }
+      if (kind === 'node') return sel && incident({ kind: 'node', id: sel.id });
       incident(INC[kind].dc ? { kind, dc: k } : { kind });
     }));
-    $$('[data-fix]').forEach((b) => (b.onclick = () => { const i = st.env.inc[+b.dataset.fix]; const before = last.m.served; st.env.inc.splice(+b.dataset.fix, 1); changed(); addLog(fixText(i), before); }));
+    $$('[data-fix]').forEach((b) => (b.onclick = () => { const i = st.env.inc[+b.dataset.fix], before = last.m.served; st.env.inc.splice(+b.dataset.fix, 1); changed(fixText(i)); addLog(fixText(i), before); }));
     const fa = $('#fixAll');
-    if (fa) fa.onclick = () => { const before = last.m.served; st.env.inc = []; changed(); addLog('🔧 Починили всё', before); };
-    $$('[data-pw]').forEach((c) => (c.onchange = () => { o[c.dataset.pw] = c.checked; changed(); }));
+    if (fa) fa.onclick = () => { const before = last.m.served; st.env.inc = []; changed('🔧 Починили всё'); addLog('🔧 Починили всё', before); };
+    $$('[data-pw]').forEach((c) => (c.onchange = () => { o[c.dataset.pw] = c.checked; changed(`${M.DC[k].name}: ${c.dataset.pw === 'ups' ? 'ИБП' : 'дизель'} ${c.checked ? 'поставили' : 'убрали'}`); }));
   }
 
   function renderWarns() {
     const ico = { bad: '⛔', warn: '⚠️', info: '💡' }, w = last.warnings.slice().sort((a, b) => ['bad', 'warn', 'info'].indexOf(a.lvl) - ['bad', 'warn', 'info'].indexOf(b.lvl));
-    $('#warns').innerHTML = w.length ? w.map((x) => `<div class="w ${x.lvl}">${ico[x.lvl]} <span>${esc(x.text)}</span></div>`).join('') : st.graph.nodes.length ? '<div class="w ok">✅ Всё работает: перегрузок и упавших блоков нет.</div>' : '<p class="muted">Карта пустая.</p>';
+    html($('#warns'), w.length ? w.map((x) => `<div class="w ${x.lvl}">${ico[x.lvl]} <span>${esc(x.text)}</span></div>`).join('') : st.graph.nodes.length ? '<div class="w ok">✅ Всё работает: перегрузок и упавших блоков нет.</div>' : '<p class="muted">Карта пустая.</p>');
   }
-
   // ---------- журнал и время ----------
   const clock = () => (timer ? `${String(hour).padStart(2, '0')}:00` : new Date().toTimeString().slice(0, 5));
   function addLog(text, before) {
@@ -557,23 +622,21 @@
 
   function play() {
     hour = 0;
-    $('#play').textContent = '⏸ Стоп';
-    addLog('▶ Начались сутки', last.m.served);
+    addLog(chaos ? '🐒 Начались сутки с хаосом' : '▶ Начались сутки', last.m.served);
     timer = setInterval(tick, 1000);
     tick();
   }
   function stop() {
-    clearInterval(timer); timer = null;
-    $('#play').textContent = '▶ Сутки'; $('#hour').textContent = 'пик';
+    if (!timer) return;
+    clearInterval(timer); timer = null; mode = 'peak'; chaos = false;
     update();
   }
   function tick() {
     hour = (hour + 1) % 24;
-    $('#hour').textContent = String(hour).padStart(2, '0') + ':00';
     if (chaos) chaosStep();
     update();
     sample(true);
-    if (hour === 23) { addLog('⏹ Сутки прошли', last.m.served); stop(); }
+    if (hour === 23 && !chaos) { addLog('⏹ Сутки прошли', last.m.served); stop(); }
   }
   // Хаос-обезьяна: случайный сбой примерно раз в пять часов, починка чуть чаще.
   function chaosStep() {
@@ -581,7 +644,7 @@
     if (st.env.inc.length && r < 0.3) {
       const i = st.env.inc[Math.floor(Math.random() * st.env.inc.length)], before = last.m.served;
       st.env.inc = st.env.inc.filter((x) => x !== i);
-      changed();
+      changed(fixText(i));
       return addLog(fixText(i), before);
     }
     if (r > 0.8 && used.length) {
@@ -616,8 +679,8 @@
       st.env.dc = { A: { ups: true, diesel: true }, B: { ups: true, diesel: true }, C: { ups: true } };
       toast('Три ДЦ: сервисы в A и B, база с кворумом в A, B и C, резервное питание. Попробуй пожар, оптику и DDoS.');
     }
-    st.env.inc = []; selNode = null; selEdge = null;
-    changed();
+    st.env.inc = []; selNode = null; selEdge = null; lastAct = null;
+    changed(kind === 'one' ? 'Готовая схема: сайт в одном ДЦ' : 'Готовая схема: три ДЦ и резерв');
     fit(true);
   }
 
