@@ -5,13 +5,16 @@
   const M = window.SandboxModel;
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
+  // Не перерисовываем то, что не изменилось: иначе переводчик заново переводит палитру на каждый клик.
+  const html = (el, h) => { if (el._h !== h) { el._h = h; el.innerHTML = h; return true; } };
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const KEY = 'sd-sandbox';
   const W = 1000, H = 640;
   let BW = W, BH = H;
 
   // ---------- числа ----------
-  const fmt = (n) => fmt0(n).replace('.', ',');
+  const U = window.SD_unit || ((x) => x);
+  const fmt = (n) => U(fmt0(n).replace('.', ','));
   function fmt0(n) {
     if (!isFinite(n)) return '∞';
     const a = Math.abs(n);
@@ -23,8 +26,8 @@
     if (a >= 10) return n.toFixed(1).replace(/\.0$/, '');
     return n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '') || '0';
   }
-  const ms = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + ' с' : Math.round(n) + ' мс');
-  const money = (n) => '$' + (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '').replace('.', ',') + 'k' : Math.round(n)) + '/мес';
+  const ms = (n) => U(n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + ' с' : Math.round(n) + ' мс');
+  const money = (n) => U('$' + (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '').replace('.', ',') + 'k' : Math.round(n)) + '/мес');
   const pct = (u) => (u < 10 ? Math.round(u * 100) + '%' : '×' + fmt(u));
   const servedTxt = (s) => (s > 0.9995 ? '100%' : s > 0.99 ? (s * 100).toFixed(1).replace('.', ',') + '%' : Math.round(s * 100) + '%');
   const cls = (u) => (u > 0.9 ? 'bad' : u > 0.7 ? 'warn' : '');
@@ -115,7 +118,7 @@
           <p class="lghelp">Стрелка значит «вызывает». Синие точки это запросы пользователя, серые это фоновые события после очереди, красный пунктир ведёт в упавший блок. Цветные метки A, B, C на блоке показывают, в каких дата-центрах его копии.</p>
           <div class="board-wrap" id="wrap">
             <div class="board" id="board" style="width:${W}px;height:${H}px">
-              <svg id="edges" width="${W}" height="${H}" aria-hidden="true"><defs>
+              <svg id="edges" class="notranslate" width="${W}" height="${H}" aria-hidden="true"><defs>
                 <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="var(--edge)"/></marker>
                 <marker id="arrS" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="var(--accent)"/></marker></defs><g id="eg"></g></svg>
               <div id="nodes"></div><button class="edel" id="edel" hidden aria-label="Удалить стрелку">×</button>
@@ -191,7 +194,7 @@
       if (i === 2 && Math.abs(d) >= 5) return `<span class="dlt ${d < 0 ? 'up' : 'down'}">${d > 0 ? '+' : '−'}${ms(Math.abs(d))}</span>`;
       return '';
     };
-    $('#kpis').innerHTML = k.map(([a, v, s, c], i) => `<div class="kpi ${c}"><div class="k"><i></i>${a}</div><div class="v">${v}${dlt(i)}</div><div class="s" title="${esc(s)}">${esc(s)}</div></div>`).join('');
+    html($('#kpis'), k.map(([a, v, s, c], i) => `<div class="kpi ${c}"><div class="k"><i></i>${a}</div><div class="v">${v}${dlt(i)}</div><div class="s" title="${esc(s)}">${esc(s)}</div></div>`).join(''));
     prevKpi = now;
   }
 
@@ -203,11 +206,11 @@
     const item = ([t, b]) => `<button class="pi cat-${b.cat}" style="${brandStyle(b)}" data-t="${esc(t)}" title="Перетащи на карту или нажми">
       <span class="pic">${icon(b)}</span><span class="pin"><b>${esc(b.name)}</b><span class="pmeta">${M.BASE[t] ? '<span class="ptag bk">базовый</span>' : ''}${b.from.length ? `<span class="ptag xp">гл. ${b.from.join(', ')}</span>` : ''}</span>
       <small>${esc(b.tag)}${b.cap ? `${b.tag ? ' · ' : ''}≈${fmt(b.cap)} rps на копию` : ''}</small></span></button>`;
-    $('#pal').innerHTML = GROUPS.map((g) => {
+    if (!html($('#pal'), GROUPS.map((g) => {
       const items = list.filter(([, b]) => b.group === g);
       if (!items.length) return '';
       return `<details class="pgroup" data-g="${esc(g)}" ${st.palClosed[g] && !q ? '' : 'open'}><summary>${esc(g)}<span>${items.length}</span></summary>${items.map(item).join('')}</details>`;
-    }).join('') || '<p class="muted small">Ничего не нашлось.</p>';
+    }).join('') || '<p class="muted small">Ничего не нашлось.</p>')) return;
     $$('#pal .pi').forEach(bindPaletteItem);
     $$('#pal details').forEach((d) => (d.ontoggle = () => { if (!q) { st.palClosed[d.dataset.g] = !d.open; save(); } }));
   }
