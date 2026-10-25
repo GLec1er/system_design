@@ -54,6 +54,7 @@ a{color:var(--accent)}
 .crumb b{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chtabs{display:none;gap:4px}
 .chtabs a{display:grid;place-items:center;width:38px;height:32px;border:1px solid transparent;border-radius:4px;color:var(--muted);font:600 11px var(--mono);text-decoration:none}
+.chtabs a svg{width:16px;height:16px}
 .chtabs a[aria-current]{color:var(--accent);background:var(--card2);border-color:var(--line)}
 .topbar-right{display:flex;align-items:center;gap:20px;margin-left:auto}
 .lang-seg{display:flex;padding-left:12px;border-left:1px solid var(--line)}
