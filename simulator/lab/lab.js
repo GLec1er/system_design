@@ -78,8 +78,7 @@
 
   // ---------- каркас ----------
   function init() {
-    document.title = `Глава ${L.n}. ${L.title}`;
-    $('#chapter').innerHTML = `<small>Глава ${L.n}</small><b>${esc(L.title)}</b>`;
+    document.title = `${L.title} · System Design Lab`;
     $('#hero').innerHTML = `<div class="hero-copy"><span class="eyebrow">Глава ${L.n} · System Design Interview, Vol. 2</span><h1>${esc(L.title)}</h1>
       <div class="hero-meta" id="hero-meta"></div><span class="eyebrow">Задача</span><p>${esc(L.intro)}</p></div>${window.SD_octoHTML ? SD_octoHTML() : ''}`;
     const h = location.hash.slice(1), i = L.steps.findIndex((s) => s.id === h);

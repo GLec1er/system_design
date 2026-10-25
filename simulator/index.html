@@ -18,28 +18,51 @@
       <span class="eyebrow dot">System Design Interview, Vol. 2</span>
       <h1>Собери систему <em>по шагам.</em></h1>
       <p>Каждая глава проходит путь как на интервью: требования, оценка нагрузки, API и данные, схема на карте, углубление и итог. Двигаешь нагрузку и сразу видишь, где узкое место и чем платишь за решение.</p>
-      <div class="home-cta"><a class="cta" href="ch1/index.html">Начать с главы 1 <span aria-hidden="true">↗</span></a><a class="cta-2" href="#chapters">Все главы ↓</a></div>
+      <div class="home-cta"><a class="cta" href="ch1/index.html">Начать с главы 1 <span aria-hidden="true">↗</span></a><a class="cta-2" href="#chapters">Все системы ↓</a></div>
       <dl class="home-stats"><div><dt>13</dt><dd>глав</dd></div><div><dt>6</dt><dd>шагов в главе</dd></div><div><dt>0</dt><dd>зависимостей</dd></div></dl>
     </div>
     <div class="home-stage" id="octo-home"></div>
   </section>
   <section class="home-list wrap" id="chapters">
-    <span class="eyebrow">Главы</span>
+    <span class="eyebrow">Системы</span>
+    <div class="filters">
+      <div class="tech-filter" role="group" aria-label="Технология" id="tech"></div>
+      <select id="sort" aria-label="Порядок"><option value="book">Как в книге</option><option value="name">По названию</option></select>
+    </div>
     <div id="books"></div>
+    <p class="empty" id="empty" hidden>Ни одна система не подходит.</p>
   </section>
 </main>
 <footer class="wrap foot">Учебная модель: цифры правдоподобные, но не измерения. Прогресс хранится только в этом браузере. Конспекты глав лежат в <a href="../chapters/">chapters/</a>.</footer>
 <script>
   document.getElementById('octo-home').innerHTML = SD_octoHTML('готов');
-  // Каждая книга сворачивается, свёрнутость помним.
+  // Системы по названию, с чипами технологий. Фильтр по технологии и сортировка; каждая книга сворачивается, свёрнутость помним.
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const ui = { tech: '', sort: 'book' };
+  const count = {}; SD_CHAPTERS.forEach((c) => c.tech.forEach((t) => (count[t] = (count[t] || 0) + 1)));
+  const techs = Object.keys(count).sort((a, b) => count[b] - count[a] || a.localeCompare(b));
   const item = (c) => `<li><a href="${c.dir}/index.html">
-    <span class="ch-n">${String(c.n).padStart(2, '0')}</span>
-    <span class="ch-t"><small>Глава ${c.n}</small><b>${c.title}</b><span>${c.about}</span></span>
+    <span class="ch-n">${c.abbr}</span>
+    <span class="ch-t"><b>${esc(c.title)}</b><span>${esc(c.about)}</span>
+      <span class="ch-tech">${c.tech.map((t) => `<i${t === ui.tech ? ' class="on"' : ''}>${esc(t)}</i>`).join('')}</span><small>Глава ${c.n}</small></span>
     <span class="ch-go" aria-hidden="true">→</span></a></li>`;
   const closed = (id) => { try { return localStorage.getItem('sd-book-' + id) === '0'; } catch (e) { return false; } };
-  document.getElementById('books').innerHTML = SD_BOOKS.map((b) => { const list = SD_CHAPTERS.filter((c) => c.book === b.id); return `<details class="book" data-book="${b.id}"${closed(b.id) ? '' : ' open'}>
-    <summary><h2>${b.title}</h2><span class="book-n">${list.length} глав</span></summary><ol class="ch-list">${list.map(item).join('')}</ol></details>`; }).join('');
-  document.querySelectorAll('.book').forEach((d) => (d.ontoggle = () => { try { localStorage.setItem('sd-book-' + d.dataset.book, d.open ? '1' : '0'); } catch (e) {} }));
+  function render() {
+    document.getElementById('tech').innerHTML = ['', ...techs].map((t) => `<button type="button" data-t="${esc(t)}" aria-pressed="${t === ui.tech}">${t ? esc(t) + ` <small>${count[t]}</small>` : 'Все'}</button>`).join('');
+    let shown = 0;
+    document.getElementById('books').innerHTML = SD_BOOKS.map((b) => {
+      const list = SD_CHAPTERS.filter((c) => c.book === b.id && (!ui.tech || c.tech.includes(ui.tech)));
+      if (ui.sort === 'name') list.sort((x, y) => x.title.localeCompare(y.title));
+      shown += list.length;
+      return list.length ? `<details class="book" data-book="${b.id}"${closed(b.id) && !ui.tech ? '' : ' open'}>
+    <summary><h2>${b.title}</h2><span class="book-n">${list.length} из ${SD_CHAPTERS.filter((c) => c.book === b.id).length}</span></summary><ol class="ch-list">${list.map(item).join('')}</ol></details>` : '';
+    }).join('');
+    document.getElementById('empty').hidden = shown > 0;
+    document.querySelectorAll('#tech button').forEach((x) => (x.onclick = () => { ui.tech = x.dataset.t === ui.tech ? '' : x.dataset.t; render(); }));
+    document.querySelectorAll('.book').forEach((d) => (d.ontoggle = () => { if (!ui.tech) try { localStorage.setItem('sd-book-' + d.dataset.book, d.open ? '1' : '0'); } catch (e) {} }));
+  }
+  document.getElementById('sort').onchange = (e) => { ui.sort = e.target.value; render(); };
+  render();
 </script>
 </body>
 </html>
