@@ -1,8 +1,6 @@
 /* Глава 9. S3-like Object Storage: данные для лаборатории (simulator/lab). */
 (function (g) {
-  // Числа в тексте: разряды пробелами, дробь через запятую.
-  const num = (v) => Math.round(v).toLocaleString('ru-RU'), dec = (v) => String(+v.toFixed(1)).replace('.', ',');
-  const big = (v) => (v >= 1e9 ? dec(v / 1e9) + ' млрд' : v >= 1e6 ? dec(v / 1e6) + ' млн' : v >= 1e4 ? num(v / 1e3) + ' тыс.' : v >= 10 ? num(v) : dec(v));
+  const { num, dec, big } = g.LabKit; // формат чисел в тексте: lab/kit.js
 
   // Железо узла данных в учебной модели: 12 HDD по 20 ТБ, сеть 10 Гбит/с.
   const NODE_TB = 240, NODE_MBPS = 1200, NODE_IOPS = 1800, DAY = 86400, YEAR = 31536000;
@@ -70,7 +68,7 @@
       { id: 'api', title: 'API и данные', sub: 'REST как у S3 и таблицы', kind: 'api', tag: '~5 мин', guide: 'Бакеты и объекты по URI, multipart, таблицы bucket и object и раскладка байтов на узле.' },
       { id: 'hld', title: 'Дизайн', sub: 'схема на карте', kind: 'map', stage: 'base', tag: '~10 мин', guide: 'Раздели метаданные и данные: API-сервис, IAM, Metadata DB и хранилище данных из Data routing, Placement и узлов.' },
       { id: 'deep', title: 'Углубление', sub: 'проблемы и решения', kind: 'map', stage: 'deep', tag: '~15 мин', guide: 'Копии или erasure coding, домены отказа, мелкие объекты на диске, контрольные суммы, листинг, версии, multipart и сборка мусора.' },
-      { id: 'sum', title: 'Итог', sub: 'рассказ для интервью', kind: 'sum', tag: '~5 мин', guide: 'Перескажи решение по шагам и ответь на вопросы для повторения.' },
+      g.LabKit.STEP_SUM,
     ],
 
     requirements: {
@@ -140,7 +138,7 @@
           { t: 'Кэш перед всеми данными', d: '95% чтений, но объекты большие и читаются по разу: кэшировать стоит метаданные и популярные публичные объекты на CDN.' },
           { t: 'Транзакции между объектами', d: 'Каждый объект пишется независимо, атомарность нужна только внутри одного PUT.' },
         ],
-        revisit: 'Решение верно, пока верны требования. Новое FR может поменять NFR, и тогда пересматривается архитектура. Примеры ниже.',
+        revisit: g.LabKit.REVISIT,
       },
       future: [
         { fr: 'Дописывать в конец объекта, как в журнал', breaks: ['consistency', 'efficiency', 'durability'],
@@ -596,9 +594,7 @@
 
     model(ctx) {
       const { d, deep, nodes, flows, stage } = ctx, c = deep.choices, p = deep.params, M = ctx.metrics;
-      const all = Object.values(nodes), of = (t) => all.filter((n) => n.type === t), F = (id) => flows.find((f) => f.id === id), ok = (id) => F(id).ok;
-      const badge = (n, icon, title) => n && n.badges.push({ icon, title });
-      const addLoad = (n, fid, x) => { if (!n || !x) return; n.load += x; n.flows[fid] = (n.flows[fid] || 0) + x; if (F(fid).write) n.wload += x; };
+      const { all, of, F, ok, badge, addLoad } = g.LabKit.tools(ctx);
       // Снять долю потока со всех узлов его пути (CDN забрал скачивания: метаданные и права за ними не нужны).
       const cut = (fid, frac) => { const f = F(fid); if (!f.ok || frac <= 0) return; f.path.forEach((x) => { const n = nodes[x.id]; addLoad(n, fid, -(n.flows[fid] || 0) * frac / f.path.filter((y) => y.id === x.id).length); }); f.rate *= 1 - frac; };
       M.lost = M.corrupt = M.overwritten = M.stale = M.reup = M.garbage = 0;
@@ -759,7 +755,7 @@
         { text: 'Загрузка, скачивание, листинг, метаданные и права доходят', check: (r) => r.m.routed },
         { text: 'Байты идут через Data routing, узлы выбирает Placement', check: (r) => r.flows.find((f) => f.id === 'put').ok && r.flows.find((f) => f.id === 'place').ok },
         { text: 'Placement видит живые узлы по heartbeat', check: (r) => r.flows.find((f) => f.id === 'hb').ok },
-        { text: 'Нагрузка выдерживается', check: (r) => r.m.served >= 1 && r.m.maxU <= 0.9 },
+        g.LabKit.GOAL_LOAD,
       ],
       deep: [
         { text: 'Надёжность не ниже шести девяток', check: (r) => r.m.routed && r.m.nines >= 6 },

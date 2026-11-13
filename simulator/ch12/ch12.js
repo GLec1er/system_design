@@ -1,8 +1,6 @@
 /* Глава 12. Digital Wallet: данные для лаборатории (simulator/lab). */
 (function (g) {
-  // Числа в тексте: разряды пробелами, дробь через запятую.
-  const num = (v) => Math.round(v).toLocaleString('ru-RU'), dec = (v) => String(+v.toFixed(1)).replace('.', ',');
-  const big = (v) => (v >= 1e9 ? dec(v / 1e9) + ' млрд' : v >= 1e6 ? dec(v / 1e6) + ' млн' : v >= 1e4 ? num(v / 1e3) + ' тыс.' : v >= 10 ? num(v) : dec(v));
+  const { num, dec, big } = g.LabKit; // формат чисел в тексте: lab/kit.js
   const CRASH = 1e-6; // допущение: доля переводов, где сервис падает между списанием и зачислением
   const LOSS = 0.001; // допущение: доля секунды переводов, которые теряет узел без копий (ещё не на диске другой машины)
   const POLL_MS = 100; // допущение: клиент опрашивает результат раз в 200 мс, в среднем ждёт 100 мс
@@ -71,7 +69,7 @@
       { id: 'api', title: 'API и данные', sub: 'один перевод', kind: 'api', tag: '~3 мин', guide: 'Один запрос balance_transfer, сумма строкой, transaction_id для идемпотентности. Балансы, таблица фаз, события.' },
       { id: 'hld', title: 'Дизайн', sub: 'схема на карте', kind: 'map', stage: 'base', tag: '~10 мин', guide: 'Клиент → Wallet service → координатор → реляционные шарды балансов. ZooKeeper хранит, какой счёт в каком шарде.' },
       { id: 'deep', title: 'Углубление', sub: 'проблемы и решения', kind: 'map', stage: 'deep', tag: '~15 мин', guide: 'Атомарность между шардами, воспроизводимость, быстрый event sourcing, Raft, как отдать ответ клиенту.' },
-      { id: 'sum', title: 'Итог', sub: 'рассказ для интервью', kind: 'sum', tag: '~5 мин', guide: 'Перескажи решение по шагам и ответь на вопросы для повторения.' },
+      g.LabKit.STEP_SUM,
     ],
 
     requirements: {
@@ -115,7 +113,7 @@
           { t: 'Redis как единственное хранилище', d: 'Нет атомарности между узлами и надёжности.' },
           { t: 'Хранить только балансы', d: 'Аудит требует воспроизвести историю.' },
         ],
-        revisit: 'Решение верно, пока верны требования. Новое FR может поменять NFR, и тогда пересматривается архитектура. Примеры ниже.',
+        revisit: g.LabKit.REVISIT,
       },
       future: [
         { fr: 'Крупный продавец получает 10% всех переводов', breaks: ['scale'],
@@ -220,7 +218,7 @@
           cols: [{ n: 'seq', t: 'bigint', k: 'PK', d: 'Порядковый номер в партиции' }, { n: 'account', t: 'string', d: 'Счёт' }, { n: 'delta', t: 'decimal', d: '−1.00 или +1.00' }, { n: 'transaction_id', t: 'string', d: 'Откуда' }] },
       ],
       more: {
-        intro: 'Для интервью хватает таблиц выше. Ниже то, что добавляют, когда растут требования.',
+        intro: g.LabKit.API_MORE,
         tables: [
           { name: 'snapshot', when: 'Восстановление не с начала времён, а с последнего снапшота.', cols: 'partition, seq, state_blob, created_at' },
           { name: 'sub_account (расширение)', when: 'Горячий счёт делится на N суб-счетов.', cols: 'account, sub_id, amount' },
@@ -374,11 +372,7 @@
 
     model(ctx) {
       const { d, deep, nodes, flows, stage } = ctx, c = deep.choices, M = ctx.metrics;
-      const all = Object.values(nodes), of = (t) => all.filter((n) => n.type === t), F = (id) => flows.find((f) => f.id === id);
-      const badge = (n, icon, title) => n && n.badges.push({ icon, title });
-      const addLoad = (n, fid, x) => { if (!n || !x) return; n.load += x; n.flows[fid] = (n.flows[fid] || 0) + x; if (F(fid).write) n.wload += x; };
-      const scale = (n, fid, m) => n && addLoad(n, fid, (n.flows[fid] || 0) * (m - 1));
-      const via = (f, t) => f.ok && f.path.some((x) => nodes[x.id].type === t);
+      const { all, of, F, badge, addLoad, scale, via } = g.LabKit.tools(ctx);
       M.lost = M.unrepro = M.lostEv = M.polls = 0;
       const tr = F('transfer'), store = tr.ok && nodes[tr.path[tr.path.length - 1].id];
       if (!store) return;
@@ -452,7 +446,7 @@
       base: [
         { text: 'Переводы и баланс доходят до хранилища', check: (r) => r.m.routed },
         { text: 'Перевод быстрее 50 мс', check: (r) => r.m.routed && r.flows.find((f) => f.id === 'transfer').lat <= 50 },
-        { text: 'Нагрузка выдерживается', check: (r) => r.m.served >= 1 && r.m.maxU <= 0.9 },
+        g.LabKit.GOAL_LOAD,
       ],
       deep: [
         { text: 'Деньги не теряются между шардами', check: (r) => r.m.routed && r.m.lost === 0 },

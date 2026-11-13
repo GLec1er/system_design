@@ -57,8 +57,7 @@
       ['Backpressure', 'Потребитель не успевает, очередь растёт. Брокер это переживёт и даст время добавить потребителей, но задержка доставки растёт: следим за lag.'],
     ] },
   ];
-  // Числа в тексте: разряды пробелами, дробь через запятую.
-  const num = (v) => Math.round(v).toLocaleString('ru-RU'), dec = (v) => String(+v.toFixed(1)).replace('.', ',');
+  const { num, dec } = g.LabKit; // формат чисел в тексте: lab/kit.js
   // Общий раздел «подробнее» для блоков наблюдаемости.
   const OBS_MORE = [
     { title: '🔭 Три столпа наблюдаемости', items: [
@@ -94,7 +93,7 @@
       { id: 'api', title: 'API и данные', sub: 'эндпоинты и таблицы', kind: 'api', tag: '~5 мин', guide: 'reservationId в теле POST и инвентарь по типу номера и дате.' },
       { id: 'hld', title: 'Дизайн', sub: 'схема на карте', kind: 'map', stage: 'base', tag: '~10 мин', guide: 'Собери блоки и стрелки так, чтобы все четыре потока дошли до данных.' },
       { id: 'deep', title: 'Углубление', sub: 'проблемы и решения', kind: 'map', stage: 'deep', tag: '~15 мин', guide: 'Двойной клик, гонка за номер, распродажа, бронь и оплата в разных БД.' },
-      { id: 'sum', title: 'Итог', sub: 'рассказ для интервью', kind: 'sum', tag: '~5 мин', guide: 'Перескажи решение по шагам и ответь на вопросы для повторения.' },
+      g.LabKit.STEP_SUM,
     ],
 
     requirements: {
@@ -805,7 +804,7 @@
       base: [
         { text: 'Все четыре потока доходят до данных', check: (r) => r.m.routed },
         { text: 'Клиент ходит только через API Gateway', check: (r) => !r.graph.edges.some((e) => r.nodes[e.from] && r.nodes[e.from].type === 'client' && r.nodes[e.to] && r.nodes[e.to].type !== 'gateway' && !r.nodes[e.to].def.absorb && !r.nodes[e.to].def.via) },
-        { text: 'Нагрузка выдерживается', check: (r) => r.m.served >= 1 && r.m.maxU <= 0.9 },
+        g.LabKit.GOAL_LOAD,
         { text: 'У Payment Service своя БД', check: (r) => { const f = r.flows.find((x) => x.id === 'pay'); return f.ok && r.nodes[f.path[f.path.length - 1].id].type === 'payDB'; } },
       ],
       deep: [

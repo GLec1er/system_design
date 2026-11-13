@@ -1,8 +1,6 @@
 /* Глава 13. Stock Exchange: данные для лаборатории (simulator/lab). Задержки здесь в миллисекундах, но живут в микросекундах. */
 (function (g) {
-  // Числа в тексте: разряды пробелами, дробь через запятую.
-  const num = (v) => Math.round(v).toLocaleString('ru-RU'), dec = (v) => String(+v.toFixed(1)).replace('.', ',');
-  const big = (v) => (v >= 1e9 ? dec(v / 1e9) + ' млрд' : v >= 1e6 ? dec(v / 1e6) + ' млн' : v >= 1e4 ? num(v / 1e3) + ' тыс.' : v >= 10 ? num(v) : dec(v));
+  const { num, dec, big } = g.LabKit; // формат чисел в тексте: lab/kit.js
   const us = (ms) => num(ms * 1000) + ' мкс';
   const NET = 0.25; // допущение: один сетевой переход внутри ЦОД, мс (книга: круг по сети около 500 мкс)
   const JITTER = 0.5; // допущение: пул потоков, блокировки и переключения контекста добавляют к p99 около 500 мкс
@@ -68,7 +66,7 @@
       { id: 'api', title: 'API и данные', sub: 'заявка, исполнения, стакан', kind: 'api', tag: '~5 мин', guide: 'POST /v1/order, исполнения, стакан L2, свечи. Стакан в памяти matching engine, история в БД.' },
       { id: 'hld', title: 'Дизайн', sub: 'схема на карте', kind: 'map', stage: 'base', tag: '~10 мин', guide: 'Брокер → gateway → order manager (риски, средства) → sequencer → matching engine. Исполнения обратно, рыночные данные через publisher, отчёты отдельно.' },
       { id: 'deep', title: 'Углубление', sub: 'проблемы и решения', kind: 'map', stage: 'deep', tag: '~15 мин', guide: 'Один сервер и mmap, application loop, стакан за O(1), горячий-тёплый и Raft, честные рыночные данные, DDoS.' },
-      { id: 'sum', title: 'Итог', sub: 'рассказ для интервью', kind: 'sum', tag: '~5 мин', guide: 'Перескажи решение по шагам и ответь на вопросы для повторения.' },
+      g.LabKit.STEP_SUM,
     ],
 
     requirements: {
@@ -112,7 +110,7 @@
           { t: 'Kafka как секвенсор', d: 'Диск и сеть: миллисекунды и одна партиция на весь порядок.' },
           { t: 'БД на пути заявки', d: 'Стакан в памяти, события в mmap, БД только для отчётов.' },
         ],
-        revisit: 'Решение верно, пока верны требования. Новое FR может поменять NFR, и тогда пересматривается архитектура. Примеры ниже.',
+        revisit: g.LabKit.REVISIT,
       },
       future: [
         { fr: 'Тысячи символов вместо сотни', breaks: ['latency'],
@@ -226,7 +224,7 @@
           cols: [{ n: 'symbol', t: 'string', k: 'PK', d: 'AAPL' }, { n: 'open_ts', t: 'long', k: 'PK', d: 'Начало интервала' }, { n: 'open', t: 'decimal', d: '' }, { n: 'high', t: 'decimal', d: '' }, { n: 'low', t: 'decimal', d: '' }, { n: 'close', t: 'decimal', d: '' }, { n: 'volume', t: 'long', d: '' }] },
       ],
       more: {
-        intro: 'Для интервью хватает таблиц выше. Ниже то, что добавляют, когда растут требования.',
+        intro: g.LabKit.API_MORE,
         tables: [
           { name: 'product', when: 'Справочник символов: шаг цены, лот, часы торгов.', cols: 'symbol, description, tick_size, lot_size' },
           { name: 'snapshot', when: 'Восстановление стакана со снапшота, а не с начала дня.', cols: 'symbol, seq, book_blob' },
@@ -453,7 +451,7 @@
       base: [
         { text: 'Заявки, исполнения, риски, данные и отчёты доходят до цели', check: (r) => r.m.routed },
         { text: 'Заявка доходит до matching быстрее 5 мс', check: (r) => r.m.routed && r.flows.find((f) => f.id === 'order').lat <= 5 },
-        { text: 'Нагрузка выдерживается', check: (r) => r.m.served >= 1 && r.m.maxU <= 0.9 },
+        g.LabKit.GOAL_LOAD,
       ],
       deep: [
         { text: 'Критический путь быстрее 200 мкс', check: (r) => r.m.routed && r.flows.find((f) => f.id === 'order').lat <= 0.2 },

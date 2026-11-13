@@ -1,8 +1,6 @@
 /* Глава 10. Real-time Gaming Leaderboard: данные для лаборатории (simulator/lab). */
 (function (g) {
-  // Числа в тексте: разряды пробелами, дробь через запятую.
-  const num = (v) => Math.round(v).toLocaleString('ru-RU'), dec = (v) => String(+v.toFixed(1)).replace('.', ',');
-  const big = (v) => (v >= 1e9 ? dec(v / 1e9) + ' млрд' : v >= 1e6 ? dec(v / 1e6) + ' млн' : v >= 1e4 ? num(v / 1e3) + ' тыс.' : v >= 10 ? num(v) : dec(v));
+  const { num, dec, big } = g.LabKit; // формат чисел в тексте: lab/kit.js
   const NODE_GB = 64; // допущение: память одного узла Redis
   const SCAN = 1e7; // допущение: строк в секунду, которые MySQL перебирает при подсчёте ранга
   const CHEAT = 0.001; // допущение: доля игроков, которые подделают очки, если клиент шлёт их сам
@@ -59,7 +57,7 @@
       { id: 'api', title: 'API и данные', sub: 'очки, топ-10, место', kind: 'api', tag: '~5 мин', guide: 'Три запроса книги и команды sorted set. Рейтинг в Redis, игроки и история побед в MySQL.' },
       { id: 'hld', title: 'Дизайн', sub: 'схема на карте', kind: 'map', stage: 'base', tag: '~10 мин', guide: 'Игрок → Game service → Leaderboard service → Redis. Топ-10 и ранг клиент берёт у Leaderboard service. История побед в MySQL.' },
       { id: 'deep', title: 'Углубление', sub: 'проблемы и решения', kind: 'map', stage: 'deep', tag: '~15 мин', guide: 'Кто начисляет очки, очередь для других потребителей, рост ×100 и шардирование, равные очки, восстановление после сбоя.' },
-      { id: 'sum', title: 'Итог', sub: 'рассказ для интервью', kind: 'sum', tag: '~5 мин', guide: 'Перескажи решение по шагам и ответь на вопросы для повторения.' },
+      g.LabKit.STEP_SUM,
     ],
 
     requirements: {
@@ -105,7 +103,7 @@
           { t: 'Очки прямо от клиента', d: 'Подделать запрос легко: очки начисляет сервер.' },
           { t: 'Шарды с первого дня', d: '650 МБ и 2500 записей в секунду держит один Redis.' },
         ],
-        revisit: 'Решение верно, пока верны требования. Новое FR может поменять NFR, и тогда пересматривается архитектура. Примеры ниже.',
+        revisit: g.LabKit.REVISIT,
       },
       future: [
         { fr: 'Игроков в 100 раз больше', breaks: ['scale'],
@@ -218,7 +216,7 @@
           cols: [{ n: 'user_id', t: 'string', k: 'PK', d: 'Кто', ref: { t: 'users', c: 'user_id' } }, { n: 'ts', t: 'TIMESTAMP', k: 'PK', d: 'Когда выиграл' }, { n: 'score', t: 'int', d: 'Очков за матч' }] },
       ],
       more: {
-        intro: 'Для интервью хватает таблиц выше. Ниже то, что добавляют, когда растут требования.',
+        intro: g.LabKit.API_MORE,
         tables: [
           { name: 'last_win (Redis hash)', when: 'Порядок при равных очках: кто раньше набрал, тот выше.', cols: 'user_id → время последней победы' },
           { name: 'user_score (кэш)', when: 'Шарды по диапазонам очков: в каком шарде сейчас игрок.', cols: 'user_id → очки' },
@@ -369,11 +367,7 @@
 
     model(ctx) {
       const { d, deep, nodes, flows, stage } = ctx, c = deep.choices, M = ctx.metrics;
-      const all = Object.values(nodes), of = (t) => all.filter((n) => n.type === t), F = (id) => flows.find((f) => f.id === id);
-      const badge = (n, icon, title) => n && n.badges.push({ icon, title });
-      const addLoad = (n, fid, x) => { if (!n || !x) return; n.load += x; n.flows[fid] = (n.flows[fid] || 0) + x; if (F(fid).write) n.wload += x; };
-      const scale = (n, fid, m) => n && addLoad(n, fid, (n.flows[fid] || 0) * (m - 1));
-      const via = (f, t) => f.ok && f.path.some((x) => nodes[x.id].type === t);
+      const { all, of, F, badge, addLoad, scale, via } = g.LabKit.tools(ctx);
       M.cheat = M.rankErr = M.tie = M.lost = M.memOver = M.coupled = 0;
       const end = (f) => f.ok && nodes[f.path[f.path.length - 1].id], store = end(F('rank')) || end(F('top')) || end(F('score'));
 
@@ -452,7 +446,7 @@
       base: [
         { text: 'Очки, топ-10, место и история доходят до цели', check: (r) => r.m.routed },
         { text: 'Место игрока и топ-10 быстрее 50 мс', check: (r) => r.m.routed && ['top', 'rank'].every((id) => r.flows.find((f) => f.id === id).lat <= 50) },
-        { text: 'Нагрузка выдерживается', check: (r) => r.m.served >= 1 && r.m.maxU <= 0.9 },
+        g.LabKit.GOAL_LOAD,
       ],
       deep: [
         { text: 'Очки начисляет сервер, равные очки упорядочены', check: (r) => r.m.routed && r.m.cheat === 0 && r.m.tie === 0 },

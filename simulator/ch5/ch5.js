@@ -1,8 +1,6 @@
 /* Глава 5. Metrics Monitoring and Alerting: данные для лаборатории (simulator/lab). */
 (function (g) {
-  // Числа в тексте: разряды пробелами, дробь через запятую.
-  const num = (v) => Math.round(v).toLocaleString('ru-RU'), dec = (v) => String(+v.toFixed(1)).replace('.', ',');
-  const big = (v) => (v >= 1e9 ? dec(v / 1e9) + ' млрд' : v >= 1e6 ? dec(v / 1e6) + ' млн' : v >= 1e4 ? num(v / 1e3) + ' тыс.' : v >= 10 ? num(v) : dec(v));
+  const { num, dec, big } = g.LabKit; // формат чисел в тексте: lab/kit.js
   const RAW_B = 16, GORILLA_B = 1.4; // байт на точку: время и значение как есть или delta-of-delta и XOR (Gorilla)
   const RF = 3; // копий в TSDB
   const NODE_TB = 4; // допущение: диски одного узла TSDB
@@ -64,7 +62,7 @@
       { id: 'api', title: 'API и данные', sub: 'временные ряды, запросы, правила', kind: 'api', tag: '~5 мин', guide: 'Формат точки, /metrics для pull, запрос к Query service, правило алерта и его состояние.' },
       { id: 'hld', title: 'Дизайн', sub: 'схема на карте', kind: 'map', stage: 'base', tag: '~10 мин', guide: 'Пять частей: сбор, передача, хранение в TSDB, алерты и визуализация.' },
       { id: 'deep', title: 'Углубление', sub: 'проблемы и решения', kind: 'map', stage: 'deep', tag: '~15 мин', guide: 'Pull или push, Kafka перед TSDB, где агрегировать, сжатие, downsampling, кэш запросов, дедупликация и доставка алертов.' },
-      { id: 'sum', title: 'Итог', sub: 'рассказ для интервью', kind: 'sum', tag: '~5 мин', guide: 'Перескажи решение по шагам и ответь на вопросы для повторения.' },
+      g.LabKit.STEP_SUM,
     ],
 
     requirements: {
@@ -113,7 +111,7 @@
           { t: 'Метки с user_id', d: 'Число рядов взорвётся.' },
           { t: 'Свой Grafana', d: 'Визуализацию книга советует купить.' },
         ],
-        revisit: 'Решение верно, пока верны требования. Новое FR может поменять NFR, и тогда пересматривается архитектура. Примеры ниже.',
+        revisit: g.LabKit.REVISIT,
       },
       future: [
         { fr: 'Метрики по каждому пользователю', breaks: ['scalability'],
@@ -245,7 +243,7 @@
           cols: [{ n: 'alert_id', t: 'string', k: 'PK', d: 'instance_down/web01', ref: { t: 'alert_rules', c: 'name', soft: true } }, { n: 'state', t: 'enum', d: 'inactive, pending, firing, resolved' }, { n: 'updated_at', t: 'TIMESTAMP', d: 'Когда менялось' }, { n: 'notified_at', t: 'TIMESTAMP', d: 'Когда отправили' }] },
       ],
       more: {
-        intro: 'Для интервью хватает таблиц выше. Ниже то, что добавляют, когда растут требования.',
+        intro: g.LabKit.API_MORE,
         tables: [
           { name: 'silences', when: 'Заглушить алерты на время работ.', cols: 'matcher, starts_at, ends_at, author' },
           { name: 'cold_blocks', when: 'Холодное хранение старых блоков в S3.', cols: 'series_range, from, to, s3_key' },
@@ -408,10 +406,7 @@
 
     model(ctx) {
       const { d, deep, nodes, flows, stage } = ctx, c = deep.choices, M = ctx.metrics;
-      const all = Object.values(nodes), of = (t) => all.filter((n) => n.type === t), F = (id) => flows.find((f) => f.id === id);
-      const badge = (n, icon, title) => n && n.badges.push({ icon, title });
-      const addLoad = (n, fid, x) => { if (!n || !x) return; n.load += x; n.flows[fid] = (n.flows[fid] || 0) + x; if (F(fid).write) n.wload += x; };
-      const scale = (n, fid, m) => n && addLoad(n, fid, (n.flows[fid] || 0) * (m - 1));
+      const { all, of, F, badge, addLoad, scale } = g.LabKit.tools(ctx);
       M.lostPts = M.missed = M.storm = M.lostAlerts = 0;
       const deepOn = stage === 'deep';
       const collect = deepOn ? c.collect : 'pull', agg = deepOn ? c.agg : 'query', enc = deepOn ? c.encode : 'gorilla', ret = deepOn ? c.retain : 'downsample', dd = deepOn ? c.dedupe : 'dedupe';
@@ -482,7 +477,7 @@
         { text: 'Точки, дашборды и алерты доходят до цели', check: (r) => r.m.routed },
         { text: 'Сборщики знают серверы из service discovery', check: (r) => r.flows.find((f) => f.id === 'discover').ok },
         { text: 'Grafana и Alert manager читают через Query service', check: (r) => ['dash', 'alertEval'].every((id) => r.flows.find((f) => f.id === id).path.some((x) => r.nodes[x.id].type === 'query')) },
-        { text: 'Нагрузка выдерживается', check: (r) => r.m.served >= 1 && r.m.maxU <= 0.9 },
+        g.LabKit.GOAL_LOAD,
       ],
       deep: [
         { text: 'Ни одна точка не теряется, все серверы под мониторингом', check: (r) => r.m.routed && r.m.lostPts === 0 && r.m.missed === 0 },

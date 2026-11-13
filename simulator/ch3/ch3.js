@@ -1,8 +1,6 @@
 /* Глава 3. Google Maps: данные для лаборатории (simulator/lab). */
 (function (g) {
-  // Числа в тексте: разряды пробелами, дробь через запятую.
-  const num = (v) => Math.round(v).toLocaleString('ru-RU'), dec = (v) => String(+v.toFixed(1)).replace('.', ',');
-  const big = (v) => (v >= 1e9 ? dec(v / 1e9) + ' млрд' : v >= 1e6 ? dec(v / 1e6) + ' млн' : v >= 1e4 ? num(v / 1e3) + ' тыс.' : v >= 10 ? num(v) : dec(v));
+  const { num, dec, big } = g.LabKit; // формат чисел в тексте: lab/kit.js
   const DAY = 1e5; // сутки ≈ 10⁵ секунд, как считает книга
   const BATCH = 15; // книга: клиент копит точки 15 секунд и шлёт пачкой
   const WS_CONN = 100000; // допущение: соединений на WebSocket-сервер
@@ -64,7 +62,7 @@
       { id: 'api', title: 'API и данные', sub: 'точки, маршрут, тайлы', kind: 'api', tag: '~5 мин', guide: 'POST /locations пачкой, GET /nav, адреса тайлов. Хранилища: Cassandra, Redis, S3 и CDN.' },
       { id: 'hld', title: 'Дизайн', sub: 'схема на карте', kind: 'map', stage: 'base', tag: '~10 мин', guide: 'Три сервиса: Location service пишет точки в Cassandra и Kafka, навигация строит маршрут по routing tiles, карта идёт с CDN.' },
       { id: 'deep', title: 'Углубление', sub: 'проблемы и решения', kind: 'map', stage: 'deep', tag: '~15 мин', guide: 'Пачки точек, готовые тайлы, векторные тайлы, адреса тайлов, иерархия графа, ETA по пробкам, перестроение маршрута и доставка по WebSocket.' },
-      { id: 'sum', title: 'Итог', sub: 'рассказ для интервью', kind: 'sum', tag: '~5 мин', guide: 'Перескажи решение по шагам и ответь на вопросы для повторения.' },
+      g.LabKit.STEP_SUM,
     ],
 
     requirements: {
@@ -114,7 +112,7 @@
           { t: 'Каждую точку отдельным запросом', d: 'Пачка раз в 15 секунд.' },
           { t: 'Строгая согласованность', d: 'Пробка видна через секунды, этого хватает.' },
         ],
-        revisit: 'Решение верно, пока верны требования. Новое FR может поменять NFR, и тогда пересматривается архитектура. Примеры ниже.',
+        revisit: g.LabKit.REVISIT,
       },
       future: [
         { fr: 'Маршрут с остановками по пути', breaks: ['latency'],
@@ -258,7 +256,7 @@
           cols: [{ n: 'key', t: '{zoom}/{geohash}.png', k: 'PK', d: '21/9q9hvu.png' }, { n: 'body', t: 'PNG или вектор', d: '≈ 100 КБ растр' }] },
       ],
       more: {
-        intro: 'Для интервью хватает таблиц выше. Ниже то, что добавляют, когда растут требования.',
+        intro: g.LabKit.API_MORE,
         tables: [
           { name: 'active_navigation', when: 'Перестроение маршрута: водитель и тайлы его маршрута всех уровней.', cols: 'user_id, current_tile, parent_tiles[]' },
           { name: 'historical_traffic', when: 'ETA по истории: скорость участка в этот час недели.', cols: 'segment_id, weekday, hour, speed' },
@@ -463,10 +461,7 @@
 
     model(ctx) {
       const { d, deep, nodes, flows, stage } = ctx, c = deep.choices, M = ctx.metrics;
-      const all = Object.values(nodes), of = (t) => all.filter((n) => n.type === t), F = (id) => flows.find((f) => f.id === id);
-      const badge = (n, icon, title) => n && n.badges.push({ icon, title });
-      const addLoad = (n, fid, x) => { if (!n || !x) return; n.load += x; n.flows[fid] = (n.flows[fid] || 0) + x; if (F(fid).write) n.wload += x; };
-      const scale = (n, fid, m) => n && addLoad(n, fid, (n.flows[fid] || 0) * (m - 1));
+      const { all, of, F, badge, addLoad, scale } = g.LabKit.tools(ctx);
       M.missedJam = 0;
       const deepOn = stage === 'deep';
       const batch = deepOn ? c.batch : 'batch', render = deepOn ? c.render : 'pre', fmt = deepOn ? c.fmt : 'raster', url = deepOn ? c.tileUrl : 'service';
@@ -551,7 +546,7 @@
         { text: 'Точки, маршруты и тайлы доходят до данных', check: (r) => r.m.routed },
         { text: 'Тайлы идут с CDN, промахи из S3', check: (r) => ['tileGet', 'tileMiss'].every((id) => r.flows.find((f) => f.id === id).ok) },
         { text: 'Точки идут в Kafka и из неё в пробки для ETA', check: (r) => ['locStream', 'etaF'].every((id) => r.flows.find((f) => f.id === id).ok) },
-        { text: 'Нагрузка выдерживается', check: (r) => r.m.served >= 1 && r.m.maxU <= 0.9 },
+        g.LabKit.GOAL_LOAD,
       ],
       deep: [
         { text: 'Маршрут быстрее 1 с, ETA ошибается меньше 10%', check: (r) => r.m.routed && r.flows.find((f) => f.id === 'nav').lat <= 1000 && r.m.etaErr <= 10 },

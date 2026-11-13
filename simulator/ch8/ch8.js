@@ -1,7 +1,6 @@
 /* Глава 8. Distributed Email Service: данные для лаборатории (simulator/lab). */
 (function (g) {
-  // Числа в тексте: разряды пробелами, дробь через запятую.
-  const num = (v) => Math.round(v).toLocaleString('ru-RU'), dec = (v) => String(+v.toFixed(1)).replace('.', ',');
+  const { num, dec } = g.LabKit; // формат чисел в тексте: lab/kit.js
   const big = (v) => (v >= 1e9 ? dec(v / 1e9) + ' млрд' : v >= 1e6 ? dec(v / 1e6) + ' млн' : v >= 1e4 ? num(v / 1e3) + ' тыс.' : num(v));
 
   // Общие разделы «подробнее» для карточек блоков.
@@ -70,7 +69,7 @@
       { id: 'api', title: 'API и данные', sub: 'HTTP, WebSocket, SMTP и таблицы', kind: 'api', tag: '~5 мин', guide: 'Три протокола, таблицы под запросы и денормализация read и unread.' },
       { id: 'hld', title: 'Дизайн', sub: 'схема на карте', kind: 'map', stage: 'base', tag: '~10 мин', guide: 'Собери веб-часть, отправку через очередь и приём из интернета так, чтобы все потоки дошли.' },
       { id: 'deep', title: 'Углубление', sub: 'проблемы и решения', kind: 'map', stage: 'deep', tag: '~15 мин', guide: 'Спам, непрочитанные, сбой узла, повторы доставки, письма в спаме у получателей, рост.' },
-      { id: 'sum', title: 'Итог', sub: 'рассказ для интервью', kind: 'sum', tag: '~5 мин', guide: 'Перескажи решение по шагам и ответь на вопросы для повторения.' },
+      g.LabKit.STEP_SUM,
     ],
 
     requirements: {
@@ -140,7 +139,7 @@
           { t: 'Строгая согласованность между регионами', d: 'Синхронная запись в несколько ДЦ добавит сотни мс к каждому письму. Достаточно одного primary на ящик.' },
           { t: 'Поиск запросом к основной БД', d: 'Full-text по миллиарду ящиков требует обратного индекса. LIKE по телу письма убьёт БД.' },
         ],
-        revisit: 'Решение верно, пока верны требования. Новое FR может поменять NFR, и тогда пересматривается архитектура. Примеры ниже.',
+        revisit: g.LabKit.REVISIT,
       },
       future: [
         { fr: 'Сквозное шифрование писем (E2EE), как в Proton Mail', breaks: ['security', 'extensibility', 'latency'],
@@ -714,7 +713,7 @@
         { text: 'Письма уходят наружу через очередь и SMTP-воркеры', check: (r) => r.flows.find((f) => f.id === 'out').ok },
         { text: 'Входящие проходят очередь и воркеры до Metadata DB', check: (r) => r.flows.find((f) => f.id === 'proc').ok },
         { text: 'Новые письма приходят по WebSocket, поиск индексируется', check: (r) => r.flows.find((f) => f.id === 'push').ok && r.flows.find((f) => f.id === 'index').ok },
-        { text: 'Нагрузка выдерживается', check: (r) => r.m.served >= 1 && r.m.maxU <= 0.9 },
+        g.LabKit.GOAL_LOAD,
       ],
       deep: [
         { text: 'Ни одного потерянного письма', check: (r) => r.m.routed && r.flows.find((f) => f.id === 'out').ok && r.m.lost === 0 },

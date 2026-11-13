@@ -503,6 +503,6 @@
 
   const sizable = (t) => !!SIZES[t];
   const api = { sizable, contract, analyze, addBlock, canLink, linkTargets, sizeFor, refGraph, adapt, TUNE, optsOf, tuneOf, TARGET };
-  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; require('./kit.js'); } // в тестах главе нужен LabKit
   root.LabEngine = api;
 })(typeof window !== 'undefined' ? window : globalThis);
