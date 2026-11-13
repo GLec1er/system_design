@@ -6,6 +6,8 @@
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // Пишем в DOM, только если разметка изменилась: неизменённые панели не теряют фокус, раскрытые <details> и анимации.
+  const setH = (el, html) => { if (el.__h === html) return false; el.innerHTML = html; el.__h = html; return true; };
   const KEY = 'sd-lab-' + L.id;
   const W = L.board.w, H = L.board.h;
   // Текущий размер доски: не меньше W×H, растёт под блоки и во весь экран заполняет рамку.
@@ -89,8 +91,13 @@
   // Эталон под тот же сценарий, но с решениями из книги (best), а не с выбором ученика; считается только при изменении.
   const bestChoices = Object.fromEntries(L.problems.filter((p) => p.options).map((p) => [p.key, (p.best || [p.options[0].v])[0]]));
   const refDeep = (stage) => (stage === 'deep' ? { params: st.deep.params, choices: bestChoices } : deepFor(stage));
-  let refMemo = {};
-  const refFor = (stage) => { const k = JSON.stringify([stage, st.est, refDeep(stage)]); return refMemo[k] || (refMemo = { [k]: E.adapt(L, stage, st.est, refDeep(stage)) })[k]; };
+  // Подбор эталона дорогой (до десятков мс на крупных главах), а ползунок возвращается к тем же значениям: помним последние.
+  const refMemo = new Map();
+  const refFor = (stage) => {
+    const k = JSON.stringify([stage, st.est, refDeep(stage)]);
+    if (!refMemo.has(k)) { if (refMemo.size >= 60) refMemo.delete(refMemo.keys().next().value); refMemo.set(k, E.adapt(L, stage, st.est, refDeep(stage))); }
+    return refMemo.get(k);
+  };
   const analyzeG = (g, stage) => E.analyze(L, g, st.est, deepFor(stage), stage);
   const analyze = (stage) => analyzeG(st.graph, stage);
 
@@ -155,6 +162,7 @@
     tabSel[box.dataset.tabs] = id;
     $$('[data-tab]', box).forEach((b) => b.setAttribute('aria-selected', b.dataset.tab === id));
     $$('[data-panel]', box).forEach((p) => (p.hidden = p.dataset.panel !== id));
+    if (box.dataset.tabs === 'pal' && last && step().kind === 'map') renderPalette(last); // скрытая вкладка палитры не считалась
   }
   // Элемент во вкладке, которая сейчас закрыта: сначала открыть её.
   function reveal(el) { const p = el && el.closest('[data-panel]'); if (p && p.hidden) showTab(p.closest('[data-tabs]'), p.dataset.panel); }
@@ -455,7 +463,7 @@
     $('#refBook').onclick = () => { loadRef(E.refGraph(L, step().stage)); toast('Разложена схема ровно как в книге. Сравни её метрики с адаптацией под нагрузку.'); };
     $('#clr').onclick = () => { if (confirm('Убрать все блоки и стрелки с карты?')) { st.graph = { nodes: [], edges: [] }; selNode = null; changed(); } };
     $('#edel').onclick = () => { if (selEdge != null) { st.graph.edges.splice(selEdge, 1); selEdge = null; changed(); } };
-    bindScn(update);
+    bindScn(soon);
     $$('[data-z]').forEach((b) => (b.onclick = () => { const z = +b.dataset.z; zoom = z ? Math.max(0.5, Math.min(2.5, zoom + z * 0.15)) : 1; fit(!z); }));
     $('#full').onclick = () => { $('#mapcard').classList.toggle('full'); document.body.classList.toggle('noscroll'); fit(true); };
     fit();
@@ -477,6 +485,7 @@
   function fit(refit) {
     const wrap = $('#wrap'), full = $('#mapcard').classList.contains('full'), c = contentSize();
     if (refit || autoS == null) autoS = full ? Math.max(0.45, Math.min(2, (wrap.clientWidth - 2) / c.w, (wrap.clientHeight - 2) / c.h)) : Math.max(0.45, Math.min(1, (wrap.clientWidth - 2) / c.w));
+    rects = null;
     scale = autoS * zoom;
     $('#board').style.transform = `scale(${scale})`;
     sizeBoard();
@@ -563,16 +572,23 @@
 
   function changed() { save(); update(); }
 
-  function update() {
+  // Ползунок шлёт десятки событий в секунду. Схему пересчитываем и рисуем один раз за кадр, а дорогое
+  // (предпросмотр эффекта каждого блока палитры, подбор эталона) откладываем, пока движение не остановится.
+  let frame = 0, lazyT = 0;
+  function soon() { if (!frame) frame = requestAnimationFrame(() => { frame = 0; if (step().kind === 'map') update(true); }); }
+  function update(moving) {
+    if (frame) { cancelAnimationFrame(frame); frame = 0; }
+    clearTimeout(lazyT); lazyT = 0;
     last = analyzeG(st.graph, step().stage);
     $('#emptyMap').hidden = st.graph.nodes.length > 0;
     renderNodes(last);
     unclutter();
     drawEdges();
     renderPanels(last);
-    renderPalette(last);
-    renderSteps();
+    if (moving) lazyT = setTimeout(() => { lazyT = 0; if (step().kind === 'map' && $('#palBook')) settle(); }, 140);
+    else settle();
   }
+  function settle() { renderCmp(last); renderPalette(last); renderSteps(); }
 
   // ----- палитра с предпросмотром эффекта -----
   function effects(before, after) {
@@ -617,8 +633,8 @@
         return `<details class="pgroup" data-g="${esc(key)}" ${st.palClosed && st.palClosed[key] ? '' : 'open'}><summary>${esc(g)}<span>${items.length}</span></summary>${items.map(item).join('')}</details>`;
       }).join('');
     };
-    $('#palBook').innerHTML = side(false);
-    $('#palExp').innerHTML = side(true);
+    // Считаем только открытую вкладку: у каждого блока свой прогон движка ради предпросмотра.
+    [['#palBook', false], ['#palExp', true]].forEach(([sel, extra]) => { const box = $(sel); if (!box.closest('[data-panel]').hidden) setH(box, side(extra)); });
     $$('.pal-card .pi').forEach(bindPaletteItem);
     $$('.pal-card details').forEach((d) => (d.ontoggle = () => { st.palClosed = Object.assign({}, st.palClosed, { [d.dataset.g]: !d.open }); save(); }));
     $$('.pal-card [data-info]').forEach((b) => (b.onclick = () => { const t = b.dataset.info; infoOpen.has(t) ? infoOpen.delete(t) : infoOpen.add(t); renderPalette(last); }));
@@ -650,8 +666,23 @@
   }
 
   // ----- узлы и стрелки -----
+  // Блоки обновляются по одному: неизменившийся блок остаётся в DOM как был.
   function renderNodes(r) {
-    $('#nodes').innerHTML = st.graph.nodes.map((g) => {
+    const box = $('#nodes'), have = new Map([...box.children].map((el) => [el.dataset.id, el])), tpl = document.createElement('template');
+    st.graph.nodes.forEach((g) => {
+      const html = nodeHtml(g, r), old = have.get(g.id);
+      have.delete(g.id);
+      if (old && old.__h === html) return;
+      tpl.innerHTML = html;
+      const el = tpl.content.firstElementChild;
+      el.__h = html;
+      if (old) old.replaceWith(el); else box.appendChild(el);
+    });
+    have.forEach((el) => el.remove());
+    rects = null;
+  }
+  function nodeHtml(g, r) {
+    {
       const n = r.nodes[g.id], b = n.def, hot = n === r.m.bottleneck && r.m.maxU > 0.7;
       const body = b.cap
         ? `<div class="meter"><i class="${cls(n.util)}" style="width:${Math.min(100, n.util * 100)}%"></i></div>
@@ -664,7 +695,7 @@
         ${body}${cl}
         ${n.why ? `<div class="nwhy ${n.why.kind}">${n.why.kind === 'useless' ? '💤 Не нужен в этой главе' : n.why.kind === 'dup' ? '💤 Лишний дубль' : '🔌 Не подключён'}</div>` : ''}
         <button class="port" data-port aria-label="Провести стрелку от «${esc(b.name)}»" title="Потяни к другому блоку"></button></div>`;
-    }).join('');
+    }
   }
 
   function sizePills(b, n) {
@@ -714,9 +745,12 @@
     return '';
   }
 
+  // Размеры блоков читаем одним проходом и помним до следующего изменения вёрстки:
+  // стрелки спрашивают их по два раза на каждую, а при перетаскивании ещё и на каждое движение мыши.
+  let rects = null;
   function rectOf(id) {
-    const el = $(`.node[data-id="${id}"]`);
-    return el && { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
+    if (!rects) { rects = new Map(); $$('#nodes > .node').forEach((el) => rects.set(el.dataset.id, { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight })); }
+    return rects.get(id) || null;
   }
   function clip(r, tx, ty, pad) {
     const cx = r.x + r.w / 2, cy = r.y + r.h / 2, dx = tx - cx, dy = ty - cy;
@@ -732,6 +766,8 @@
   function drawEdges(temp) {
     const r = last, out = [];
     let delAt = null;
+    // texts: подписи и подсказки стрелки по порядку (<title> и <text>), чтобы обновлять их, не пересоздавая стрелку.
+    const strip = (h) => h.replace(/<title>[^<]*<\/title>/g, '<title></title>').replace(/(<text[^>]*>)[^<]*<\/text>/g, '$1</text>');
     st.graph.edges.forEach((e, i) => {
       const a = rectOf(e.from), b = rectOf(e.to);
       if (!a || !b) return;
@@ -742,18 +778,39 @@
       const lines = fl.map((f, k) => {
         const o = (k - (fl.length - 1) / 2) * 6, v = pass[f.id], id = `p${i}_${k}`;
         const d = curve(x1 + nx * o, y1 + ny * o, x2 + nx * o, y2 + ny * o);
-        const n = Math.max(1, Math.min(4, Math.round(1 + Math.log10(v + 1)))), dur = Math.max(0.9, 2.8 - 0.4 * Math.log10(v + 1));
+        const n = Math.max(1, Math.min(4, Math.round(1 + Math.log10(v + 1)))), dur = +Math.max(0.9, 2.8 - 0.4 * Math.log10(v + 1)).toFixed(1);
         const dots = reduceMotion ? '' : Array.from({ length: n }, (_, j) => `<circle r="4" fill="${f.color}"><animateMotion dur="${dur}s" begin="-${((j * dur) / n).toFixed(2)}s" repeatCount="indefinite"><mpath href="#${id}"/></animateMotion></circle>`).join('');
         return `<path id="${id}" class="fl" d="${d}" style="stroke:${f.color}"><title>${esc(f.label)}: ${fmt(v)} rps${v < loads[f.id] * 0.995 ? ` из ${fmt(loads[f.id])}` : ''}</title></path>${dots}`;
       }).join('');
       const d = curve(x1, y1, x2, y2), sel = selEdge === i, sum = fl.reduce((s, f) => s + loads[f.id], 0), got = fl.reduce((s, f) => s + pass[f.id], 0), cut = got < sum * 0.995;
       // Перегруженный блок выше по цепочке пропускает меньше, чем нужно: показываем «прошло из нужного».
       const lab = sum && len > 90 ? `<text class="elab ${cut ? 'cut' : ''}" x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 8}">${fmt(got)}${cut ? ` из ${fmt(sum)}` : ''} rps</text>` : '';
-      out.push(`<g class="edge ${sel ? 'sel' : ''} ${fl.length ? 'live' : ''}" data-e="${i}"><path class="hit" d="${d}"><title>${esc(r ? edgeText(e) : '')}</title></path><path class="base" d="${d}" marker-end="url(#${sel ? 'arrS' : 'arr'})"/>${lines}${lab}</g>`);
+      out.push(`<g class="edge ${sel ? 'sel' : ''} ${fl.length ? 'live' : ''}" data-e="${i}" data-k="${e.from}>${e.to}"><path class="hit" d="${d}"><title>${esc(r ? edgeText(e) : '')}</title></path><path class="base" d="${d}" marker-end="url(#${sel ? 'arrS' : 'arr'})"/>${lines}${lab}</g>`);
       if (sel) delAt = [(x1 + x2) / 2, (y1 + y2) / 2];
     });
     if (temp) out.push(`<path class="temp" d="${curve(...temp)}"/>`);
-    $('#eg').innerHTML = out.join('');
+    // Стрелка пересоздаётся, только если изменилась её форма или набор потоков. Если поменялись одни числа,
+    // правим текст на месте: точки на стрелке продолжают бежать, а не прыгают в начало при каждом движении ползунка.
+    const eg = $('#eg'), old = [...eg.children];
+    out.forEach((html, i) => {
+      const sig = strip(html), el = old[i];
+      if (el && el.__sig === sig) {
+        if (el.__h !== html) {
+          const tmp = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          tmp.innerHTML = html;
+          const from = tmp.querySelectorAll('title, text'), to = el.querySelectorAll('title, text');
+          from.forEach((x, k) => { if (to[k] && to[k].textContent !== x.textContent) to[k].textContent = x.textContent; });
+          el.__h = html;
+        }
+        return;
+      }
+      const tmp = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      tmp.innerHTML = html;
+      const fresh = tmp.firstElementChild;
+      fresh.__sig = sig; fresh.__h = html;
+      if (el) el.replaceWith(fresh); else eg.appendChild(fresh);
+    });
+    old.slice(out.length).forEach((el) => el.remove());
     const del = $('#edel');
     del.hidden = !delAt;
     if (delAt) { del.style.left = delAt[0] - 13 + 'px'; del.style.top = delAt[1] - 13 + 'px'; }
@@ -812,6 +869,7 @@
           g.x = Math.max(0, Math.min(BW - nodeEl.offsetWidth, Math.round((ox + x - sx) / 10) * 10));
           g.y = Math.max(0, Math.min(BH - nodeEl.offsetHeight, Math.round((oy + y - sy) / 10) * 10));
           nodeEl.style.left = g.x + 'px'; nodeEl.style.top = g.y + 'px';
+          const rc = rectOf(g.id); if (rc) { rc.x = g.x; rc.y = g.y; }
           drawEdges();
         }, () => { nodeEl.classList.remove('drag'); if (moved) save(); select(g.id); });
         return;
@@ -898,16 +956,16 @@
       { k: 'cx', label: 'Сложность', v: m.cx, show: m.cx.toFixed(1).replace('.', ','), cls: m.cx > CX[1] ? 'bad' : m.cx > CX[0] ? 'warn' : '', sub: 'условных баллов', better: -1 },
     ];
     const kp = {};
-    $('#kpis').innerHTML = tiles.map((t) => {
+    setH($('#kpis'), tiles.map((t) => {
       kp[t.k] = t.v;
       const p = prevKpi && prevKpi[t.k], dv = p != null && t.v != null ? t.v - p : 0;
       const rel = p ? Math.abs(dv / p) : Math.abs(dv);
       const delta = rel > 0.01 ? `<span class="dlt ${dv * t.better > 0 ? 'up' : 'down'}">${dv > 0 ? '▲' : '▼'}</span>` : '';
       return `<div class="kpi t-${t.cls || 'acc'}"><div class="k"><i></i>${esc(t.label)}</div><div class="v">${esc(t.show)}${delta}</div><div class="s">${esc(t.sub)}</div></div>`;
-    }).join('');
+    }).join(''));
     prevKpi = kp;
 
-    $('#legend').innerHTML = r.flows.filter((f) => !f.optional || f.ok).map((f) => `<button class="lg ${st.show === f.id ? 'on' : ''} ${f.ok ? '' : 'off'}" data-f="${f.id}" title="Показать только этот поток"><i style="background:${f.color}"></i>${esc(f.label)}<span>${fmt(f.rate)} rps · ${f.ok ? ms(f.lat) : 'не доходит'}${f.ok && f.pass < 0.995 ? ` · <b class="bad">проходит ${pct(f.pass)}</b>` : ''}</span></button>`).join('');
+    setH($('#legend'), r.flows.filter((f) => !f.optional || f.ok).map((f) => `<button class="lg ${st.show === f.id ? 'on' : ''} ${f.ok ? '' : 'off'}" data-f="${f.id}" title="Показать только этот поток"><i style="background:${f.color}"></i>${esc(f.label)}<span>${fmt(f.rate)} rps · ${f.ok ? ms(f.lat) : 'не доходит'}${f.ok && f.pass < 0.995 ? ` · <b class="bad">проходит ${pct(f.pass)}</b>` : ''}</span></button>`).join(''));
     $$('#legend .lg').forEach((b) => (b.onclick = () => { st.show = st.show === b.dataset.f ? null : b.dataset.f; save(); renderPanels(last); drawEdges(); }));
 
     $$('[data-pset]').forEach((box) => {
@@ -920,19 +978,18 @@
       $('[data-open]', box).onclick = () => { select(g.id); $('#mapcard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
     });
     const d = r.d;
-    $('#scnsrc').innerHTML = `📐 На входе из оценки: ${L.flows.filter((f) => !f.optional).map((f) => `<span class="fr"><i style="background:${f.color}"></i>${esc(f.label)} ${fmt(f.rate(d))}/с</span>`).join('')} <button class="lnk" data-go="${L.steps.findIndex((x) => x.kind === 'est')}">изменить</button>`;
+    setH($('#scnsrc'), `📐 На входе из оценки: ${L.flows.filter((f) => !f.optional).map((f) => `<span class="fr"><i style="background:${f.color}"></i>${esc(f.label)} ${fmt(f.rate(d))}/с</span>`).join('')} <button class="lnk" data-go="${L.steps.findIndex((x) => x.kind === 'est')}">изменить</button>`);
     $('[data-go]', $('#scnsrc')).onclick = (e) => go(+e.target.dataset.go);
-    renderCmp(r);
     const nb = st.graph.nodes.filter((g) => !L.blocks[g.type].extra).length, nx = st.graph.nodes.length - nb;
-    $('#bookline').innerHTML = `<span class="bk">📘 По книге: ${nb}</span><span class="xp">🧪 Эксперименты: ${nx}</span><span class="muted">Блоки-эксперименты на карте с пунктирной рамкой.</span>`;
+    setH($('#bookline'), `<span class="bk">📘 По книге: ${nb}</span><span class="xp">🧪 Эксперименты: ${nx}</span><span class="muted">Блоки-эксперименты на карте с пунктирной рамкой.</span>`);
     const goals = L.goals[step().stage], done = goals.filter((g) => g.check(r)).length;
-    $('#goals').innerHTML = `<div class="gprog"><i style="width:${(done / goals.length) * 100}%"></i></div><p class="muted">Выполнено ${done} из ${goals.length}${done === goals.length ? ' 🎉' : ''}</p>
-      <ul class="goals">${goals.map((g) => { const ok = g.check(r); return `<li class="${ok ? 'done' : ''}"><span class="${ok ? 'y' : 'n'}">${ok ? '✔' : '○'}</span><span>${esc(g.text)}</span></li>`; }).join('')}</ul>`;
+    setH($('#goals'), `<div class="gprog"><i style="width:${(done / goals.length) * 100}%"></i></div><p class="muted">Выполнено ${done} из ${goals.length}${done === goals.length ? ' 🎉' : ''}</p>
+      <ul class="goals">${goals.map((g) => { const ok = g.check(r); return `<li class="${ok ? 'done' : ''}"><span class="${ok ? 'y' : 'n'}">${ok ? '✔' : '○'}</span><span>${esc(g.text)}</span></li>`; }).join('')}</ul>`);
     const order = { bad: 0, warn: 1, info: 2 }, icon = { bad: '⛔', warn: '⚠️', info: '💡' };
     const ws = r.warnings.slice().sort((a, b) => order[a.lvl] - order[b.lvl]), bad = ws.filter((w) => w.lvl === 'bad'), rest = ws.filter((w) => w.lvl !== 'bad');
     $('#broken').hidden = !bad.length;
-    $('#broken').innerHTML = `<h4><span>❗</span> Что сломалось</h4><ul>${bad.map((w) => `<li>${esc(w.text)}</li>`).join('')}</ul>`;
-    $('#warns').innerHTML = rest.length ? rest.map((w) => `<div class="w ${w.lvl}"><span>${icon[w.lvl]}</span><span>${esc(w.text)}</span></div>`).join('') : '<div class="note">Пока всё спокойно.</div>';
+    setH($('#broken'), `<h4><span>❗</span> Что сломалось</h4><ul>${bad.map((w) => `<li>${esc(w.text)}</li>`).join('')}</ul>`);
+    setH($('#warns'), rest.length ? rest.map((w) => `<div class="w ${w.lvl}"><span>${icon[w.lvl]}</span><span>${esc(w.text)}</span></div>`).join('') : '<div class="note">Пока всё спокойно.</div>');
     renderInspector();
   }
 
@@ -942,11 +999,11 @@
     const k = (x) => { const b = x.flows.find((f) => f.id === MAIN.id);
       if (!x.m.routed) return '<span class="bad">схема не достроена: часть потоков не доходит до данных</span>';
       return `<span class="${x.m.served >= 1 && x.m.maxU <= 0.9 ? 'ok' : 'bad'}">выдерживает ${pct(x.m.served)}, пик загрузки ${pct(x.m.maxU)}</span> · ${esc(MAIN.label.toLowerCase())} ${b && b.ok ? ms(b.lat) : '—'} · ${money(x.m.cost)} · сложность ${x.m.cx.toFixed(1)}`; };
-    $('#cmp').innerHTML = `<div class="cref ${A.ok ? '' : 'nok'}"><div class="ct"><b>${A.original ? '📘 Эталон: оригинал из книги' : `🔧 Эталон: адаптация под ${esc(scnText())}`}</b><small>${k(A.r)}</small></div>
+    setH($('#cmp'), `<div class="cref ${A.ok ? '' : 'nok'}"><div class="ct"><b>${A.original ? '📘 Эталон: оригинал из книги' : `🔧 Эталон: адаптация под ${esc(scnText())}`}</b><small>${k(A.r)}</small></div>
       ${A.original ? '<p class="muted">При этом сценарии схема из книги выдерживает нагрузку без изменений.</p>'
         : `<details><summary>Чем отличается от книги (${A.changes.length})</summary><ul>${A.changes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul><p class="muted">Оригинал из книги здесь: ${k(A.before)}</p></details>`}
       ${A.ok ? '' : `<div class="blk">⛔ Даже адаптированный эталон не выдерживает. Упёрлись: ${A.blockers.map((x) => `«${esc(x.name)}» ${pct(x.util)} (${esc(x.limit)})`).join(', ')}. Нужно: ${[...new Set(A.blockers.map((x) => x.need))].map(esc).join('; ')}.</div>`}</div>
-      <div class="cmine"><div class="ct"><b>🧩 Твоя схема</b><small>${st.graph.nodes.length ? k(r) : 'карта пустая'}</small></div></div>`;
+      <div class="cmine"><div class="ct"><b>🧩 Твоя схема</b><small>${st.graph.nodes.length ? k(r) : 'карта пустая'}</small></div></div>`);
   }
 
   function renderInspector() {
@@ -959,7 +1016,7 @@
     const n = last.nodes[g.id], b = L.blocks[g.type];
     const flows = last.flows.filter((f) => n.flows[f.id] > 0), max = Math.max(...flows.map((f) => n.flows[f.id]), 1);
     const li = (a) => (a && a.length ? '<ul>' + a.map((t) => `<li>${esc(t)}</li>`).join('') + '</ul>' : '');
-    box.innerHTML = `<div class="ih cat-${b.cat}"${brand(b)}><span class="ni">${icon(b)}</span><div><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''} · ${b.extra ? '🧪 эксперимент, в книге его нет' : '📘 по книге'}</small></div><button class="nx" id="inspX" aria-label="Закрыть">×</button></div>
+    setH(box, `<div class="ih cat-${b.cat}"${brand(b)}><span class="ni">${icon(b)}</span><div><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''} · ${b.extra ? '🧪 эксперимент, в книге его нет' : '📘 по книге'}</small></div><button class="nx" id="inspX" aria-label="Закрыть">×</button></div>
       <p>${esc(b.learn.what)}</p>
       ${b.cap ? `<div class="istats"><div><span>Нагрузка</span><b>${fmt(n.load)} / ${fmt(n.capTotal)} rps</b></div><div><span>Загрузка</span><b class="${cls(n.util)}">${pct(n.util)}</b></div><div><span>${esc(b.repLabel || 'Реплик')}</span><b>${n.rep}${!b.tune && n.rep >= n.maxRep ? ' (макс.)' : ''}</b></div><div><span>Задержка</span><b>${ms((b.lat + (n.latAdd || 0)) * n.q)}</b></div></div>` : ''}
       ${n.explain && n.explain.length ? `<h5>Почему такая нагрузка</h5><ul class="expl">${n.explain.map((t) => `<li>${esc(t)}</li>`).join('')}${n.limit ? `<li class="lim">Упёрся: ${esc(n.limit)}. Нужно: ${esc(n.need)}.</li>` : ''}</ul>` : ''}
@@ -969,7 +1026,7 @@
       ${b.learn.minus && b.learn.minus.length ? `<h5 class="minus">Чем платим</h5>${li(b.learn.minus)}` : ''}
       ${b.fit ? `<h5>Когда брать</h5><div class="pfit">${fitHtml(b.fit)}</div>` : ''}
       ${(b.learn.more || []).map((m) => `<details class="more"><summary>${esc(m.title)}</summary><dl>${m.items.map(([t, d]) => `<dt>${esc(t)}</dt><dd>${esc(d)}</dd>`).join('')}</dl></details>`).join('')}
-      <button class="btn sm ghost danger" id="inspDel">Убрать с карты</button>`;
+      <button class="btn sm ghost danger" id="inspDel">Убрать с карты</button>`);
     $$('#insp [data-tf]').forEach((el) => (el.onclick = () => setCfg(g, el.dataset.tf, el.dataset.v)));
     if ($('#autoTune')) $('#autoTune').onclick = () => autoTune(g);
     $('#inspX').onclick = () => select(null);
@@ -1025,7 +1082,7 @@
     $$('#probs input[type=radio]').forEach((r) => (r.onchange = () => { D.choices[r.name] = r.value; save(); renderProbs(); update(); }));
     $$('#probs [data-par]').forEach((el) => (el.oninput = () => {
       const x = L.problems.flatMap((p) => p.params || []).find((q) => q.id === el.dataset.par);
-      D.params[x.id] = +el.value; $('#out_' + x.id).textContent = fmt(+el.value) + ' ' + x.unit; save(); update();
+      D.params[x.id] = +el.value; $('#out_' + x.id).textContent = fmt(+el.value) + ' ' + x.unit; save(); soon();
     }));
   }
 
