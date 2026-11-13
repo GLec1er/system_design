@@ -35,9 +35,10 @@
   const icon = (b) => (LOGO[b.logo] ? `<svg viewBox="0 0 24 24" fill="${LOGO[b.logo].color}" role="img" aria-label="${esc(b.name)}"><path d="${LOGO[b.logo].d}"/></svg>` : b.icon);
   const brand = (b) => { const c = b.brand || (LOGO[b.logo] && LOGO[b.logo].color); return c ? ` style="--c:${c}"` : ''; };
   const cls = (u) => (u > 0.9 ? 'bad' : u > 0.7 ? 'warn' : '');
-  // Что глава показывает в плитках задержки и считает главным потоком (по умолчанию как в главе 7: просмотр и бронь).
-  const KF = L.kpiFlows || [{ id: 'view', label: 'Просмотр' }, { id: 'book', label: 'Бронь' }];
-  const MAIN = KF.find((f) => f.id === (L.mainFlow || 'book')) || KF[KF.length - 1];
+  // Что глава показывает в плитках задержки и какой поток считает главным. Обязательные поля главы
+  // перечислены в LabEngine.contract: общий код не подставляет за главу значения другой главы.
+  const KF = L.kpiFlows;
+  const MAIN = KF.find((f) => f.id === L.mainFlow) || KF[KF.length - 1];
   const CX = L.cx || [14, 20]; // пороги плитки «Сложность»: жёлтая и красная
 
   // ---------- состояние ----------
@@ -1092,14 +1093,14 @@
     const S = L.summary, r = analyze('deep'), ref = refFor('deep'), c = st.deep.choices, d = r.d;
     const has = (t) => st.graph.nodes.some((n) => n.type === t);
     const cfgOf = (t) => { const n = st.graph.nodes.find((q) => q.type === t); return n && E.tuneOf(L.blocks[t], n.cfg); };
-    const rc = cfgOf(S.db || 'resDB'), book = r.flows.find((f) => f.id === MAIN.id);
+    const rc = cfgOf(S.db), book = r.flows.find((f) => f.id === MAIN.id);
     const choice = (key) => { const p = L.problems.find((q) => q.key === key), o = p.options.find((x) => x.v === c[key]) || p.options[0];
       return { p, o, ok: (p.best || []).includes(o.v), say: (S.says[key] || {})[o.v] || p.say }; };
     const names = (g) => [...new Set(g.nodes.map((n) => L.blocks[n.type].name))];
     const mine = names(st.graph), theirs = names(ref.graph);
     const lbC = L.blocks.lb && cfgOf('lb');
     const x = { d, r, choice, has, fmt, cfgOf, lb: lbC ? `${lbC.layer === 'l7' ? 'L7' : 'L4'}, ${{ rr: 'round robin', least: 'least connections', hash: 'IP hash' }[lbC.alg]}` : '', shards: rc ? rc.shards : 1, rc, bookLat: book && book.ok ? book.lat : 0,
-      extras: mine.filter((n) => !(S.core || ['Клиент', 'API Gateway', 'Hotel Service', 'Reservation Service', 'Payment Service', 'Hotel DB', 'Reservation DB', 'Payment DB', 'Балансировщик нагрузки']).includes(n)) };
+      extras: mine.filter((n) => !S.core.includes(n)) };
     return { S, r, ref, x, script: S.script(x), mine, theirs, onlyMine: mine.filter((n) => !theirs.includes(n)), onlyRef: theirs.filter((n) => !mine.includes(n)) };
   }
   function sumView() {
@@ -1111,11 +1112,11 @@
     const row = (label, a, b, better) => `<tr><td>${label}</td><td class="num ${better === true ? 'good' : better === false ? 'badc' : ''}">${a}</td><td class="num">${b}</td></tr>`;
     const pct = (v, routed) => (routed ? Math.round(v * 100) + '%' : '—');
     const probs = L.problems.filter((p) => p.options);
-    const BAD = S.badRow || { label: 'Дубли и перепродажи за день', ids: ['dup', 'oversell'] }, bad = (mm) => BAD.ids.reduce((a, id) => a + (mm[id] || 0), 0);
+    const BAD = S.badRow, bad = (mm) => BAD.ids.reduce((a, id) => a + (mm[id] || 0), 0);
     return `${head(step(), 'Итог собран из того, что ты сделал на предыдущих шагах: твоя схема против эталона, твои решения против книги и рассказ для интервью с твоими цифрами.')}
       <section class="card"><h4 class="grp first">Твой результат</h4><div class="ssteps">
         ${card(stepIdx('req'), 'Требования', st.reqChecked ? `${sc.ok} из ${sc.total}` : '—', st.reqChecked ? 'верных ответов' : 'не проверены', st.reqChecked ? sc.ok === sc.total : null)}
-        ${card(stepIdx('est'), 'Оценка нагрузки', S.estCard ? esc(S.estCard(x.d, fmt)) : `${fmt(x.d.tps * x.d.k)} броней/с`, esc(scnText()), null)}
+        ${card(stepIdx('est'), 'Оценка нагрузки', esc(S.estCard(x.d, fmt)), esc(scnText()), null)}
         ${card(stepIdx('map', 'base'), 'Дизайн', `${goalsOk('base', base)} из ${L.goals.base.length}`, 'целей выполнено', goalsOk('base', base) === L.goals.base.length)}
         ${card(stepIdx('map', 'deep'), 'Углубление', `${goalsOk('deep', r)} из ${L.goals.deep.length}`, 'целей выполнено', goalsOk('deep', r) === L.goals.deep.length)}
         ${card(stepIdx('map', 'deep'), 'Решения', `${probs.filter((p) => x.choice(p.key).ok).length} из ${probs.length}`, 'совпадают с книгой', probs.every((p) => x.choice(p.key).ok))}

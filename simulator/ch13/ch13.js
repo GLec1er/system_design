@@ -433,6 +433,7 @@
       else badge(of('mdPub')[0], '📡', 'Multicast');
     },
 
+    bgNote: 'Матчинг это не тормозит: рыночные данные и отчёты догоняют позже.',
     overload: 'больше копий или резать мусор на входе',
     linkWhy(a, b) {
       const B = this.blocks;

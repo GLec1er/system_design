@@ -174,7 +174,7 @@
     Object.values(nodes).forEach((n) => { if (n.def.tune === 'lb' && n.cfg.layer === 'l7') { n.capMult = 0.4; n.latAdd = 1; } });
     if (lab.model) lab.model(ctx);
 
-    Object.values(nodes).forEach((n) => { if (!Object.keys(n.flows).length) n.why = idleWhy(lab, nodes, flows, n); });
+    Object.values(nodes).forEach((n) => { if (!Object.keys(n.flows).length) n.why = idleWhy(lab, nodes, flows, n, d); });
 
     let maxU = 0, bottleneck = null, bgU = 0;
     Object.values(nodes).forEach((n) => {
@@ -228,7 +228,7 @@
         if (n.util > 0.9) {
           const hotBound = hot > 1 / s + 1e-9;
           n.limit = hotBound ? 'горячий ключ в одном шарде' : 'шарды';
-          n.need = !hotBound && s < Math.max(...opt('kv', 'shards', def)) ? 'больше шардов' : R < 2 && !def.noRepl ? 'реплики шарда для чтения' : !near ? 'локальный кэш в сервисе (L1)' : (def.hotFix || 'дробить горячий ключ на копии (hotel:42#1…#N) или кэшировать страницу на CDN');
+          n.need = !hotBound && s < Math.max(...opt('kv', 'shards', def)) ? 'больше шардов' : R < 2 && !def.noRepl ? 'реплики шарда для чтения' : !near ? 'локальный кэш в сервисе (L1)' : (def.hotFix || 'дробить горячий ключ на копии (key#1…#N)');
         }
         ctx.cost += (def.cost || 0) * s * (1 + R);
         ctx.cx += (s > 1 ? 0.5 + 0.2 * Math.log2(s) : 0) + 0.2 * R + (near ? 1 : 0);
@@ -284,7 +284,7 @@
       n.bg = Object.keys(n.flows).length > 0 && Object.keys(n.flows).every((id) => flows.find((f) => f.id === id).optional);
       if (n.bg) {
         if (n.util > bgU) bgU = n.util;
-        if (n.util > 1) ctx.warn('warn', `Фоновая обработка в «${def.name}» не успевает: очередь растёт на ${rps(n.load - n.capTotal)} событий/с, доставка отстаёт всё сильнее. ${lab.bgNote || 'Бронь это не тормозит.'} Упёрся: ${n.limit}. Нужно: ${n.need}.`);
+        if (n.util > 1) ctx.warn('warn', `Фоновая обработка в «${def.name}» не успевает: очередь растёт на ${rps(n.load - n.capTotal)} событий/с, доставка отстаёт всё сильнее. ${lab.bgNote} Упёрся: ${n.limit}. Нужно: ${n.need}.`);
         return;
       }
       if (n.util > maxU) { maxU = n.util; bottleneck = n; }
@@ -322,12 +322,12 @@
 
   // Почему через блок не идёт ни один поток. kind: off (не подключён: не хватает стрелки),
   // dup (такой блок уже работает), useless (блок не участвует в потоках главы, это не поломка).
-  function idleWhy(lab, nodes, flows, n) {
+  function idleWhy(lab, nodes, flows, n, d) {
     const def = n.def, name = (t) => lab.blocks[t].name, names = (spec) => [].concat(spec).map(name).join(' или ');
     if (Object.values(nodes).some((o) => o !== n && o.type === n.type && Object.keys(o.flows).length))
       return { kind: 'dup', text: `Такой блок уже есть, и потоки идут через него. Второй ничего не получает: убери его.` };
     if (def.via) return { kind: 'off', text: `Не подключён: нужны стрелки ${(def.links || []).map(([a, b]) => (a === 'self' ? `${def.name} → ${names(b)}` : `${names(a)} → ${def.name}`)).join(' и ')}.` };
-    const ab = def.absorb && (typeof def.absorb === 'function' ? def.absorb({ k: 1, page: 1, tps: 1, view: 1 }, Object.assign(tuneOf(def), { admit: 0 })) : def.absorb);
+    const ab = def.absorb && (typeof def.absorb === 'function' ? def.absorb(d, Object.assign(tuneOf(def), { admit: 0 })) : def.absorb);
     const absorbs = lab.flows.filter((f) => ab && ab[f.id]);
     if (absorbs.length) {
       const from = (def.links || []).filter(([a]) => a !== 'self').map(([a]) => names(a));
@@ -480,8 +480,29 @@
     return { graph: g, r, before, changes, original: !changes.length, ok: r.m.maxU <= LIM, blockers };
   }
 
+  // Что глава обязана задать сама. Общий код не подставляет умолчаний: раньше ими были значения главы 7,
+  // и глава без поля молча показывала «бронь» и «Hotel Service». Возвращает список того, чего не хватает.
+  function contract(lab) {
+    const miss = [], need = (ok, what) => { if (!ok) miss.push(what); };
+    const S = lab.summary || {}, flow = (id) => (lab.flows || []).some((f) => f.id === id), block = (t) => !!(lab.blocks || {})[t];
+    ['id', 'n', 'title', 'intro', 'steps', 'requirements', 'estimate', 'api', 'board', 'scenario', 'blocks', 'flows', 'derive', 'reference', 'problems', 'metrics', 'goals', 'summary', 'overload', 'bgNote']
+      .forEach((k) => need(lab[k] !== undefined, k));
+    need(Array.isArray(lab.kpiFlows) && lab.kpiFlows.length > 0 && lab.kpiFlows.every((f) => flow(f.id)), 'kpiFlows: потоки из flows');
+    need((lab.kpiFlows || []).some((f) => f.id === lab.mainFlow), 'mainFlow: один из kpiFlows');
+    need(block(S.db), 'summary.db: блок главной БД');
+    need(Array.isArray(S.core) && S.core.length > 0, 'summary.core: имена блоков из книги');
+    ['script', 'estCard'].forEach((k) => need(typeof S[k] === 'function', 'summary.' + k));
+    need(S.badRow && Array.isArray(S.badRow.ids) && S.badRow.ids.every((id) => (lab.metrics || []).some((m) => m.id === id)), 'summary.badRow: метрики из metrics');
+    ['says', 'tradeoffs', 'pitfalls', 'questions'].forEach((k) => need(S[k], 'summary.' + k));
+    (lab.steps || []).filter((s) => s.kind === 'map').forEach((s) => { need((lab.reference || {})[s.stage], 'reference.' + s.stage); need((lab.goals || {})[s.stage], 'goals.' + s.stage); });
+    Object.entries(lab.blocks || {}).forEach(([t, b]) => { need(b.name && b.cat && b.learn && b.learn.what, `blocks.${t}: name, cat, learn.what`); need(!b.tune || TUNE[b.tune], `blocks.${t}.tune`); });
+    (lab.flows || []).forEach((f) => f.chain.forEach((c) => [].concat(c).forEach((t) => need(block(t), `flows.${f.id}: блок ${t}`))));
+    Object.values(lab.reference || {}).forEach((ref) => (ref.nodes || []).forEach((n) => need(block([].concat(n)[0]), 'reference: блок ' + [].concat(n)[0])));
+    return miss;
+  }
+
   const sizable = (t) => !!SIZES[t];
-  const api = { sizable, analyze, addBlock, canLink, linkTargets, sizeFor, refGraph, adapt, TUNE, optsOf, tuneOf, TARGET };
+  const api = { sizable, contract, analyze, addBlock, canLink, linkTargets, sizeFor, refGraph, adapt, TUNE, optsOf, tuneOf, TARGET };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.LabEngine = api;
 })(typeof window !== 'undefined' ? window : globalThis);
