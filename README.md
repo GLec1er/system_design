@@ -24,8 +24,8 @@
 | 5 | [Metrics Monitoring and Alerting System](chapters/05-metrics-monitoring/README.md) | сбор метрик, дашборды и алерты | 🟨 |
 | 6 | [Ad Click Event Aggregation](chapters/06-ad-click-aggregation/README.md) | агрегация кликов по рекламе в потоке событий | 🟨 |
 | 7 | [Hotel Reservation System](chapters/07-hotel-reservation/README.md) | система бронирования отелей | 🟨 |
-| 8 | [Distributed Email Service](chapters/08-email-service/README.md) | распределённый почтовый сервис | ⬜ |
-| 9 | [S3-like Object Storage](chapters/09-object-storage/README.md) | объектное хранилище в стиле S3 | ⬜ |
+| 8 | [Distributed Email Service](chapters/08-email-service/README.md) | распределённый почтовый сервис | 🟨 |
+| 9 | [S3-like Object Storage](chapters/09-object-storage/README.md) | объектное хранилище в стиле S3 | 🟨 |
 | 10 | [Real-time Gaming Leaderboard](chapters/10-gaming-leaderboard/README.md) | рейтинг игроков в реальном времени | 🟨 |
 | 11 | [Payment System](chapters/11-payment-system/README.md) | платёжная система | 🟨 |
 | 12 | [Digital Wallet](chapters/12-digital-wallet/README.md) | цифровой кошелёк, переводы между счетами | 🟨 |
