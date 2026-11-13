@@ -1,6 +1,6 @@
 // Окто в 3D: робот-осьминог из керамики с тёмными суставами и янтарными огнями.
 // Модель собирается из примитивов three.js, щупальца анимируются цепочкой суставов.
-// Пока модуль грузится (или если WebGL нет), видна статичная картинка img/octo.png, снятая с этой же модели.
+// Пока модуль грузится (или если WebGL нет), видна статичная картинка img/octo.webp, снятая с этой же модели.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js';
 
 const C = { shell: 0xf0e2c6, dark: 0x262c2f, visor: 0x15191b, amber: 0xffad42, iris: 0xf3a640 };
@@ -145,7 +145,7 @@ function setup(canvas, w, h) {
   return { renderer, scene, camera, m };
 }
 
-// Статичный кадр для img/octo.png (без анимации и чтобы было что показать до загрузки).
+// Статичный кадр для img/octo.webp (без анимации и чтобы было что показать до загрузки).
 export function still(canvas, w, h, s = { lookX: 0, lookY: 0, wave: 0, cheer: 0 }) {
   canvas.dataset.still = '1';
   const v = setup(canvas, w, h);

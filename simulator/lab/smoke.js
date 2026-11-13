@@ -63,6 +63,30 @@ const only = process.argv.slice(2).map(Number).filter(Boolean);
       await page.locator('.node').first().click();
       check(await page.locator('#insp').isVisible(), 'инспектор не открылся');
       await page.keyboard.press('Escape');
+      check(!(await page.locator('#insp').isVisible()), 'Esc не закрыл инспектор');
+      if (s.stage === 'base') {
+        // без мыши: убрать стрелку в инспекторе, провести её заново с клавиатуры, подвинуть блок стрелками
+        const state = () => page.evaluate(() => JSON.parse(localStorage.getItem('sd-lab-' + window.LAB.id)).graph);
+        const g0 = await state(), e0 = g0.edges[0];
+        await page.locator(`.node[data-id="${e0.from}"]`).focus();
+        await page.keyboard.press('Enter');
+        await page.locator('#insp [data-edel]').first().focus();
+        await page.keyboard.press('Enter');
+        const g1 = await state();
+        check(g1.edges.length === g0.edges.length - 1, 'стрелка не удалилась из инспектора');
+        const gone = g0.edges.find((e) => !g1.edges.some((x) => x.from === e.from && x.to === e.to));
+        await page.locator(`.node[data-id="${gone.from}"] [data-port]`).focus();
+        await page.keyboard.press('Enter');
+        await page.locator(`.node[data-id="${gone.to}"]`).focus();
+        await page.keyboard.press('Enter');
+        check((await state()).edges.length === g0.edges.length, 'стрелка не провелась с клавиатуры');
+        const x0 = (await state()).nodes.find((n) => n.id === gone.to);
+        await page.keyboard.press('ArrowDown');
+        const x1 = (await state()).nodes.find((n) => n.id === gone.to);
+        check(x1.y === x0.y + 10 || x1.y === x0.y, 'блок не двигается стрелками');
+        check(await page.evaluate((id) => document.activeElement && document.activeElement.dataset.id === id, gone.to), 'фокус потерялся после перерисовки');
+        await page.keyboard.press('Escape');
+      }
       // палитра: добавить и убрать блок
       const add = page.locator('.pal-card [data-panel]:not([hidden]) .pi').last();
       if (await add.count()) { await add.click(); await page.waitForTimeout(50); }

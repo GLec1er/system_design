@@ -309,6 +309,11 @@ a{color:var(--accent)}
 .node:hover{box-shadow:var(--shadow-lg)}
 .node.drag{cursor:grabbing;transform:scale(1.03);box-shadow:var(--shadow-lg);z-index:4;transition:none}
 .node.sel{box-shadow:0 0 0 2px var(--accent),var(--shadow-lg)}
+.node:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.node:focus-within .nx{opacity:1}
+.port:focus-visible,.nx:focus-visible,.edel:focus-visible,.pinfo:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.iedges{list-style:none;padding:0!important}
+.iedges li{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;padding:2px 0}
 .node.hot{box-shadow:0 0 0 2px var(--bad),0 0 22px color-mix(in srgb,var(--bad) 40%,transparent);animation:pulse 1.6s ease-in-out infinite}
 .node.idle{opacity:.75;border-style:dashed;border-top-style:solid}
 @keyframes pulse{50%{box-shadow:0 0 0 2px var(--bad),0 0 4px transparent}}

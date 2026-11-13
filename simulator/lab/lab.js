@@ -415,7 +415,7 @@
     const intro = deep
       ? 'Схема та же, но теперь появляются проблемы. Выбирай решения в карточках под картой, крути нагрузку и пробуй необязательные блоки: метрики покажут, что стало лучше и что хуже.'
       : 'Собери архитектуру. Каждый поток должен дойти от клиента до своих данных. Попробуй и необязательные блоки: у каждого в палитре видно, что изменится, если его добавить.';
-    return `${head(s, intro, ['Перетащи блок из палитры на карту или нажми на него', 'Тяни стрелку от кружка на краю блока', 'Нажми на блок, чтобы увидеть детали', 'Нажми на стрелку, чтобы удалить её'])}
+    return `${head(s, intro, ['Перетащи блок из палитры на карту или нажми на него', 'Тяни стрелку от кружка на краю блока', 'Нажми на блок, чтобы увидеть детали', 'Нажми на стрелку, чтобы удалить её', 'С клавиатуры: Tab по блокам, Enter открывает, стрелки двигают'])}
       <div class="kpis" id="kpis"></div>
       <section class="broken" id="broken" hidden></section>
       <div class="lab-grid">
@@ -670,6 +670,9 @@
   // Блоки обновляются по одному: неизменившийся блок остаётся в DOM как был.
   function renderNodes(r) {
     const box = $('#nodes'), have = new Map([...box.children].map((el) => [el.dataset.id, el])), tpl = document.createElement('template');
+    // Блок с фокусом могут пересоздать: запоминаем, где стоял фокус (сам блок, его × или кружок), и возвращаем.
+    const act = document.activeElement, focusNode = act && act.closest && act.closest('#nodes > .node');
+    const focusAt = focusNode && [focusNode.dataset.id, act === focusNode ? null : act.hasAttribute('data-port') ? '[data-port]' : '[data-del]'];
     st.graph.nodes.forEach((g) => {
       const html = nodeHtml(g, r), old = have.get(g.id);
       have.delete(g.id);
@@ -681,6 +684,10 @@
     });
     have.forEach((el) => el.remove());
     rects = null;
+    if (focusAt && !box.contains(document.activeElement)) {
+      const el = [...box.children].find((x) => x.dataset.id === focusAt[0]), to = el && (focusAt[1] ? el.querySelector(focusAt[1]) : el);
+      if (to) to.focus({ preventScroll: true });
+    }
   }
   function nodeHtml(g, r) {
     {
@@ -691,7 +698,7 @@
            <div class="nf">${sizePills(b, n)}<span class="pill">${ms(b.lat * n.q)}</span>${n.badges.map((x) => `<span class="pill bd" title="${esc(x.title)}">${x.icon}</span>`).join('')}</div>`
         : `<div class="nf"><span class="pill">${fmt(Object.values(n.flows).reduce((s, v) => s + v, 0))} rps</span></div>`;
       const cl = clusterHtml(b, n, r);
-      return `<div class="node cat-${b.cat} ${b.extra ? 'exp' : ''} ${cl ? 'wide' : ''} ${hot ? 'hot' : ''} ${n.load || !b.cap ? '' : 'idle'} ${selNode === g.id ? 'sel' : ''}" data-id="${g.id}" style="left:${g.x}px;top:${g.y}px;${brand(b).slice(8, -1)}">
+      return `<div class="node cat-${b.cat} ${b.extra ? 'exp' : ''} ${cl ? 'wide' : ''} ${hot ? 'hot' : ''} ${n.load || !b.cap ? '' : 'idle'} ${selNode === g.id ? 'sel' : ''}" data-id="${g.id}" tabindex="0" role="group" aria-label="${esc(b.name)}${b.cap ? `, загрузка ${pct(n.util)}` : ''}. Enter открывает детали, стрелки двигают блок" style="left:${g.x}px;top:${g.y}px;${brand(b).slice(8, -1)}">
         <div class="nh"><span class="ni">${icon(b)}</span><span class="nt"><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''}${b.extra ? ' · 🧪 эксперимент' : ''}</small></span><button class="nx" data-del aria-label="Удалить ${esc(b.name)}" title="Удалить">×</button></div>
         ${body}${cl}
         ${n.why ? `<div class="nwhy ${n.why.kind}">${n.why.kind === 'useless' ? '💤 Не нужен в этой главе' : n.why.kind === 'dup' ? '💤 Лишний дубль' : '🔌 Не подключён'}</div>` : ''}
@@ -863,6 +870,7 @@
         e.preventDefault();
         const g = st.graph.nodes.find((n) => n.id === nodeEl.dataset.id), [sx, sy] = pt(e), ox = g.x, oy = g.y;
         let moved = false;
+        nodeEl.focus({ preventScroll: true }); // preventDefault выше не даёт фокусу уйти с ползунка, а Esc и Delete должны относиться к блоку
         nodeEl.classList.add('drag');
         drag((ev) => {
           const [x, y] = pt(ev);
@@ -884,14 +892,41 @@
     };
     board.onclick = (e) => {
       const d = e.target.closest('[data-del]');
-      if (d) removeNode(d.closest('.node').dataset.id);
+      if (d) return removeNode(d.closest('.node').dataset.id);
+      // Кружок, нажатый с клавиатуры (Enter или пробел): начинаем стрелку, цель выбирается Tab и Enter.
+      const port = e.target.closest('[data-port]');
+      if (port && e.detail === 0) {
+        pendingFrom = port.closest('.node').dataset.id; marks(pendingFrom); drawEdges();
+        hint('Стрелка начата. Перейди клавишей Tab на блок, куда она ведёт, и нажми Enter. Esc отменяет.');
+      }
+    };
+    // С клавиатуры: Enter на блоке открывает детали (или завершает стрелку), стрелки двигают блок, Shift ускоряет.
+    board.onkeydown = (e) => {
+      const el = e.target.closest('.node');
+      if (!el || e.target !== el) return;
+      const id = el.dataset.id, g = st.graph.nodes.find((n) => n.id === id);
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (pendingFrom && pendingFrom !== id) addEdge(pendingFrom, id); else select(id);
+        return;
+      }
+      const dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+      if (!dir) return;
+      e.preventDefault();
+      const k = e.shiftKey ? 50 : 10;
+      g.x = Math.max(0, Math.min(BW - el.offsetWidth, g.x + dir[0] * k));
+      g.y = Math.max(0, Math.min(BH - el.offsetHeight, g.y + dir[1] * k));
+      el.style.left = g.x + 'px'; el.style.top = g.y + 'px';
+      const rc = rectOf(id); if (rc) { rc.x = g.x; rc.y = g.y; }
+      el.__h = null; // разметка блока помнит старые координаты
+      drawEdges(); save();
     };
     document.onkeydown = (e) => {
       if (step().kind !== 'map' || /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
-      if (e.key === 'Escape') { pendingFrom = null; selEdge = null; hint(null); marks(null); if ($('#mapcard').classList.contains('full')) $('#full').click(); drawEdges(); }
+      if (e.key === 'Escape') { const busy = pendingFrom || selEdge != null || $('#mapcard').classList.contains('full'); pendingFrom = null; selEdge = null; hint(null); marks(null); if ($('#mapcard').classList.contains('full')) $('#full').click(); if (!busy && selNode) select(null); else drawEdges(); }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selEdge != null) { st.graph.edges.splice(selEdge, 1); selEdge = null; changed(); }
-        else if (selNode) removeNode(selNode);
+        else { const f = document.activeElement.closest && document.activeElement.closest('#nodes > .node'); if (f || selNode) removeNode(f ? f.dataset.id : selNode); }
       }
     };
   }
@@ -1017,6 +1052,7 @@
     const n = last.nodes[g.id], b = L.blocks[g.type];
     const flows = last.flows.filter((f) => n.flows[f.id] > 0), max = Math.max(...flows.map((f) => n.flows[f.id]), 1);
     const li = (a) => (a && a.length ? '<ul>' + a.map((t) => `<li>${esc(t)}</li>`).join('') + '</ul>' : '');
+    const arrows = st.graph.edges.map((e, i) => ({ e, i })).filter(({ e }) => e.from === g.id || e.to === g.id);
     setH(box, `<div class="ih cat-${b.cat}"${brand(b)}><span class="ni">${icon(b)}</span><div><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''} · ${b.extra ? '🧪 эксперимент, в книге его нет' : '📘 по книге'}</small></div><button class="nx" id="inspX" aria-label="Закрыть">×</button></div>
       <p>${esc(b.learn.what)}</p>
       ${b.cap ? `<div class="istats"><div><span>Нагрузка</span><b>${fmt(n.load)} / ${fmt(n.capTotal)} rps</b></div><div><span>Загрузка</span><b class="${cls(n.util)}">${pct(n.util)}</b></div><div><span>${esc(b.repLabel || 'Реплик')}</span><b>${n.rep}${!b.tune && n.rep >= n.maxRep ? ' (макс.)' : ''}</b></div><div><span>Задержка</span><b>${ms((b.lat + (n.latAdd || 0)) * n.q)}</b></div></div>` : ''}
@@ -1027,7 +1063,10 @@
       ${b.learn.minus && b.learn.minus.length ? `<h5 class="minus">Чем платим</h5>${li(b.learn.minus)}` : ''}
       ${b.fit ? `<h5>Когда брать</h5><div class="pfit">${fitHtml(b.fit)}</div>` : ''}
       ${(b.learn.more || []).map((m) => `<details class="more"><summary>${esc(m.title)}</summary><dl>${m.items.map(([t, d]) => `<dt>${esc(t)}</dt><dd>${esc(d)}</dd>`).join('')}</dl></details>`).join('')}
+      ${arrows.length ? `<h5>Стрелки</h5><ul class="iedges">${arrows.map(({ e, i }) => { const out = e.from === g.id, other = bname(typeOf(out ? e.to : e.from));
+        return `<li><span>${out ? '→' : '←'} ${esc(other)}</span><button class="nx" data-edel="${i}" aria-label="Убрать стрелку ${out ? 'к' : 'от'} «${esc(other)}»" title="Убрать стрелку">×</button></li>`; }).join('')}</ul>` : ''}
       <button class="btn sm ghost danger" id="inspDel">Убрать с карты</button>`);
+    $$('#insp [data-edel]').forEach((el) => (el.onclick = () => { st.graph.edges.splice(+el.dataset.edel, 1); selEdge = null; changed(); }));
     $$('#insp [data-tf]').forEach((el) => (el.onclick = () => setCfg(g, el.dataset.tf, el.dataset.v)));
     if ($('#autoTune')) $('#autoTune').onclick = () => autoTune(g);
     $('#inspX').onclick = () => select(null);

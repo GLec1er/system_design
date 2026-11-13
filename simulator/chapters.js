@@ -147,11 +147,11 @@
     document.head.appendChild(s);
   }
 
-  // Маскот Окто: статичный кадр img/octo.png, а поверх него живая 3D-модель из octo3d.js (three.js с CDN).
+  // Маскот Окто: статичный кадр img/octo.webp, а поверх него живая 3D-модель из octo3d.js (three.js с CDN).
   // Модель грузится, только когда Окто виден и анимация разрешена; без WebGL или сети остаётся картинка.
   window.SD_octoHTML = (caption) => {
     setTimeout(octoLive);
-    return `<aside class="octo"><div class="octo-art"><img src="${root}img/octo.png" width="240" height="224" alt="Окто, робот-осьминог"><canvas aria-hidden="true"></canvas></div><div class="octo-cap"><span>ОКТО${caption ? ` <i>/</i> ${esc(caption)}` : ''}</span><button type="button" onclick="SD_OCTO(false)" aria-label="Спрятать Окто" title="Спрятать Окто · вернуть в оформлении">×</button></div></aside>`;
+    return `<aside class="octo"><div class="octo-art"><img src="${root}img/octo.webp" width="240" height="224" alt="Окто, робот-осьминог"><canvas aria-hidden="true"></canvas></div><div class="octo-cap"><span>ОКТО${caption ? ` <i>/</i> ${esc(caption)}` : ''}</span><button type="button" onclick="SD_OCTO(false)" aria-label="Спрятать Окто" title="Спрятать Окто · вернуть в оформлении">×</button></div></aside>`;
   };
   let mod = null;
   function octoLive() {

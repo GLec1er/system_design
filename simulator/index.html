@@ -19,7 +19,7 @@
       <h1>Собери систему <em>по шагам.</em></h1>
       <p>Каждая глава проходит путь как на интервью: требования, оценка нагрузки, API и данные, схема на карте, углубление и итог. Двигаешь нагрузку и сразу видишь, где узкое место и чем платишь за решение.</p>
       <div class="home-cta"><a class="cta" href="ch1/index.html">Начать с главы 1 <span aria-hidden="true">↗</span></a><a class="cta-2" href="#chapters">Все системы ↓</a></div>
-      <dl class="home-stats"><div><dt>13</dt><dd>глав</dd></div><div><dt>6</dt><dd>шагов в главе</dd></div><div><dt>0</dt><dd>зависимостей</dd></div></dl>
+      <dl class="home-stats"><div><dt id="stat-ch">13</dt><dd>глав</dd></div><div><dt>6</dt><dd>шагов в главе</dd></div><div><dt>0</dt><dd>установки и сборки</dd></div></dl>
     </div>
     <div class="home-stage" id="octo-home"></div>
   </section>
@@ -33,9 +33,10 @@
     <p class="empty" id="empty" hidden>Ни одна система не подходит.</p>
   </section>
 </main>
-<footer class="wrap foot">Учебная модель: цифры правдоподобные, но не измерения. Прогресс хранится только в этом браузере. Конспекты глав лежат в <a href="../chapters/">chapters/</a>.</footer>
+<footer class="wrap foot">Учебная модель: цифры правдоподобные, но не измерения. Прогресс хранится только в этом браузере. Конспекты глав лежат в <a href="https://github.com/GLec1er/system_design/tree/main/chapters">chapters/</a>.</footer>
 <script>
   document.getElementById('octo-home').innerHTML = SD_octoHTML('готов');
+  document.getElementById('stat-ch').textContent = SD_CHAPTERS.length;
   // Системы по названию, с чипами технологий. Фильтр по технологии и сортировка; каждая книга сворачивается, свёрнутость помним.
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const ui = { tech: '', sort: 'book' };
