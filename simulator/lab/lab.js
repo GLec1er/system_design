@@ -47,13 +47,31 @@
     return { step: 0, visited: {}, req: {}, reqChecked: false, est, graph: { nodes: [], edges: [] }, deep: { params, choices }, show: null, palClosed: {} };
   }
   const defaults = fresh();
+  // Сохранение могло остаться от старой версии главы: блок переименовали, шаг убрали, решение удалили.
+  // Берём из него только то, что глава знает сейчас; всё остальное заменяем значениями по умолчанию.
+  function clean(s) {
+    const f = fresh(), obj = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {});
+    const pick = (into, from, ok) => { Object.keys(into).forEach((k) => { if (from[k] !== undefined && ok(k, from[k])) into[k] = from[k]; }); return into; };
+    const num = (k, v) => typeof v === 'number' && isFinite(v);
+    const g = obj(s.graph), nodes = (Array.isArray(g.nodes) ? g.nodes : []).filter((n) => n && typeof n.id === 'string' && L.blocks[n.type])
+      .map((n) => Object.assign({}, n, { x: +n.x || 0, y: +n.y || 0 }));
+    const ids = new Set(nodes.map((n) => n.id));
+    const edges = (Array.isArray(g.edges) ? g.edges : []).filter((e) => e && ids.has(e.from) && ids.has(e.to) && e.from !== e.to);
+    const opts = Object.fromEntries(L.problems.filter((p) => p.options).map((p) => [p.key, p.options.map((o) => o.v)]));
+    const deep = obj(s.deep);
+    return Object.assign(f, {
+      step: Math.max(0, Math.min(L.steps.length - 1, s.step | 0)),
+      visited: obj(s.visited), req: obj(s.req), reqChecked: !!s.reqChecked, palClosed: obj(s.palClosed),
+      est: pick(f.est, obj(s.est), num),
+      graph: { nodes, edges },
+      deep: { params: pick(f.deep.params, obj(deep.params), num), choices: pick(f.deep.choices, obj(deep.choices), (k, v) => (opts[k] || []).includes(v)) },
+      show: L.flows.some((x) => x.id === s.show) ? s.show : null,
+    });
+  }
   function load() {
     try {
       const s = JSON.parse(localStorage.getItem(KEY));
-      if (s && s.v === 1) {
-        const f = fresh();
-        return Object.assign(f, s, { est: Object.assign(f.est, s.est), deep: { params: Object.assign(f.deep.params, s.deep.params), choices: Object.assign(f.deep.choices, s.deep.choices) } });
-      }
+      if (s && s.v === 1) return clean(s);
     } catch (e) {}
     return fresh();
   }

@@ -1,0 +1,16 @@
+{
+  "name": "system-design-lab",
+  "private": true,
+  "description": "Конспекты и интерактивные главы System Design Interview, Vol. 2",
+  "license": "MIT",
+  "scripts": {
+    "test": "node simulator/lab/run-tests.js",
+    "test:smoke": "node simulator/lab/smoke.js",
+    "format": "prettier --write \"simulator/**/*.{js,css,html}\"",
+    "format:check": "prettier --check \"simulator/**/*.{js,css,html}\""
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0",
+    "prettier": "^3.6.0"
+  }
+}
