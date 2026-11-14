@@ -66,6 +66,8 @@ flowchart LR
 ## 5. Паттерны
 Sequencer / event store · Детерминированный автомат · mmap и shared memory · Application loop (LMAX) · Hot-warm standby · Raft · Multicast
 
+**Шпаргалки к главе:** [перцентили и хвост](../../cheatsheets/resilience.md#перцентили) · [время и порядок](../../cheatsheets/theory.md#8-время-и-порядок) · [RPO и RTO](../../cheatsheets/resilience.md#rpo-и-rto)
+
 ## 6. Вопросы для повторения
 <details><summary>Сколько заявок в секунду?</summary>
 
@@ -86,6 +88,22 @@ Sequencer / event store · Детерминированный автомат · 
 <details><summary>Как пережить смерть сервера?</summary>
 
 Тёплый движок на тех же событиях и event store, реплицированный Raft на 5 серверов.
+</details>
+<details><summary>Из чего состоит критический путь?</summary>
+
+Gateway → order manager → risk и wallet → sequencer → matching engine.
+</details>
+<details><summary>Почему важен p99?</summary>
+
+Хвост видят трейдеры. Application loop на прибитом ядре убирает блокировки и переключения.
+</details>
+<details><summary>Как раздать рыночные данные честно?</summary>
+
+Надёжный UDP multicast и колокация.
+</details>
+<details><summary>Как защититься от DDoS?</summary>
+
+Отделить публичные сервисы, кэш данных, rate limiting, safelist и blocklist IP.
 </details>
 
 ## 7. Мои заметки

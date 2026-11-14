@@ -84,6 +84,8 @@ flowchart LR
 ## 5. Паттерны
 Sorted set / skip list · Server-authoritative запись · Источник истины + перестраиваемый кэш · Шардирование по диапазону против хэша · Scatter-gather · Tie-break по времени
 
+**Шпаргалки к главе:** [числа для оценки](../../cheatsheets/estimation.md) · [consistent hashing и слоты](../../cheatsheets/building-blocks.md#consistent-hashing)
+
 ## 6. Вопросы для повторения
 <details><summary>Сколько очков в секунду и сколько памяти?</summary>
 
@@ -104,6 +106,18 @@ ZINCRBY за победу, ZREVRANGE 0 9 для топ-10, ZREVRANK для ме�
 <details><summary>Как восстановить рейтинг?</summary>
 
 Реплика Redis; если потеряно всё, пройти таблицу points за месяц и сделать ZINCRBY для каждой победы.
+</details>
+<details><summary>Почему очки не шлёт клиент?</summary>
+
+Запрос легко подделать. Победителя знает Game service.
+</details>
+<details><summary>Когда нужна Kafka?</summary>
+
+Когда очки читает не только рейтинг: аналитика, пуши.
+</details>
+<details><summary>Как упорядочить равные очки?</summary>
+
+Hash user_id → время последней победы: кто раньше, тот выше.
 </details>
 
 ## 7. Мои заметки

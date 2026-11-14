@@ -83,6 +83,8 @@ Payment service сохраняет событие, executor отправляет
 ## 5. Паттерны
 Idempotency key · Retry с экспоненциальной задержкой · Dead letter queue · Webhook · Двойная запись · Reconciliation · Transactional outbox
 
+**Шпаргалки к главе:** [повторы и их бюджет](../../cheatsheets/resilience.md#повторы) · [гарантии доставки](../../cheatsheets/theory.md#9-гарантии-доставки) · [генерация ID](../../cheatsheets/building-blocks.md#генерация-уникальных-id)
+
 ## 6. Вопросы для повторения
 <details><summary>Сколько TPS и что из этого следует?</summary>
 
@@ -99,6 +101,30 @@ Idempotency key · Retry с экспоненциальной задержкой 
 <details><summary>Зачем сверка, если всё идемпотентно?</summary>
 
 Внешние системы всё равно расходятся с нами. Сверка с файлом расчётов ловит всё раз в сутки.
+</details>
+<details><summary>Что такое PSP и зачем он?</summary>
+
+Stripe, Adyen и т.п.: связь с сетями карт и банками, хранение карт, hosted payment page.
+</details>
+<details><summary>Что служит ключом идемпотентности?</summary>
+
+payment_order_id (UUID), уникальный в БД. Тот же ключ уходит в PSP.
+</details>
+<details><summary>Как узнать итог долгого платежа?</summary>
+
+PSP вызывает webhook, статус EXECUTING → SUCCESS/FAILED, клиент спрашивает статус.
+</details>
+<details><summary>Что такое двойная запись?</summary>
+
+Каждая операция это дебет и кредит на одну сумму, сумма всех проводок 0, только добавление.
+</details>
+<details><summary>Что делать с ошибкой, которая не лечится повтором?</summary>
+
+Не повторять. Исчерпанные попытки отправлять в dead letter queue на ручной разбор.
+</details>
+<details><summary>Чем опасна запись в БД и в Kafka?</summary>
+
+Это две записи без общей транзакции. Outbox: событие в той же транзакции, публикует релей.
 </details>
 
 ## 7. Мои заметки

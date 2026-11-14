@@ -70,6 +70,8 @@ flowchart LR
 ## 5. Паттерны
 TSDB · Pull vs push · Service discovery + consistent hashing · Буфер (Kafka) · Downsampling · Дедупликация алертов
 
+**Шпаргалки к главе:** [наблюдаемость и SLO](../../cheatsheets/resilience.md#наблюдаемость) · [consistent hashing](../../cheatsheets/building-blocks.md#consistent-hashing)
+
 ## 6. Вопросы для повторения
 <details><summary>Почему не реляционная БД для метрик?</summary>
 
@@ -90,6 +92,26 @@ Pull проще для проверки живости и без агентов.
 <details><summary>Зачем alert manager, а не просто письмо на каждую сработку?</summary>
 
 Группировка, дедупликация, silence, retry: иначе шум и пропуски.
+</details>
+<details><summary>Сколько рядов и точек?</summary>
+
+1000 × 100 × 100 = 10 млн рядов. Раз в 10 с это миллион точек в секунду.
+</details>
+<details><summary>Как сборщики делят серверы при pull?</summary>
+
+Кольцо consistent hashing: каждый сервер опрашивает ровно один сборщик.
+</details>
+<details><summary>Где агрегировать?</summary>
+
+В агенте просто, в конвейере быстро для чтения, при запросе гибко. Это компромисс точности и скорости.
+</details>
+<details><summary>Как не потерять алерт?</summary>
+
+События в Kafka, потребители шлют и повторяют до подтверждения.
+</details>
+<details><summary>Строить или покупать?</summary>
+
+Визуализацию и каналы разумно купить. Свою систему строят под свой масштаб.
 </details>
 
 ## 7. Мои заметки
