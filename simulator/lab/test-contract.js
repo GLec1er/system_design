@@ -24,4 +24,7 @@ dirs.forEach((d) => {
     (p.best || []).forEach((v) => assert(p.options.some((o) => o.v === v), `${d}: лучший вариант «${v}» есть среди вариантов «${p.key}»`));
   });
 });
+// страницы глав собраны из одного шаблона и не разошлись с ним
+const stale = require('./make-pages.js').sync(false);
+assert.deepStrictEqual(stale, [], `страницы отличаются от шаблона: ${stale.join(', ')}. Запусти npm run pages`);
 console.log('contract ok');

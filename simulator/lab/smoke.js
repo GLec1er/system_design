@@ -1,24 +1,20 @@
 // Дымовой тест интерфейса: npm run test:smoke (нужен playwright с chromium).
-// Открывает главную и каждую главу с диска, проходит все шаги, раскладывает эталон, двигает сценарий,
-// открывает инспектор блока и проверяет, что страница не падает и переживает устаревшее сохранение.
-const path = require('path');
-const { pathToFileURL } = require('url');
+// Открывает главную и каждую главу, проходит все шаги, раскладывает эталон, двигает сценарий,
+// открывает инспектор блока и проверяет, что страница не падает, переживает устаревшее сохранение и не ходит в сеть.
 const { chromium } = require('playwright');
+const { serve } = require('./serve.js');
 
-const ROOT = path.join(__dirname, '..');
-const url = (p) => pathToFileURL(path.join(ROOT, p)).href;
 const only = process.argv.slice(2).map(Number).filter(Boolean);
 
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  // Тест не ходит в сеть: three.js и переводчик не нужны, а без них страница обязана работать.
-  await ctx.route(/^https?:/, (r) => r.abort());
+  const { url, external } = await serve(ctx);
   const page = await ctx.newPage();
   const errors = [];
   let where = '';
   page.on('pageerror', (e) => errors.push(`${where}: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error' && !/net::ERR_FAILED|Failed to load resource|octo3d\.js/.test(m.text())) errors.push(`${where}: ${m.text()}`); });
+  page.on('console', (m) => { if (m.type() === 'error' && !/net::ERR_FAILED|Failed to load resource/.test(m.text())) errors.push(`${where}: ${m.text()}`); });
   const check = (ok, text) => { if (!ok) errors.push(`${where}: ${text}`); };
 
   where = 'главная';
@@ -114,6 +110,14 @@ const only = process.argv.slice(2).map(Number).filter(Boolean);
     check((await page.locator('#app').innerHTML()).length > 200, 'страница не открылась с битым сохранением');
     console.log(`✔ глава ${c.n}`);
   }
+
+  // Маскот: модель лежит в репозитории и оживает без сети (если в браузере есть WebGL).
+  where = 'маскот';
+  await page.goto(url('index.html'));
+  await page.waitForTimeout(1500);
+  const webgl = await page.evaluate(() => !!document.createElement('canvas').getContext('webgl2'));
+  if (webgl) check((await page.locator('.octo-art.live').count()) === 1, 'Окто не ожил');
+  check(external.length === 0, 'страница ходит наружу: ' + [...new Set(external)].join(', '));
 
   await browser.close();
   if (errors.length) { console.error('\n' + [...new Set(errors)].join('\n')); console.error(`\nОшибок: ${errors.length}`); process.exit(1); }

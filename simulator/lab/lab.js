@@ -1083,7 +1083,7 @@
       return `<div class="tf"><div class="tfl">${esc(f.label)}<span class="${f.book ? 'bk' : 'xp'}">${f.book ? '📘 по книге' : '🧪 эксперимент'}</span></div>
         <div class="tseg">${opts.map((o) => { const no = f.id === 'rf' && o.v > n.cfg.brokers;
           return `<button class="${o === cur ? 'on' : ''}" data-tf="${f.id}" data-v="${esc(o.v)}" ${no ? `disabled title="Копий не может быть больше, чем брокеров (${n.cfg.brokers})"` : ''}>${esc(o.label)}</button>`; }).join('')}</div>
-        <p class="tnote">${esc((cur && cur.note) || (def.hints && def.hints[f.id]) || f.hint || '')}</p></div>`;
+        <p class="tnote">${esc((cur && def.notes && def.notes[f.id] && def.notes[f.id][cur.v]) || (cur && cur.note) || (def.hints && def.hints[f.id]) || f.hint || '')}</p></div>`;
     }).join('')}</div>
     ${E.sizable(def.tune) ? '<button class="btn sm" id="autoTune">✨ Подобрать под нагрузку</button>' : ''}`;
   }

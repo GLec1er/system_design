@@ -147,7 +147,7 @@
     document.head.appendChild(s);
   }
 
-  // Маскот Окто: статичный кадр img/octo.webp, а поверх него живая 3D-модель из octo3d.js (three.js с CDN).
+  // Маскот Окто: статичный кадр img/octo.webp, а поверх него живая 3D-модель из octo3d.js (three.js лежит в vendor/).
   // Модель грузится, только когда Окто виден и анимация разрешена; без WebGL или сети остаётся картинка.
   window.SD_octoHTML = (caption) => {
     setTimeout(octoLive);
@@ -162,7 +162,7 @@
       host.dataset.loading = '1';
       (mod = mod || import(new URL('octo3d.js', document.querySelector('script[src$="chapters.js"]').src).href))
         .then((m) => { if (octo() && motion() && host.isConnected) host.octo = m.mount(host); })
-        .catch(() => {}) // нет WebGL или CDN: остаётся картинка
+        .catch(() => {}) // нет WebGL или страница открыта с диска (модули по file:// не грузятся): остаётся картинка
         .finally(() => delete host.dataset.loading);
     });
   }
