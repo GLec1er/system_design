@@ -165,7 +165,7 @@
       ],
       nfr: [
         { id: 'durability', name: 'Надёжность', en: 'Reliability', key: true, what: 'Принятое письмо не теряется ни при каком сбое.', metric: 'Доля потерянных писем. Цель практически 0.', drives: 'Реплицированные очереди, подтверждение после записи, повторы, очередь ошибок.', here: 'Главное требование книги: SMTP-ответ 250 OK передаёт ответственность за письмо нам.' },
-        { id: 'availability', name: 'Доступность', en: 'Availability', key: true, what: 'Доля времени, когда почта отвечает.', metric: 'SLA в «девятках»: 99,99% это около 53 минут простоя в год.', drives: 'Реплики в нескольких ДЦ, failover, отсутствие единой точки отказа.', here: 'Данные копируются в несколько ДЦ, пользователь переключается на живой.' },
+        { id: 'availability', name: 'Доступность', en: 'Availability', key: true, what: 'Доля времени, когда почта отвечает.', metric: 'SLA в «девятках»: 99,99% это около 53 минуты простоя в год.', drives: 'Реплики в нескольких ДЦ, failover, отсутствие единой точки отказа.', here: 'Данные копируются в несколько ДЦ, пользователь переключается на живой.' },
         { id: 'scalability', name: 'Масштабируемость', en: 'Scalability', key: true, what: 'Рост нагрузки выдерживаем добавлением машин без переделки.', metric: 'Во сколько раз растёт нагрузка при росте числа машин.', drives: 'Шардирование по user_id, stateless web-серверы, очереди, отдельные пулы воркеров.', here: 'Миллиард пользователей и рост числа писем.' },
         { id: 'extensibility', name: 'Расширяемость', en: 'Flexibility & extensibility', key: true, what: 'Новые функции добавляются без смены протоколов и хранилищ.', metric: 'Сколько стоит добавить функцию: метки, отложенную отправку, умные ответы.', drives: 'Свой HTTP API вместо IMAP и POP, гибкая модель данных.', here: 'Поэтому webmail говорит с сервером по HTTPS и WebSocket.' },
         { id: 'throughput', name: 'Пропускная способность', en: 'Throughput', key: false, what: 'Сколько писем и запросов в секунду система выдерживает.', metric: 'Писем в секунду на приём и отправку, QPS чтений.', drives: 'Число серверов, партиций, шардов.', here: 'Сотни тысяч писем в секунду: это определяет почти всю архитектуру.' },
@@ -520,7 +520,7 @@
         nodes: ['client', 'lb', 'web', 'rt', 'cache', 'metaDB', 'attach', 'searchStore', 'outQ', 'smtpOut', 'inet', 'smtpIn', 'inQ', 'mailProc'],
         edges: [['client', 'lb'], ['lb', 'web'], ['lb', 'rt'], ['web', 'cache'], ['web', 'metaDB'], ['web', 'attach'], ['web', 'searchStore'], ['web', 'outQ'], ['outQ', 'smtpOut'],
           ['inet', 'smtpIn'], ['smtpIn', 'inQ'], ['inQ', 'mailProc'], ['mailProc', 'metaDB'], ['mailProc', 'attach'], ['mailProc', 'searchStore'], ['mailProc', 'rt']],
-        cfg: { metaDB: { shards: 64, replicas: 1, shardKey: 'user' }, cache: { shards: 6, replicas: 1 }, outQ: { brokers: 9, partitions: 192 }, inQ: { brokers: 27, partitions: 768 } },
+        cfg: { metaDB: { shards: 64, replicas: 1, shardKey: 'user' }, cache: { shards: 6, replicas: 1 }, outQ: { brokers: 9, partitions: 192 }, inQ: { brokers: 27, partitions: 3072 } },
         adapt: ADAPT,
       },
     },

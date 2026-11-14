@@ -6,6 +6,22 @@
   const dec = (v) => String(+v.toFixed(1)).replace('.', ',');
   const big = (v) => (v >= 1e9 ? dec(v / 1e9) + ' млрд' : v >= 1e6 ? dec(v / 1e6) + ' млн' : v >= 1e4 ? num(v / 1e3) + ' тыс.' : v >= 10 ? num(v) : dec(v));
 
+  // «в 2 раза», «в 2,5 раза», «в 5 раз», «в 22 раза», «в 3 млн раз»: слово подбирается по уже отформатированному числу.
+  const times = (text) => {
+    const t = String(text), k = parseInt(t.replace(/\s/g, '').match(/\d+$/) || ['5'], 10);
+    const word = /[а-яё.]$/i.test(t) ? 'раз' : /[,.]\d+$/.test(t) ? 'раза' : k % 10 >= 2 && k % 10 <= 4 && (k % 100 < 12 || k % 100 > 14) ? 'раза' : 'раз';
+    return `${t} ${word}`;
+  };
+
+  // Слово по числу: plural('192', 'партиция', 'партиции', 'партиций') → «192 партиции». Число уже отформатировано;
+  // после «тыс.», «млн» и дробей идёт форма для многих («1,5 млн серверов»).
+  const plural = (text, one, few, many) => {
+    const t = String(text);
+    if (/[а-яё.]$/i.test(t) || /[,.]\d+$/.test(t)) return `${t} ${/[,.]\d+$/.test(t) && !/[а-яё]/i.test(t) ? few : many}`;
+    const k = parseInt(t.replace(/\s/g, '').match(/\d+$/) || ['5'], 10), d = k % 10, h = k % 100;
+    return `${t} ${d === 1 && h !== 11 ? one : d >= 2 && d <= 4 && (h < 12 || h > 14) ? few : many}`;
+  };
+
   // Последний шаг и первая цель карты одинаковы во всех главах.
   const STEP_SUM = { id: 'sum', title: 'Итог', sub: 'рассказ для интервью', kind: 'sum', tag: '~5 мин', guide: 'Перескажи решение по шагам и ответь на вопросы для повторения.' };
   const GOAL_LOAD = { text: 'Нагрузка выдерживается', check: (r) => r.m.served >= 1 && r.m.maxU <= 0.9 };
@@ -24,7 +40,7 @@
     return { all, of, F, ok, badge, addLoad, scale, via };
   }
 
-  const api = { num, dec, big, STEP_SUM, GOAL_LOAD, REVISIT, API_MORE, tools };
+  const api = { num, dec, big, times, plural, STEP_SUM, GOAL_LOAD, REVISIT, API_MORE, tools };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.LabKit = api;
 })(typeof window !== 'undefined' ? window : globalThis);

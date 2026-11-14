@@ -5,7 +5,9 @@
   const L = window.LAB, E = window.LabEngine;
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
-  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // «214 тыс.» в конце предложения давало «тыс..»: вторую точку убираем при выводе, тексты глав пишутся как обычно.
+  const tidy = (t) => String(t).replace(/(тыс|млн|млрд|мин|сек)\.\.(?!\.)/g, '$1.');
+  const esc = (t) => tidy(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   // Пишем в DOM, только если разметка изменилась: неизменённые панели не теряют фокус, раскрытые <details> и анимации.
   const setH = (el, html) => { if (el.__h === html) return false; el.innerHTML = html; el.__h = html; return true; };
   const KEY = 'sd-lab-' + L.id;
@@ -25,7 +27,7 @@
     if (a >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + ' тыс';
     if (a >= 100) return n.toFixed(0);
     if (a >= 10) return n.toFixed(1).replace(/\.0$/, '');
-    return n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '') || '0';
+    return (n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '') || '0').replace(/^-0$/, '0'); // −0 и −0,001 это ноль, а не «-0 rps»
   }
   const ms = (n) => U(n >= 1000 ? (n / 1000).toFixed(1).replace('.', ',') + ' с' : n > 0 && n < 1 ? Math.round(n * 1000) + ' мкс' : Math.round(n) + ' мс'); // биржа живёт в микросекундах
   const money = (n) => U('$' + (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : Math.round(n)) + '/мес');
@@ -1190,7 +1192,7 @@
   function sumText() {
     const D = sumData(), S = D.S;
     return [`# Глава ${L.n}. ${L.title}`, '', '## Рассказ', ...D.script.map((s, i) => `${i + 1}. **${s.step}.** ${s.text}`), '',
-      '## Компромиссы', ...S.tradeoffs.map((t) => `- **${t.pick}** вместо ${t.alt}: ${t.why}`), '', '## Частые ошибки', ...S.pitfalls.map((t) => `- ${t}`)].join('\n');
+      '## Компромиссы', ...S.tradeoffs.map((t) => `- **${t.pick}** вместо ${t.alt}: ${t.why}`), '', '## Частые ошибки', ...S.pitfalls.map((t) => `- ${t}`)].map(tidy).join('\n');
   }
   function bindSum() {
     $('#reset').onclick = () => { if (confirm('Сбросить ответы, карту и решения этой главы?')) { st = fresh(); save(); go(0); } };

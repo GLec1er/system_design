@@ -5,6 +5,8 @@
   const TARGET = 0.7; // автомасштаб держит загрузку около 70%
   const queue = (u) => (u >= 0.95 ? 12 : Math.min(12, 1 + (0.5 * u * u) / (1 - u)));
   const has = (spec, t) => [].concat(spec).includes(t);
+  // «в 22 раза», но «в 25 раз» и «в 12 раз»
+  const times = (k) => (k % 10 >= 2 && k % 10 <= 4 && (k % 100 < 12 || k % 100 > 14) ? 'раза' : 'раз');
   const rps = (v) => (v >= 10 ? Math.round(v).toLocaleString('ru-RU') : String(+v.toFixed(1)).replace('.', ','));
 
   // Настройки «тяжёлых» блоков, общие для всех глав. book: так делают в книге (остальное эксперименты).
@@ -289,7 +291,7 @@
         return;
       }
       if (n.util > maxU) { maxU = n.util; bottleneck = n; }
-      if (n.util > 1) ctx.warn('bad', `«${def.name}» перегружен: ${n.util < 10 ? Math.round(n.util * 100) + '%' : `в ${Math.round(n.util)} раз сверх мощности`}. Упёрся: ${n.limit}. Нужно: ${n.need}.`);
+      if (n.util > 1) ctx.warn('bad', `«${def.name}» перегружен: ${n.util < 10 ? Math.round(n.util * 100) + '%' : `в ${Math.round(n.util)} ${times(Math.round(n.util))} сверх мощности`}. Упёрся: ${n.limit}. Нужно: ${n.need}.`);
       else if (!n.load && n.why) ctx.warn(n.why.kind === 'useless' ? 'info' : 'warn', `«${def.name}» простаивает. ${n.why.text}`);
     });
     // Сколько реально проходит по стрелке: перегруженный блок пропускает только свою мощность (1 / загрузка),
