@@ -1,8 +1,6 @@
 /* Глава 1. Proximity Service: данные для лаборатории (simulator/lab). */
 (function (g) {
-  // Числа в тексте: разряды пробелами, дробь через запятую.
-  const num = (v) => Math.round(v).toLocaleString('ru-RU'), dec = (v) => String(+v.toFixed(1)).replace('.', ',');
-  const big = (v) => (v >= 1e9 ? dec(v / 1e9) + ' млрд' : v >= 1e6 ? dec(v / 1e6) + ' млн' : v >= 1e4 ? num(v / 1e3) + ' тыс.' : v >= 10 ? num(v) : dec(v));
+  const { num, dec, big } = g.LabKit; // формат чисел в тексте: lab/kit.js
 
   // Ячейки geohash из книги: длина → ширина × высота, км. Радиус поиска → длина geohash (таблица книги).
   const CELL = { 4: [39.1, 19.5], 5: [4.9, 4.9], 6: [1.2, 0.61] };
@@ -75,7 +73,7 @@
       { id: 'api', title: 'API и данные', sub: 'поиск, CRUD и гео-индекс', kind: 'api', tag: '~5 мин', guide: 'GET /search/nearby, CRUD по местам, таблица business и таблица гео-индекса.' },
       { id: 'hld', title: 'Дизайн', sub: 'схема на карте', kind: 'map', stage: 'base', tag: '~10 мин', guide: 'Раздели чтение и запись: LBS только ищет, Business service правит места. Под ними БД с primary и репликами.' },
       { id: 'deep', title: 'Углубление', sub: 'проблемы и решения', kind: 'map', stage: 'deep', tag: '~15 мин', guide: 'Главное решение главы: geohash или quadtree. Потом соседние ячейки, длина geohash, строки индекса, кэш, выкатка, регионы.' },
-      { id: 'sum', title: 'Итог', sub: 'рассказ для интервью', kind: 'sum', tag: '~5 мин', guide: 'Перескажи решение по шагам и ответь на вопросы для повторения.' },
+      g.LabKit.STEP_SUM,
     ],
 
     requirements: {
@@ -125,7 +123,7 @@
           { t: 'Своя гео-БД с нуля', d: 'Geohash работает поверх обычного B-дерева и Redis, quadtree живёт в памяти сервиса.' },
           { t: 'Потоковая обработка', d: 'Правок десятки в секунду: Kafka и стримы здесь лишние.' },
         ],
-        revisit: 'Решение верно, пока верны требования. Новое FR может поменять NFR, и тогда пересматривается архитектура. Примеры ниже.',
+        revisit: g.LabKit.REVISIT,
       },
       future: [
         { fr: 'Места двигаются: фудтраки, такси, курьеры', breaks: ['consistency', 'throughput'],
@@ -286,7 +284,7 @@
           cols: [{ n: 'key', t: 'business:{id}', k: 'PK', d: 'business:34343' }, { n: 'value', t: 'JSON', d: 'Название, адрес, координаты, категория' }] },
       ],
       more: {
-        intro: 'Для интервью хватает таблиц выше. Ниже то, что добавляют, когда растут требования.',
+        intro: g.LabKit.API_MORE,
         tables: [
           { name: 'business_hours', when: 'Фильтр «открыто сейчас».', cols: 'business_id, weekday, open_at, close_at' },
           { name: 'business_category', when: 'Фильтр по типу места.', cols: 'business_id, category_id' },
@@ -505,10 +503,7 @@
 
     model(ctx) {
       const { d, deep, nodes, flows, stage } = ctx, c = deep.choices, p = deep.params, M = ctx.metrics;
-      const all = Object.values(nodes), of = (t) => all.filter((n) => n.type === t), F = (id) => flows.find((f) => f.id === id), ok = (id) => F(id).ok;
-      const badge = (n, icon, title) => n && n.badges.push({ icon, title });
-      const addLoad = (n, fid, x) => { if (!n || !x) return; n.load += x; n.flows[fid] = (n.flows[fid] || 0) + x; if (F(fid).write) n.wload += x; };
-      const scale = (n, fid, m) => n && addLoad(n, fid, (n.flows[fid] || 0) * (m - 1));
+      const { all, of, F, ok, badge, addLoad, scale } = g.LabKit.tools(ctx);
       M.missed = M.empty = M.lostUpd = M.outage = M.abroad = 0;
       const deepOn = stage === 'deep';
       // До углубления схема книги: geohash по таблице радиуса, 9 ячеек, строка на пару, ключ кэша geohash, ночная пересборка.
@@ -647,7 +642,7 @@
         { text: 'Поиск, карточка и правка доходят до данных', check: (r) => r.m.routed },
         { text: 'Поиск и правки в разных сервисах за L7-балансировщиком', check: (r) => Object.values(r.nodes).some((n) => n.type === 'lb' && n.cfg.layer === 'l7' && r.graph.edges.some((e) => e.from === n.id && r.nodes[e.to] && r.nodes[e.to].type === 'lbs') && r.graph.edges.some((e) => e.from === n.id && r.nodes[e.to] && r.nodes[e.to].type === 'bizSvc')) },
         { text: 'Чтения идут в реплики гео-индекса и Business DB', check: (r) => ['geoDB', 'bizDB'].every((t) => Object.values(r.nodes).some((n) => n.type === t && n.cfg.replicas > 0)) },
-        { text: 'Нагрузка выдерживается', check: (r) => r.m.served >= 1 && r.m.maxU <= 0.9 },
+        g.LabKit.GOAL_LOAD,
       ],
       deep: [
         { text: 'Поиск не теряет места за границей ячейки', check: (r) => r.m.routed && r.m.missed === 0 },

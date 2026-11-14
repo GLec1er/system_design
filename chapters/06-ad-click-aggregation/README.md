@@ -69,6 +69,8 @@ flowchart LR
 ## 5. Паттерны
 Stream processing · Event time + watermark · Exactly-once / идемпотентность · Hot key salting · Checkpoint · Lambda vs Kappa · Reconciliation
 
+**Шпаргалки к главе:** [гарантии доставки](../../cheatsheets/theory.md#9-гарантии-доставки) · [вероятностные структуры](../../cheatsheets/building-blocks.md#фильтр-блума-и-вероятностные-структуры)
+
 ## 6. Вопросы для повторения
 <details><summary>Зачем хранить и сырые клики, и агрегаты?</summary>
 
@@ -89,6 +91,26 @@ Event time время самого клика, processing time время обр
 <details><summary>Что делать с горячим ad_id?</summary>
 
 Соль в ключе и предагрегация частями с последующим слиянием.
+</details>
+<details><summary>Сколько кликов в секунду?</summary>
+
+1 млрд в день ÷ 10⁵ с = 10 тысяч, пик ×5 это 50 тысяч.
+</details>
+<details><summary>Tumbling или sliding?</summary>
+
+Tumbling для счётчика по минутам, sliding для топ-100 за последние M минут.
+</details>
+<details><summary>Как восстановиться после сбоя?</summary>
+
+Снапшот состояния и offset, затем дочитать Kafka после него.
+</details>
+<details><summary>Lambda или Kappa?</summary>
+
+Kappa: один код, пересчёт прошлого тем же кодом по сырым.
+</details>
+<details><summary>Как убедиться, что счёт верен?</summary>
+
+Сверка в конце дня: пересчёт сырых по event time и сравнение с агрегатами.
 </details>
 
 ## 7. Мои заметки

@@ -24,8 +24,8 @@
 | 5 | [Metrics Monitoring and Alerting System](chapters/05-metrics-monitoring/README.md) | сбор метрик, дашборды и алерты | 🟨 |
 | 6 | [Ad Click Event Aggregation](chapters/06-ad-click-aggregation/README.md) | агрегация кликов по рекламе в потоке событий | 🟨 |
 | 7 | [Hotel Reservation System](chapters/07-hotel-reservation/README.md) | система бронирования отелей | 🟨 |
-| 8 | [Distributed Email Service](chapters/08-email-service/README.md) | распределённый почтовый сервис | ⬜ |
-| 9 | [S3-like Object Storage](chapters/09-object-storage/README.md) | объектное хранилище в стиле S3 | ⬜ |
+| 8 | [Distributed Email Service](chapters/08-email-service/README.md) | распределённый почтовый сервис | 🟨 |
+| 9 | [S3-like Object Storage](chapters/09-object-storage/README.md) | объектное хранилище в стиле S3 | 🟨 |
 | 10 | [Real-time Gaming Leaderboard](chapters/10-gaming-leaderboard/README.md) | рейтинг игроков в реальном времени | 🟨 |
 | 11 | [Payment System](chapters/11-payment-system/README.md) | платёжная система | 🟨 |
 | 12 | [Digital Wallet](chapters/12-digital-wallet/README.md) | цифровой кошелёк, переводы между счетами | 🟨 |
@@ -33,5 +33,12 @@
 
 ⬜ не начата · 🟨 конспект · 🟩 повторена
 
-## Сквозные паттерны
-Общие приёмы, которые повторяются из главы в главу, лежат в [cheatsheets/](cheatsheets/README.md).
+## Шпаргалки
+Знания, которые нужны во всех главах сразу, лежат в [cheatsheets/](cheatsheets/README.md):
+
+- [Сквозные паттерны](cheatsheets/README.md#сквозные-паттерны): «вижу проблему, называю приём» и цена каждого приёма.
+- [Оценки на салфетке](cheatsheets/estimation.md): числа, которые надо помнить.
+- [Теория](cheatsheets/theory.md): изоляция транзакций, согласованность, CAP, кворумы, B-дерево против LSM.
+- [Кирпичи из первого тома](cheatsheets/building-blocks.md): rate limiter, consistent hashing, фильтр Блума, генерация ID.
+- [Устойчивость и наблюдаемость](cheatsheets/resilience.md): что делать, чтобы сбой одной части не уронил всё.
+- [Несколько регионов](cheatsheets/multi-region.md): то, чего в книге почти нет, а на интервью спрашивают.

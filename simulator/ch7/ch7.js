@@ -57,8 +57,7 @@
       ['Backpressure', 'Потребитель не успевает, очередь растёт. Брокер это переживёт и даст время добавить потребителей, но задержка доставки растёт: следим за lag.'],
     ] },
   ];
-  // Числа в тексте: разряды пробелами, дробь через запятую.
-  const num = (v) => Math.round(v).toLocaleString('ru-RU'), dec = (v) => String(+v.toFixed(1)).replace('.', ',');
+  const { num, dec } = g.LabKit; // формат чисел в тексте: lab/kit.js
   // Общий раздел «подробнее» для блоков наблюдаемости.
   const OBS_MORE = [
     { title: '🔭 Три столпа наблюдаемости', items: [
@@ -82,6 +81,7 @@
     { add: 'limiter', from: 'gateway', why: 'rate limiter срезает ботов и парсеры' },
     { replace: 'cdn', with: 'cdnPage', why: 'просмотров больше, чем держит Hotel Service даже на пределе копий: страницу отеля целиком отдаёт CDN, в сервис доходит только промах' },
   ];
+  const HOT_FIX = 'дробить горячий ключ на копии (hotel:42#1…#N) или кэшировать страницу на CDN';
   g.LAB = {
     id: 'ch7', n: 7, title: 'Hotel Reservation System', subtitle: 'Бронирование отелей',
     intro: 'Система бронирования вроде Booking или Marriott. Нагрузка маленькая, поэтому сложность не в объёме, а в корректности: нельзя продать один номер дважды, когда люди жмут кнопку одновременно и по два раза.',
@@ -93,7 +93,7 @@
       { id: 'api', title: 'API и данные', sub: 'эндпоинты и таблицы', kind: 'api', tag: '~5 мин', guide: 'reservationId в теле POST и инвентарь по типу номера и дате.' },
       { id: 'hld', title: 'Дизайн', sub: 'схема на карте', kind: 'map', stage: 'base', tag: '~10 мин', guide: 'Собери блоки и стрелки так, чтобы все четыре потока дошли до данных.' },
       { id: 'deep', title: 'Углубление', sub: 'проблемы и решения', kind: 'map', stage: 'deep', tag: '~15 мин', guide: 'Двойной клик, гонка за номер, распродажа, бронь и оплата в разных БД.' },
-      { id: 'sum', title: 'Итог', sub: 'рассказ для интервью', kind: 'sum', tag: '~5 мин', guide: 'Перескажи решение по шагам и ответь на вопросы для повторения.' },
+      g.LabKit.STEP_SUM,
     ],
 
     requirements: {
@@ -476,7 +476,7 @@
         learn: { more: SQL_MORE, what: 'Реляционная БД с room_type_inventory и reservation. Источник истины.', plus: ['ACID: инвентарь и бронь меняются вместе', 'Блокировки и CHECK прямо в БД'], minus: ['Запись упирается в один primary, пока нет шардов'] } },
       payDB: { name: 'Payment DB', icon: '🧾', cat: 'db', group: 'SQL', fit: SQL_FIT, pos: [915, 660], cap: 1500, lat: 15, cost: 300, cx: 1, db: true, tune: 'sql', repLabel: 'шард.', links: [['payment', 'self']], tag: 'SQL: платежи',
         learn: { more: SQL_MORE, what: 'БД платежей у Payment Service.', plus: ['У каждого сервиса своя БД'], minus: ['Нужна распределённая согласованность с бронью'] } },
-      cache: { name: 'Кэш (Redis)', logo: 'redis', icon: '⚡', cat: 'cache', group: 'Кэширование', alsoExp: true,
+      cache: { name: 'Кэш (Redis)', logo: 'redis', icon: '⚡', cat: 'cache', group: 'Кэширование', alsoExp: true, hotFix: HOT_FIX,
         fit: { use: 'Кэш с TTL и структурами данных: доступность по датам, счётчики, сессии. Заодно блокировки и pub/sub.', avoid: 'Источник истины для броней и денег: асинхронная репликация может потерять последние записи.', limits: 'Около 100 тыс. операций/с на инстанс (одно ядро), объём ограничен памятью, при отставании показывает устаревшие данные.' }, pos: [685, 170], cap: 50000, lat: 1, cost: 200, cx: 1.5, tune: 'kv', repLabel: 'узл.', cache: true, multi: true, at: 'db', absorb: { view: 0.95, search: 0.9 },
         links: [[['hotel', 'reservation'], 'self']], tag: 'Чтения из памяти',
         learn: { more: CACHE_MORE, what: 'Сервис сначала смотрит в кэш и идёт в БД только при промахе (cache-aside). Можно поставить два: для отелей и для инвентаря.', plus: ['Снимает с БД 90–95% чтений', 'Чтение за 1 мс'], minus: ['Может отставать от БД: показывает «есть места», которых уже нет', 'Для брони не используется: проверка всегда в БД'] } },
@@ -549,7 +549,7 @@
         links: [['reservation', 'self'], ['self', 'notification']], bring: ['notification'], drop: [['reservation', 'notification']], tag: 'Брокер: exchange → очереди',
         learn: { more: BROKER_MORE, what: 'Брокер сообщений. Reservation Service публикует в exchange, тот по ключу маршрутизации раскладывает сообщения по очередям, потребители забирают их и подтверждают (ack). После ack сообщение удаляется.', plus: ['Письмо уходит асинхронно и не тормозит бронь', 'Потребители конкурируют за очередь: их можно добавлять сколько угодно', 'Гибкая маршрутизация: direct, topic, fanout'], minus: ['Нет журнала: после ack сообщение удалено, перечитать историю или сделать CDC в кэш нельзя', 'Порядок теряется, когда очередь читают несколько потребителей'] },
         fit: { use: 'Задачи и команды: письма, фоновые задания, RPC, маршрутизация по ключам, приоритеты и отложенная доставка.', avoid: 'Нужен журнал событий: перечитать историю, несколько независимых подписчиков, CDC, аналитика.', limits: 'Одна очередь живёт на одном узле и ядре (~10–20 тыс. сообщений/с), quorum примерно вдвое медленнее, длинная очередь давит на память брокера.' } },
-      memcached: { name: 'Memcached', brand: '#3FA796', icon: '🧊', cat: 'cache', extra: true, group: 'Кэширование', pos: [685, 170], cap: 80000, lat: 1, cost: 150, cx: 1, tune: 'kv', noRepl: true, repLabel: 'узл.', cache: true, multi: true, at: 'db', absorb: { view: 0.95, search: 0.85 },
+      memcached: { name: 'Memcached', brand: '#3FA796', icon: '🧊', cat: 'cache', extra: true, group: 'Кэширование', hotFix: HOT_FIX, pos: [685, 170], cap: 80000, lat: 1, cost: 150, cx: 1, tune: 'kv', noRepl: true, repLabel: 'узл.', cache: true, multi: true, at: 'db', absorb: { view: 0.95, search: 0.85 },
         links: [[['hotel', 'reservation'], 'self']], tag: 'Простой кэш ключ → значение',
         learn: { more: CACHE_MORE, what: 'Кэш в памяти: строки по ключу, многопоточный. Ставится вместо Redis перед БД.', plus: ['Многопоточный: одна машина держит больше запросов, чем Redis', 'Проще и дешевле'], minus: ['Нет репликации и записи на диск: после рестарта кэш пустой, и вся нагрузка разом падает на БД', 'Нет структур данных, блокировок и pub/sub'] },
         fit: { use: 'Горячие чтения простых объектов (страница отеля, цены) на больших QPS.', avoid: 'Нужны структуры (списки, счётчики), блокировки, pub/sub или кэш должен пережить рестарт.', limits: 'Значение до 1 МБ, нет репликации и персистентности, вытеснение LRU.' } },
@@ -768,6 +768,8 @@
     },
 
     // Почему стрелку провести нельзя (для частых ошибок; остальное объясняет общий текст).
+    kpiFlows: [{ id: 'view', label: 'Просмотр' }, { id: 'book', label: 'Бронь' }], mainFlow: 'book',
+    bgNote: 'Бронь это не тормозит.',
     overload: 'снять нагрузку раньше (кэш, CDN, rate limiter), разделить всю систему на ячейки (блок «Ячейки»), а в короткий пик пускать через виртуальную очередь',
     linkWhy(a, b) {
       const B = this.blocks;
@@ -802,7 +804,7 @@
       base: [
         { text: 'Все четыре потока доходят до данных', check: (r) => r.m.routed },
         { text: 'Клиент ходит только через API Gateway', check: (r) => !r.graph.edges.some((e) => r.nodes[e.from] && r.nodes[e.from].type === 'client' && r.nodes[e.to] && r.nodes[e.to].type !== 'gateway' && !r.nodes[e.to].def.absorb && !r.nodes[e.to].def.via) },
-        { text: 'Нагрузка выдерживается', check: (r) => r.m.served >= 1 && r.m.maxU <= 0.9 },
+        g.LabKit.GOAL_LOAD,
         { text: 'У Payment Service своя БД', check: (r) => { const f = r.flows.find((x) => x.id === 'pay'); return f.ok && r.nodes[f.path[f.path.length - 1].id].type === 'payDB'; } },
       ],
       deep: [
@@ -816,6 +818,9 @@
 
     summary: {
       // Рассказ строится из состояния ученика: x = { d, r, sc, choice(key), has(type), blocks, scn }.
+      db: 'resDB', core: ['Клиент', 'API Gateway', 'Hotel Service', 'Reservation Service', 'Payment Service', 'Hotel DB', 'Reservation DB', 'Payment DB', 'Балансировщик нагрузки'],
+      estCard: (d, f) => `${f(d.tps * d.k)} броней/с`,
+      badRow: { label: 'Дубли и перепродажи за день', ids: ['dup', 'oversell'] },
       script: (x) => {
         const t = x.fmt;
         return [

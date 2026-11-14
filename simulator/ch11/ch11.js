@@ -1,8 +1,6 @@
 /* Глава 11. Payment System: данные для лаборатории (simulator/lab). */
 (function (g) {
-  // Числа в тексте: разряды пробелами, дробь через запятую.
-  const num = (v) => Math.round(v).toLocaleString('ru-RU'), dec = (v) => String(+v.toFixed(1)).replace('.', ',');
-  const big = (v) => (v >= 1e9 ? dec(v / 1e9) + ' млрд' : v >= 1e6 ? dec(v / 1e6) + ' млн' : v >= 1e4 ? num(v / 1e3) + ' тыс.' : v >= 10 ? num(v) : dec(v));
+  const { num, dec, big } = g.LabKit; // формат чисел в тексте: lab/kit.js
   const TIMEOUT = 0.002; // допущение: доля вызовов PSP, которые обрываются по таймауту
   const DOUBLE = 0.0005; // допущение: доля платежей, где покупатель жмёт «Оплатить» дважды
   const MISMATCH = 0.0001; // допущение: доля платежей, где PSP и мы расходимся (ошибка PSP, банка или наша)
@@ -65,7 +63,7 @@
       { id: 'api', title: 'API и данные', sub: 'payment event и order', kind: 'api', tag: '~5 мин', guide: 'POST /v1/payments и статус. Таблицы payment_event и payment_order в реляционной БД, сумма строкой.' },
       { id: 'hld', title: 'Дизайн', sub: 'схема на карте', kind: 'map', stage: 'base', tag: '~10 мин', guide: 'Покупатель → Payment service → Payment executor → PSP. После успеха Wallet и Ledger. PSP сообщает итог через webhook.' },
       { id: 'deep', title: 'Углубление', sub: 'проблемы и решения', kind: 'map', stage: 'deep', tag: '~15 мин', guide: 'Карты и PCI, долгие платежи, повторы и идемпотентность, Kafka для wallet и ledger, двойная запись, сверка, сбой PSP.' },
-      { id: 'sum', title: 'Итог', sub: 'рассказ для интервью', kind: 'sum', tag: '~5 мин', guide: 'Перескажи решение по шагам и ответь на вопросы для повторения.' },
+      g.LabKit.STEP_SUM,
     ],
 
     requirements: {
@@ -114,7 +112,7 @@
           { t: 'Хранение карт', d: 'Hosted payment page PSP: карта уходит мимо нас.' },
           { t: 'Синхронный вызов всего подряд', d: 'Wallet и ledger обновляются асинхронно после успеха.' },
         ],
-        revisit: 'Решение верно, пока верны требования. Новое FR может поменять NFR, и тогда пересматривается архитектура. Примеры ниже.',
+        revisit: g.LabKit.REVISIT,
       },
       future: [
         { fr: 'Несколько стран и валют', breaks: ['consistency'],
@@ -228,7 +226,7 @@
           cols: [{ n: 'seller_account', t: 'string', k: 'PK', d: 's-15' }, { n: 'balance', t: 'decimal', d: 'Сколько должны продавцу' }, { n: 'version', t: 'int', d: 'Оптимистичная блокировка' }] },
       ],
       more: {
-        intro: 'Для интервью хватает таблиц выше. Ниже то, что добавляют, когда растут требования.',
+        intro: g.LabKit.API_MORE,
         tables: [
           { name: 'outbox (расширение)', when: 'Событие для Kafka пишется в той же транзакции, что и статус.', cols: 'id, aggregate_id, type, payload, published_at' },
           { name: 'reconciliation_issue', when: 'Расхождения сверки, которые разбирает финансовая команда.', cols: 'id, payment_order_id, kind, psp_value, our_value, status' },
@@ -414,11 +412,7 @@
 
     model(ctx) {
       const { d, deep, nodes, flows, stage } = ctx, c = deep.choices, M = ctx.metrics;
-      const all = Object.values(nodes), of = (t) => all.filter((n) => n.type === t), F = (id) => flows.find((f) => f.id === id);
-      const badge = (n, icon, title) => n && n.badges.push({ icon, title });
-      const addLoad = (n, fid, x) => { if (!n || !x) return; n.load += x; n.flows[fid] = (n.flows[fid] || 0) + x; if (F(fid).write) n.wload += x; };
-      const scale = (n, fid, m) => n && addLoad(n, fid, (n.flows[fid] || 0) * (m - 1));
-      const via = (f, t) => f.ok && f.path.some((x) => nodes[x.id].type === t);
+      const { all, of, F, badge, addLoad, scale, via } = g.LabKit.tools(ctx);
       const on = (f, t) => { const x = f.ok && f.path.find((y) => [].concat(t).includes(nodes[y.id].type)); return x ? nodes[x.id] : null; };
       M.pci = M.dup = M.stuck = M.lostOut = M.miss = M.coupled = 0;
       const exec = on(F('pay'), EXEC), temporal = via(F('pay'), 'temporal');
@@ -498,7 +492,7 @@
       base: [
         { text: 'Оплата, статус, webhook, баланс и проводки доходят до цели', check: (r) => r.m.routed },
         { text: 'Оплата быстрее 1 с, статус быстрее 50 мс', check: (r) => r.m.routed && r.flows.find((f) => f.id === 'pay').lat <= 1000 && r.flows.find((f) => f.id === 'status').lat <= 50 },
-        { text: 'Нагрузка выдерживается', check: (r) => r.m.served >= 1 && r.m.maxU <= 0.9 },
+        g.LabKit.GOAL_LOAD,
       ],
       deep: [
         { text: 'Нет двойных списаний и зависших платежей', check: (r) => r.m.routed && r.m.dup === 0 && r.m.stuck === 0 },

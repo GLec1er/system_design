@@ -1,8 +1,6 @@
 /* Глава 2. Nearby Friends: данные для лаборатории (simulator/lab). */
 (function (g) {
-  // Числа в тексте: разряды пробелами, дробь через запятую.
-  const num = (v) => Math.round(v).toLocaleString('ru-RU'), dec = (v) => String(+v.toFixed(1)).replace('.', ',');
-  const big = (v) => (v >= 1e9 ? dec(v / 1e9) + ' млрд' : v >= 1e6 ? dec(v / 1e6) + ' млн' : v >= 1e4 ? num(v / 1e3) + ' тыс.' : v >= 10 ? num(v) : dec(v));
+  const { num, dec, big } = g.LabKit; // формат чисел в тексте: lab/kit.js
   const DAY = 1e5; // сутки ≈ 10⁵ секунд, как считает книга
   const SESSION = 1800; // допущение: WebSocket-соединение живёт около 30 минут, потом клиент подключается заново
   const CONN_PER_WS = 100000; // допущение: соединений на один WebSocket-сервер
@@ -65,7 +63,7 @@
       { id: 'api', title: 'API и данные', sub: 'WebSocket, REST и кэш', kind: 'api', tag: '~5 мин', guide: 'Сообщения WebSocket в обе стороны, REST для профиля и друзей, кэш координат и история.' },
       { id: 'hld', title: 'Дизайн', sub: 'схема на карте', kind: 'map', stage: 'base', tag: '~10 мин', guide: 'WebSocket-серверы принимают точки и пишут их в кэш, историю и канал Pub/Sub. Pub/Sub рассылает точку серверам друзей.' },
       { id: 'deep', title: 'Углубление', sub: 'проблемы и решения', kind: 'map', stage: 'deep', tag: '~15 мин', guide: 'Как рассылать, сколько серверов Pub/Sub, кольцо consistent hashing, выкатка WebSocket, TTL, история, открытие экрана.' },
-      { id: 'sum', title: 'Итог', sub: 'рассказ для интервью', kind: 'sum', tag: '~5 мин', guide: 'Перескажи решение по шагам и ответь на вопросы для повторения.' },
+      g.LabKit.STEP_SUM,
     ],
 
     requirements: {
@@ -113,7 +111,7 @@
           { t: 'Опрос по HTTP', d: 'Задержка до 30 с и миллионы пустых ответов.' },
           { t: 'Долговечный кэш координат', d: 'Упал Redis: клиенты пришлют новые точки через 30 секунд.' },
         ],
-        revisit: 'Решение верно, пока верны требования. Новое FR может поменять NFR, и тогда пересматривается архитектура. Примеры ниже.',
+        revisit: g.LabKit.REVISIT,
       },
       future: [
         { fr: 'Показывать случайных людей рядом', breaks: ['privacy', 'throughput'],
@@ -269,7 +267,7 @@
           cols: [{ n: 'user_id', t: 'BIGINT', k: 'PK', d: 'Чьи друзья', ref: { t: 'users', c: 'user_id' } }, { n: 'friend_id', t: 'BIGINT', k: 'PK', d: 'Друг', ref: { t: 'users', c: 'user_id' } }, { n: 'created_at', t: 'TIMESTAMP', d: 'Когда подружились' }] },
       ],
       more: {
-        intro: 'Для интервью хватает таблиц выше. Ниже то, что добавляют, когда растут требования.',
+        intro: g.LabKit.API_MORE,
         tables: [
           { name: 'pubsub_ring', when: 'Кольцо серверов Pub/Sub в etcd или ZooKeeper.', cols: '/config/pub_sub_ring → ["p_1", "p_2", …]' },
           { name: 'geohash_channels', when: 'Случайные люди рядом: канал на ячейку geohash.', cols: 'channel geo:{geohash} → подписчики ячейки и 8 соседних' },
@@ -454,9 +452,7 @@
 
     model(ctx) {
       const { d, deep, nodes, flows, stage } = ctx, c = deep.choices, M = ctx.metrics;
-      const all = Object.values(nodes), of = (t) => all.filter((n) => n.type === t), F = (id) => flows.find((f) => f.id === id);
-      const badge = (n, icon, title) => n && n.badges.push({ icon, title });
-      const addLoad = (n, fid, x) => { if (!n || !x) return; n.load += x; n.flows[fid] = (n.flows[fid] || 0) + x; if (F(fid).write) n.wload += x; };
+      const { all, of, F, badge, addLoad } = g.LabKit.tools(ctx);
       const zero = (n, fid) => n && addLoad(n, fid, -(n.flows[fid] || 0));
       const scale = (n, fid, m) => n && addLoad(n, fid, (n.flows[fid] || 0) * (m - 1));
       M.ghost = M.dropped = M.resub = 0;
@@ -565,7 +561,7 @@
         { text: 'Точки, рассылка, открытие и REST доходят до цели', check: (r) => r.m.routed },
         { text: 'REST и WebSocket за одним балансировщиком', check: (r) => Object.values(r.nodes).some((n) => n.type === 'lb' && ['ws', 'api'].every((t) => r.graph.edges.some((e) => e.from === n.id && r.nodes[e.to] && r.nodes[e.to].type === t))) },
         { text: 'Точка идёт в кэш, историю и канал Pub/Sub', check: (r) => ['update', 'history', 'publish', 'fanout'].every((id) => r.flows.find((f) => f.id === id).ok) },
-        { text: 'Нагрузка выдерживается', check: (r) => r.m.served >= 1 && r.m.maxU <= 0.9 },
+        g.LabKit.GOAL_LOAD,
       ],
       deep: [
         { text: 'Друг видит точку быстрее 0,5 с', check: (r) => r.m.routed && r.flows.find((f) => f.id === 'fanout').lat <= 500 },

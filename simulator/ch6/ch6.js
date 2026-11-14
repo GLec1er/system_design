@@ -1,8 +1,6 @@
 /* Глава 6. Ad Click Event Aggregation: данные для лаборатории (simulator/lab). */
 (function (g) {
-  // Числа в тексте: разряды пробелами, дробь через запятую.
-  const num = (v) => Math.round(v).toLocaleString('ru-RU'), dec = (v) => String(+v.toFixed(1)).replace('.', ',');
-  const big = (v) => (v >= 1e9 ? dec(v / 1e9) + ' млрд' : v >= 1e6 ? dec(v / 1e6) + ' млн' : v >= 1e4 ? num(v / 1e3) + ' тыс.' : v >= 10 ? num(v) : dec(v));
+  const { num, dec, big } = g.LabKit; // формат чисел в тексте: lab/kit.js
   const ACTIVE = 0.1; // допущение: доля объявлений, которые кликают в данную минуту
   const LATE = 0.01; // допущение: доля кликов, пришедших позже своей минуты
   const HOT = 0.08; // допущение: доля пика у самого горячего объявления
@@ -61,7 +59,7 @@
       { id: 'api', title: 'API и данные', sub: 'счётчик, топ-100, сырые и агрегаты', kind: 'api', tag: '~5 мин', guide: 'Два запроса из книги, событие клика и запись агрегата. Храним и сырые клики, и агрегаты.' },
       { id: 'hld', title: 'Дизайн', sub: 'схема на карте', kind: 'map', stage: 'base', tag: '~10 мин', guide: 'Log watcher → Kafka → агрегация → второй Kafka → запись в БД агрегатов. Сырые клики отдельно в Cassandra.' },
       { id: 'deep', title: 'Углубление', sub: 'проблемы и решения', kind: 'map', stage: 'deep', tag: '~15 мин', guide: 'Event time и watermark, окна, exactly-once, горячее объявление, снапшоты, Kappa и пересчёт, сверка.' },
-      { id: 'sum', title: 'Итог', sub: 'рассказ для интервью', kind: 'sum', tag: '~5 мин', guide: 'Перескажи решение по шагам и ответь на вопросы для повторения.' },
+      g.LabKit.STEP_SUM,
     ],
 
     requirements: {
@@ -106,7 +104,7 @@
           { t: 'Синхронная запись клика в БД', d: 'Пик убьёт БД, а пользователю ответ не нужен.' },
           { t: 'Фрод и биллинг', d: 'Отдельные системы.' },
         ],
-        revisit: 'Решение верно, пока верны требования. Новое FR может поменять NFR, и тогда пересматривается архитектура. Примеры ниже.',
+        revisit: g.LabKit.REVISIT,
       },
       future: [
         { fr: 'Произвольные фильтры и срезы', breaks: ['latency'],
@@ -237,7 +235,7 @@
           cols: [{ n: 'window_size', t: 'integer', k: 'PK', d: 'M минут' }, { n: 'update_time_minute', t: 'timestamp', k: 'PK', d: 'Когда посчитан' }, { n: 'most_clicked_ads', t: 'array', d: 'ad_id в порядке кликов' }] },
       ],
       more: {
-        intro: 'Для интервью хватает таблиц выше. Ниже то, что добавляют, когда растут требования.',
+        intro: g.LabKit.API_MORE,
         tables: [
           { name: 'snapshots', when: 'Состояние узлов агрегации для быстрого восстановления.', cols: 'node_id, offset, state_blob, taken_at' },
           { name: 'reconciliation', when: 'Итоги ночной сверки.', cols: 'day, ad_id, stream_count, batch_count, diff' },
@@ -398,10 +396,7 @@
 
     model(ctx) {
       const { d, deep, nodes, flows, stage } = ctx, c = deep.choices, M = ctx.metrics;
-      const all = Object.values(nodes), of = (t) => all.filter((n) => n.type === t), F = (id) => flows.find((f) => f.id === id);
-      const badge = (n, icon, title) => n && n.badges.push({ icon, title });
-      const addLoad = (n, fid, x) => { if (!n || !x) return; n.load += x; n.flows[fid] = (n.flows[fid] || 0) + x; if (F(fid).write) n.wload += x; };
-      const scale = (n, fid, m) => n && addLoad(n, fid, (n.flows[fid] || 0) * (m - 1));
+      const { all, of, F, badge, addLoad, scale } = g.LabKit.tools(ctx);
       M.wrong = M.lost = M.dup = M.hotLag = M.noFix = 0; M.recoverMin = 2;
       if (stage !== 'deep') return;
       const aggr = of('aggr')[0], rep = F('report'), store = rep.ok && nodes[rep.path[rep.path.length - 1].id];
@@ -465,7 +460,7 @@
       base: [
         { text: 'Клики, агрегаты и отчёты доходят до цели', check: (r) => r.m.routed },
         { text: 'Агрегаты идут через второй Kafka', check: (r) => r.flows.find((f) => f.id === 'aggOut').path.some((x) => r.nodes[x.id].type === 'aggQ') },
-        { text: 'Нагрузка выдерживается', check: (r) => r.m.served >= 1 && r.m.maxU <= 0.9 },
+        g.LabKit.GOAL_LOAD,
       ],
       deep: [
         { text: 'Каждый клик посчитан ровно один раз и в свою минуту', check: (r) => r.m.routed && r.m.wrong === 0 && r.m.lost === 0 && r.m.dup === 0 },

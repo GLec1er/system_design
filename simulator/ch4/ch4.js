@@ -1,8 +1,6 @@
 /* Глава 4. Distributed Message Queue: данные для лаборатории (simulator/lab). */
 (function (g) {
-  // Числа в тексте: разряды пробелами, дробь через запятую.
-  const num = (v) => Math.round(v).toLocaleString('ru-RU'), dec = (v) => String(+v.toFixed(1)).replace('.', ',');
-  const big = (v) => (v >= 1e9 ? dec(v / 1e9) + ' млрд' : v >= 1e6 ? dec(v / 1e6) + ' млн' : v >= 1e4 ? num(v / 1e3) + ' тыс.' : v >= 10 ? num(v) : dec(v));
+  const { num, dec, big } = g.LabKit; // формат чисел в тексте: lab/kit.js
   const DISK_TB = 20; // допущение: диски одного брокера
   const READ_COST = 0.3; // чтение в основном из page cache и zero-copy: дешевле записи
 
@@ -65,7 +63,7 @@
       { id: 'api', title: 'API и данные', sub: 'produce, fetch, offset', kind: 'api', tag: '~5 мин', guide: 'Протокол клиента: отправить пачку, забрать пачку, сохранить offset, вступить в группу. Формат сообщения и сегменты журнала.' },
       { id: 'hld', title: 'Дизайн', sub: 'схема на карте', kind: 'map', stage: 'base', tag: '~10 мин', guide: 'Продюсеры пишут в брокеры, потребители забирают сами. Офсеты в своём хранилище, метаданные и координация в ZooKeeper.' },
       { id: 'deep', title: 'Углубление', sub: 'проблемы и решения', kind: 'map', stage: 'deep', tag: '~15 мин', guide: 'Журнал на диске, пачки, pull, ACK и реплики, гарантии доставки, ребалансировка, выбор контроллера, добавление партиций.' },
-      { id: 'sum', title: 'Итог', sub: 'рассказ для интервью', kind: 'sum', tag: '~5 мин', guide: 'Перескажи решение по шагам и ответь на вопросы для повторения.' },
+      g.LabKit.STEP_SUM,
     ],
 
     requirements: {
@@ -117,7 +115,7 @@
           { t: 'Глобальный порядок', d: 'Порядок внутри партиции.' },
           { t: 'Маршрутизация по правилам', d: 'Это RabbitMQ, другой класс систем.' },
         ],
-        revisit: 'Решение верно, пока верны требования. Новое FR может поменять NFR, и тогда пересматривается архитектура. Примеры ниже.',
+        revisit: g.LabKit.REVISIT,
       },
       future: [
         { fr: 'Отложенные сообщения: доставить через 30 минут', breaks: ['latency'],
@@ -259,7 +257,7 @@
           cols: [{ n: 'partition', t: 'topic-N', k: 'PK', d: 'orders-3', ref: { t: 'topic_config', c: 'topic' } }, { n: 'leader', t: 'broker_id', d: 'Пишут и читают через него' }, { n: 'replicas', t: 'list', d: 'Брокеры с копиями, на разных стойках' }, { n: 'isr', t: 'list', d: 'Копии, которые не отстали' }] },
       ],
       more: {
-        intro: 'Для интервью хватает таблиц выше. Ниже то, что добавляют, когда растут требования.',
+        intro: g.LabKit.API_MORE,
         tables: [
           { name: 'delayed_messages', when: 'Отложенная доставка.', cols: 'deliver_at, topic, payload (time wheel)' },
           { name: 'producer_state', when: 'Exactly-once: идемпотентный продюсер.', cols: 'producer_id, epoch, last_sequence' },
@@ -414,10 +412,7 @@
 
     model(ctx) {
       const { d, deep, nodes, flows, stage } = ctx, c = deep.choices, M = ctx.metrics;
-      const all = Object.values(nodes), of = (t) => all.filter((n) => n.type === t), F = (id) => flows.find((f) => f.id === id);
-      const badge = (n, icon, title) => n && n.badges.push({ icon, title });
-      const addLoad = (n, fid, x) => { if (!n || !x) return; n.load += x; n.flows[fid] = (n.flows[fid] || 0) + x; if (F(fid).write) n.wload += x; };
-      const scale = (n, fid, m) => n && addLoad(n, fid, (n.flows[fid] || 0) * (m - 1));
+      const { all, of, F, badge, addLoad, scale } = g.LabKit.tools(ctx);
       M.lost = M.dup = M.stuck = M.moved = 0;
       const deepOn = stage === 'deep';
       const storage = deepOn ? c.storage : 'wal', batch = deepOn ? c.batch : 'small', pull = deepOn ? c.pull : 'pull';
@@ -500,7 +495,7 @@
         { text: 'Запись, чтение, офсеты и метаданные доходят до цели', check: (r) => r.m.routed },
         { text: 'Брокеры регистрируются в ZooKeeper', check: (r) => r.flows.find((f) => f.id === 'brokerHb').ok && Object.values(r.nodes).some((n) => n.type === 'zk') },
         { text: 'Диски брокеров вмещают данные за срок хранения', check: (r) => r.m.diskOk },
-        { text: 'Нагрузка выдерживается', check: (r) => r.m.served >= 1 && r.m.maxU <= 0.9 },
+        g.LabKit.GOAL_LOAD,
       ],
       deep: [
         { text: 'Сообщения не теряются при сбое брокера и потребителя', check: (r) => r.m.routed && r.m.lost === 0 },

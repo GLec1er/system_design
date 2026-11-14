@@ -72,6 +72,8 @@ sequenceDiagram
 ## 5. Паттерны
 Pub/Sub · Fan-out · WebSocket · Consistent hashing · Service discovery · Кэш с TTL
 
+**Шпаргалки к главе:** [consistent hashing](../../cheatsheets/building-blocks.md#consistent-hashing) · [WebSocket против опроса](../../cheatsheets/building-blocks.md#доставка-событий-клиенту) · [fan-out](../../cheatsheets/building-blocks.md#рассылка-при-записи-или-при-чтении)
+
 ## 6. Вопросы для повторения
 <details><summary>Почему нагрузка определяется fan-out, а не входящим потоком?</summary>
 
@@ -88,6 +90,42 @@ Pub/Sub · Fan-out · WebSocket · Consistent hashing · Service discovery · К
 <details><summary>Что сложного в масштабировании Pub/Sub-кластера?</summary>
 
 Он stateful: при смене числа серверов каналы переезжают, клиентов надо переподписать. Помогают consistent hashing и service discovery.
+</details>
+<details><summary>Сколько обновлений и рассылок?</summary>
+
+10 млн онлайн ÷ 30 с ≈ 334 тыс. обновлений. По 40 друзей онлайн: около 14 млн рассылок в секунду.
+</details>
+<details><summary>Почему WebSocket?</summary>
+
+Двусторонняя связь: сервер сам присылает точки друзей. Опрос дал бы задержку до 30 с и пустые ответы.
+</details>
+<details><summary>Почему канал на пользователя?</summary>
+
+Каналы дешёвые. Подписаны только серверы друзей, поэтому рассылок столько, сколько получателей.
+</details>
+<details><summary>Сколько серверов Redis Pub/Sub?</summary>
+
+По памяти 200 ГБ, два сервера. По CPU 14 млн ÷ 100 тыс., около 140. Узкое место CPU.
+</details>
+<details><summary>Как распределены каналы?</summary>
+
+Consistent hashing, кольцо в etcd или ZooKeeper. WebSocket-сервер по кольцу находит сервер канала.
+</details>
+<details><summary>Как выкатывать WebSocket-серверы?</summary>
+
+Draining: балансировщик перестаёт слать новые соединения, сервер выключается, когда старые ушли.
+</details>
+<details><summary>Что происходит при подключении?</summary>
+
+Точка в кэш, друзья из User DB, их точки пакетом из кэша, расстояния, подписка на каналы друзей, публикация своей точки.
+</details>
+<details><summary>Как показать случайных людей рядом?</summary>
+
+Каналы по ячейкам geohash: пишем в канал своей ячейки, подписаны на свою и 8 соседних.
+</details>
+<details><summary>Чем можно заменить Redis Pub/Sub?</summary>
+
+Erlang/Elixir: процесс на пользователя подписан на процессы друзей. Хорошо, но опыт редкий.
 </details>
 
 ## 7. Мои заметки
