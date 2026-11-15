@@ -728,3 +728,30 @@ h3.sec{margin:22px 0 10px;font-size:13px;letter-spacing:.04em;text-transform:upp
 .tabs button:hover{color:var(--ink)}
 .tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
 .tabs em{font-style:normal;font:600 11px var(--mono);color:var(--muted);background:var(--card2);border-radius:999px;padding:1px 6px;margin-left:4px}
+
+/* ---------- пробное интервью ---------- */
+.ivbtn{cursor:pointer;font:inherit;font-size:13px;color:inherit}
+.ivbtn:hover,.ivbtn.on{border-color:var(--accent);color:var(--accent)}
+.ivbar{position:fixed;right:16px;bottom:16px;z-index:60;display:flex;align-items:center;gap:14px;max-width:calc(100vw - 32px);padding:8px 10px 8px 16px;border-radius:999px;background:var(--card);border:1px solid var(--accent);box-shadow:0 8px 28px rgba(0,0,0,.18);font-size:13px}
+.ivbar b{font-family:var(--mono);font-size:17px;min-width:56px;text-align:center}
+.ivbar.late b{color:var(--bad)}
+.ivbar .ivnote{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:640px){.ivbar .ivnote,.ivbar .ivt{display:none}}
+/* что скрыто во время интервью: эталон и сравнение с ним, проверка схемы, причины поломок, предпросмотр эффекта блоков,
+   пояснения к решениям и готовые фразы, ответы требований */
+body.interview #ref,body.interview #refBook,body.interview #cmp,body.interview #bookline,body.interview #broken,
+body.interview .ivhide,body.interview #goals,body.interview #warns,body.interview .tips,body.interview .pal-card .chips,
+body.interview .prob .onote,body.interview .prob .note,body.interview .prob details,body.interview .prob.solved .pnum::after,
+body.interview #reqCheck,body.interview [data-tabs="req"],body.interview .empty-map span{display:none !important}
+body.interview .prob.solved{border-color:var(--line)}
+.ivres{border-color:var(--accent);margin-bottom:14px}
+.ivres .sh{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.ivres .sh h3{margin:0}
+.ivgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
+.ivgrid>div{padding:10px 12px;border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column;gap:2px}
+.ivgrid small{color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:11px}
+.ivgrid b{font-size:22px}.ivgrid span{color:var(--muted);font-size:12px}
+.ivres .ok{color:var(--ok)}.ivres .no{color:var(--bad)}
+.ivcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:6px 24px}
+.ivcols ul{list-style:none;margin:0;padding:0;font-size:13.5px;line-height:1.7}
+.ivcols li.ok,.ivcols li.no{color:inherit}.ivcols li.no{color:var(--bad)}

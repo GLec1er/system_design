@@ -47,6 +47,7 @@
   // перечислены в LabEngine.contract: общий код не подставляет за главу значения другой главы.
   const KF = L.kpiFlows;
   const MAIN = KF.find((f) => f.id === L.mainFlow) || KF[KF.length - 1];
+  const IV_MIN = 45; // длина пробного интервью, минут
   const CX = L.cx || [14, 20]; // пороги плитки «Сложность»: жёлтая и красная
 
   // ---------- состояние ----------
@@ -55,7 +56,7 @@
     L.estimate.inputs.forEach((i) => (est[i.id] = i.value));
     L.problems.forEach((p) => { (p.params || []).forEach((x) => (params[x.id] = x.value)); if (p.options) choices[p.key] = p.options[0].v; });
     L.scenario.forEach((x) => (params[x.id] = x.value));
-    return { step: 0, visited: {}, req: {}, reqChecked: false, est, graph: { nodes: [], edges: [] }, deep: { params, choices }, show: null, palClosed: {} };
+    return { step: 0, visited: {}, req: {}, reqChecked: false, est, graph: { nodes: [], edges: [] }, deep: { params, choices }, show: null, palClosed: {}, interview: null, ivResult: null };
   }
   const defaults = fresh();
   // Сохранение могло остаться от старой версии главы: блок переименовали, шаг убрали, решение удалили.
@@ -77,6 +78,8 @@
       graph: { nodes, edges },
       deep: { params: pick(f.deep.params, obj(deep.params), num), choices: pick(f.deep.choices, obj(deep.choices), (k, v) => (opts[k] || []).includes(v)) },
       show: L.flows.some((x) => x.id === s.show) ? s.show : null,
+      interview: num('', obj(s.interview).start) && num('', obj(s.interview).until) ? { start: s.interview.start, until: s.interview.until } : null,
+      ivResult: num('', obj(s.ivResult).ms) && Array.isArray(s.ivResult.goals) && Array.isArray(s.ivResult.probs) ? s.ivResult : null,
     });
   }
   function load() {
@@ -111,12 +114,83 @@
   const analyze = (stage) => analyzeG(st.graph, stage);
 
   // ---------- каркас ----------
+  // ---------- пробное интервью ----------
+  // Таймер, пустая карта и никаких подсказок. Что именно скрыто, перечислено в lab.css (body.interview):
+  // эталон, проверка схемы, «что сломалось», пояснения к решениям, ответы требований. Плитки метрик остаются.
+  let ivTimer = 0;
+  const mmss = (t) => { const sec = Math.max(0, Math.round(t / 1000)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
+  function ivPaint() {
+    const iv = st.interview;
+    let bar = $('#ivbar');
+    document.body.classList.toggle('interview', !!iv);
+    if (!iv) { if (bar) bar.remove(); clearInterval(ivTimer); ivTimer = 0; return; }
+    if (!bar) {
+      bar = document.createElement('div'); bar.id = 'ivbar'; bar.className = 'ivbar'; bar.setAttribute('role', 'timer');
+      bar.innerHTML = '<span class="ivt">🎤 Пробное интервью</span><b id="ivclock"></b><span id="ivnote" class="ivnote"></span><button type="button" class="btn sm" id="ivStop">Закончить</button>';
+      document.body.appendChild(bar);
+      $('#ivStop').onclick = ivAskFinish;
+    }
+    const left = iv.until - Date.now();
+    $('#ivclock').textContent = left > 0 ? mmss(left) : 'время вышло';
+    bar.classList.toggle('late', left <= 5 * 60000);
+    $('#ivnote').textContent = `шаг ${st.step + 1}: ${step().title}${step().tag ? ', ' + step().tag : ''}`;
+    if (!ivTimer) ivTimer = setInterval(ivPaint, 1000);
+  }
+  function ivStart() {
+    if (!confirm(`Начать пробное интервью?\n\nОтветы, карта и решения этой главы будут очищены. На ${IV_MIN} минут скрываются эталон, проверка схемы и пояснения к решениям. Результат покажем в конце.`)) return;
+    st = fresh();
+    st.interview = { start: Date.now(), until: Date.now() + IV_MIN * 60000 };
+    selNode = selEdge = pendingFrom = null;
+    save();
+    try { history.replaceState(null, '', '#' + step().id); } catch (e) {}
+    ivPaint(); renderSteps(); renderStep();
+    window.scrollTo({ top: 0 });
+  }
+  function ivAskFinish() { if (confirm('Закончить интервью и показать результат?')) ivFinish(); }
+  function ivFinish() {
+    const iv = st.interview;
+    if (!iv) return;
+    const has = st.graph.nodes.length > 0;
+    const goals = L.steps.filter((s) => s.kind === 'map').map((s) => { const r = analyze(s.stage); return { title: s.title, list: L.goals[s.stage].map((g) => ({ text: g.text, ok: has && !!g.check(r) })) }; });
+    const probs = L.problems.filter((p) => p.options).map((p) => ({ title: p.title, ok: (p.best || []).includes(st.deep.choices[p.key]) }));
+    st.ivResult = { ms: Date.now() - iv.start, limit: IV_MIN, req: reqScore(), goals, probs };
+    st.interview = null;
+    st.reqChecked = true; // ответы требований теперь можно посмотреть
+    save();
+    ivPaint();
+    const i = L.steps.findIndex((s) => s.kind === 'sum');
+    go(i >= 0 ? i : st.step);
+  }
+  function ivLockedHtml(s) {
+    return `${head(s, 'Итог пересказывает решение целиком, поэтому во время пробного интервью он закрыт.')}
+      <section class="card"><p>Когда закончишь, здесь появится результат: сколько времени ушло, какие цели схемы выполнены и какие решения совпали с ${bk('книгой', 'типовыми')}. После этого откроются эталон и все подсказки.</p>
+      <div class="row-btns"><button class="btn primary" id="ivEnd">Закончить интервью</button></div></section>`;
+  }
+  function ivResultHtml() {
+    const R = st.ivResult;
+    if (!R) return '';
+    const li = (x) => `<li class="${x.ok ? 'ok' : 'no'}">${x.ok ? '✓' : '✗'} ${esc(x.text || x.title)}</li>`;
+    const done = (list) => `${list.filter((x) => x.ok).length} из ${list.length}`;
+    const over = R.ms > R.limit * 60000;
+    return `<section class="card ivres"><div class="sh"><h3>🎤 Результат пробного интервью</h3><button type="button" class="btn sm ghost" id="ivClear">Убрать</button></div>
+      <div class="ivgrid">
+        <div><small>Время</small><b class="${over ? 'no' : 'ok'}">${mmss(R.ms)}</b><span>из ${R.limit}:00${over ? ', не уложился' : ''}</span></div>
+        <div><small>Требования</small><b>${R.req.ok} из ${R.req.total}</b><span>отмечено верно</span></div>
+        ${R.goals.map((g) => `<div><small>${esc(g.title)}</small><b>${done(g.list)}</b><span>целей схемы</span></div>`).join('')}
+        <div><small>Решения</small><b>${done(R.probs)}</b><span>совпали с ${bk('книгой', 'типовыми')}</span></div>
+      </div>
+      <div class="ivcols">${R.goals.map((g) => `<div><h4 class="grp">${esc(g.title)}: цели</h4><ul>${g.list.map(li).join('')}</ul></div>`).join('')}
+        <div><h4 class="grp">Решения углубления</h4><ul>${R.probs.map(li).join('')}</ul></div></div>
+      <p class="muted small">Эталон, проверка схемы и пояснения к решениям снова открыты: вернись на карту и сравни свою схему с эталоном.</p></section>`;
+  }
+
   function init() {
     document.title = `${L.title} · System Design Lab`;
     $('#hero').innerHTML = `<div class="hero-copy"><span class="eyebrow">Глава ${L.n} · ${esc(BOOK.title)}</span><h1>${esc(L.title)}</h1>
       <div class="hero-meta" id="hero-meta"></div><span class="eyebrow">Задача</span><p>${esc(L.intro)}</p></div>${window.SD_octoHTML ? SD_octoHTML() : ''}`;
     const h = location.hash.slice(1), i = L.steps.findIndex((s) => s.id === h);
     if (i >= 0) st.step = i;
+    ivPaint();
     renderSteps();
     renderStep();
   }
@@ -142,7 +216,8 @@
   }
   function renderSteps() {
     const done = L.steps.filter(stepDone).length;
-    $('#hero-meta').innerHTML = `<span class="hchip">${L.steps.length} шагов</span><span class="hchip"><i class="ring" style="--p:${done / L.steps.length * 100}%"></i>пройдено ${done} / ${L.steps.length}</span><span class="hchip">шаг ${st.step + 1}: ${esc(step().title)}</span>`;
+    $('#hero-meta').innerHTML = `<span class="hchip">${L.steps.length} шагов</span><span class="hchip"><i class="ring" style="--p:${done / L.steps.length * 100}%"></i>пройдено ${done} / ${L.steps.length}</span><span class="hchip">шаг ${st.step + 1}: ${esc(step().title)}</span><button type="button" class="hchip ivbtn${st.interview ? ' on' : ''}" id="ivGo" title="Таймер на ${IV_MIN} минут, пустая карта, подсказки и эталон скрыты">${st.interview ? '🎤 Идёт интервью: закончить' : '🎤 Пробное интервью'}</button>`;
+    $('#ivGo').onclick = () => (st.interview ? ivAskFinish() : ivStart());
     $('#steps').innerHTML = L.steps.map((s, i) => { const done = i !== st.step && stepDone(s);
       return `<button class="stp ${done ? 'done' : ''}" data-i="${i}" aria-current="${i === st.step ? 'step' : 'false'}"><span class="num">${done ? '✓' : i + 1}</span><span class="stt"><b>${esc(s.title)}</b><small>${esc(s.sub || '')}</small></span></button>`; }).join('<span class="sline" aria-hidden="true"></span>');
     $$('#steps .stp').forEach((b) => (b.onclick = () => go(+b.dataset.i)));
@@ -178,10 +253,13 @@
 
   function renderStep() {
     const s = step(), box = $('#app');
-    box.innerHTML = ({ req: reqView, est: estView, api: apiView, map: mapView, sum: sumView }[s.kind])() + nav();
+    const locked = s.kind === 'sum' && st.interview; // итог пересказывает решение: во время интервью он закрыт
+    box.innerHTML = (locked ? ivLockedHtml(s) : (s.kind === 'sum' ? ivResultHtml() : '') + ({ req: reqView, est: estView, api: apiView, map: mapView, sum: sumView }[s.kind])()) + nav();
     $$('[data-go]', box).forEach((b) => (b.onclick = () => go(+b.dataset.go)));
     $$('[data-tabs]', box).forEach((t) => $$('[data-tab]', t).forEach((b) => (b.onclick = () => showTab(t, b.dataset.tab))));
+    if (locked) { $('#ivEnd').onclick = ivAskFinish; return; }
     ({ req: bindReq, est: bindEst, api: bindApi, map: bindMap, sum: bindSum }[s.kind])();
+    if ($('#ivClear')) $('#ivClear').onclick = () => { st.ivResult = null; save(); renderStep(); };
   }
 
   // ---------- 1. Требования ----------
@@ -455,9 +533,9 @@
             <aside class="insp" id="insp" hidden></aside>
           </div>
         </section>
-        <aside class="card chk"><h3>Проверка схемы</h3><div id="goals"></div>
+        <aside class="card chk"><h3 class="ivhide">Проверка схемы</h3><div id="goals"></div>
           <h4 class="grp">Потоки</h4><p class="muted small">Нажми на поток, чтобы оставить на карте только его.</p><div class="legend" id="legend"></div>
-          <h4 class="grp">Подсказки</h4><div class="warns" id="warns"></div></aside>
+          <h4 class="grp ivhide">Подсказки</h4><div class="warns" id="warns"></div></aside>
       </div>
       ${deep ? '<h3 class="sec">Проблемы углубления</h3><div class="probs" id="probs"></div>' : ''}
       <div class="toast" id="toast" role="status" hidden></div>`;

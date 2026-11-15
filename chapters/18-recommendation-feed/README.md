@@ -92,7 +92,7 @@ flowchart LR
 ## 5. Паттерны
 Воронка рекомендаций · Two-tower · ANN (HNSW, IVF) · Feature store · Потоковые признаки · Запись признаков при показе · Фильтр Блума · Исследование и использование · Несколько целей · Запасной путь · Теневая выкатка и A/B
 
-**Шпаргалки к главе:** [потоковая обработка](../../cheatsheets/README.md#потоковая-обработка-event-time-и-watermark) · [backpressure](../../cheatsheets/resilience.md#backpressure). Потоковый конвейер разобран в [главе 15](../15-streaming-pipeline/README.md), сервис инференса в [главе 17](../17-llm-inference/README.md).
+**Шпаргалки к главе:** [ИИ-системы](../../cheatsheets/ai-systems.md) · [потоковая обработка](../../cheatsheets/README.md#потоковая-обработка-event-time-и-watermark) · [backpressure](../../cheatsheets/resilience.md#backpressure). Потоковый конвейер разобран в [главе 15](../15-streaming-pipeline/README.md), сервис инференса в [главе 17](../17-llm-inference/README.md).
 
 ## 6. Вопросы для повторения
 <details><summary>Почему рекомендации делают воронкой?</summary>

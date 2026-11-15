@@ -59,3 +59,5 @@
 - [Кирпичи из первого тома](cheatsheets/building-blocks.md): rate limiter, consistent hashing, фильтр Блума, генерация ID.
 - [Устойчивость и наблюдаемость](cheatsheets/resilience.md): что делать, чтобы сбой одной части не уронил всё.
 - [Несколько регионов](cheatsheets/multi-region.md): то, чего в книге почти нет, а на интервью спрашивают.
+- [ИИ-системы](cheatsheets/ai-systems.md): токены и батчинг, кэш префиксов, воронка рекомендаций, векторный поиск, feature store.
+- [Сравнение глав](cheatsheets/comparison.md): все главы в одной таблице: какое хранилище, какая шина и почему.

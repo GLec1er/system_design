@@ -108,6 +108,24 @@ const only = process.argv.slice(2).map(Number).filter(Boolean);
     await page.evaluate(() => localStorage.setItem('sd-lab-' + window.LAB.id, '{"v":1,"graph":"мусор","est":7}'));
     await page.reload();
     check((await page.locator('#app').innerHTML()).length > 200, 'страница не открылась с битым сохранением');
+    // Пробное интервью: карта очищается, подсказки и эталон скрыты, итог закрыт; после окончания виден результат.
+    where = `глава ${c.n}, пробное интервью`;
+    page.once('dialog', (d) => d.accept());
+    await page.click('#ivGo');
+    check((await page.locator('#ivbar').count()) === 1 && /^\d+:\d\d$/.test(await page.textContent('#ivclock')), 'таймер интервью не появился');
+    await page.goto(url(`${c.dir}/index.html`) + '#' + steps.find((x) => x.kind === 'map').id);
+    await page.reload();
+    check((await page.locator('#ivbar').count()) === 1, 'интервью не пережило перезагрузку');
+    check((await page.locator('.node').count()) === 0, 'карта не очищена в начале интервью');
+    check(!(await page.locator('#ref').isVisible()) && !(await page.locator('#goals').isVisible()), 'эталон или проверка схемы видны во время интервью');
+    await page.goto(url(`${c.dir}/index.html`) + '#' + steps.find((x) => x.kind === 'sum').id);
+    await page.reload();
+    check((await page.locator('#reset').count()) === 0, 'итог открыт во время интервью');
+    page.once('dialog', (d) => d.accept());
+    await page.click('#ivEnd');
+    check((await page.locator('#ivbar').count()) === 0 && (await page.locator('.ivres li').count()) > 3, 'нет результата интервью');
+    await page.click('#ivClear');
+    check((await page.locator('.ivres').count()) === 0, 'результат интервью не убирается');
     console.log(`✔ глава ${c.n}`);
   }
 
