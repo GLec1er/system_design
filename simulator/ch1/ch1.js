@@ -529,7 +529,7 @@
       // Индекс по одному ключу на ячейку: в кэш идёт по ключу на ячейку, в БД один запрос IN (…), но строк в ответе больше.
       if (algo !== 'quadtree' && algo !== 'scan') {
         if (gc) { scale(gc, 'search', cells); gc.capMult *= 1 / (1 + ((cand / cells) * 8) / 16000); }
-        if (cells > 9) { search.extraLat += 2 * Math.log2(cells / 9); ctx.warn('warn', `Длина ${L} для радиуса ${dec(r)} км: круг покрывают ${num(cells)} ячеек, и на каждый поиск идёт ${num(cells)} ключей.`); }
+        if (cells > 9) { search.extraLat += 2 * Math.log2(cells / 9); ctx.warn('warn', algo === 's2' ? `Google S2 покрывает круг в ${dec(r)} км набором из ${num(cells)} ячеек разного размера: на каждый поиск идёт ${num(cells)} ключей вместо девяти.` : `Длина ${L} для радиуса ${dec(r)} км: круг покрывают ${g.LabKit.plural(num(cells), 'ячейка', 'ячейки', 'ячеек')}, и на каждый поиск идёт столько же ключей.`); }
       }
       if (db && db.def.tune === 'sql' && algo !== 'quadtree') db.capMult *= 1 / (1 + cand / 20000);
 
@@ -567,7 +567,7 @@
       // ---------- индекс и шардирование ----------
       const gdb = of('geoDB')[0];
       if (gdb && gdb.cfg.shards > 1) {
-        if (gdb.cfg.shardKey === 'bizid') { search.extraLat += 15 + 10 * Math.log2(gdb.cfg.shards); scale(gdb, 'search', 2); ctx.warn('warn', `Гео-индекс разбит по business_id на ${gdb.cfg.shards} шардов: поиск по geohash идёт во все шарды и ждёт самый медленный.`); }
+        if (gdb.cfg.shardKey === 'bizid') { search.extraLat += 15 + 10 * Math.log2(gdb.cfg.shards); scale(gdb, 'search', 2); ctx.warn('warn', `Гео-индекс разбит по business_id на ${g.LabKit.plural(gdb.cfg.shards, 'шард', 'шарда', 'шардов')}: поиск по geohash идёт во все шарды и ждёт самый медленный.`); }
         ctx.warn('info', `Индекс весит около ${dec(d.cacheGB)} ГБ и помещается на одну машину: шарды здесь только усложняют. Книга копирует индекс репликами.`);
         ctx.cx += 0.5;
       }
@@ -661,7 +661,7 @@
         const t = x.fmt, d = x.d, gc = x.cfgOf('geoDB'), hasT = (q) => x.has(q), lbs = x.r.nodes.lbs;
         return [
           { step: 'Требования', min: 4, text: 'Функции: поиск мест по координатам и радиусу, карточка места, правки владельца. Правка может появиться в поиске на следующий день. NFR: низкая задержка, приватность координат (GDPR, CCPA), доступность и масштаб в часы пик.' },
-          { step: 'Оценка', min: 3, text: `${t(d.U)} пользователей в день по 5 поисков: ${t(d.search * d.k)} поисков в секунду против ${t(d.edits * d.k)} правок. Места весят ${t(d.bizGB)} ГБ, индекс около ${t(d.cacheGB)} ГБ. ${g.LAB.estimate.conclusion(d)}` },
+          { step: 'Оценка', min: 3, text: `${t(d.U)} пользователей в день. ${g.LAB.estimate.conclusion(d)}` },
           { step: 'API', min: 3, text: 'GET /v1/search/nearby с latitude, longitude и radius возвращает места с расстоянием. CRUD /v1/businesses для владельцев. Таблицы business и geohash_index со строкой на пару (geohash, business_id).' },
           { step: 'Дизайн', min: 5, text: `Клиент → L7-балансировщик: /search в Location-based service, /businesses в Business service. LBS только читает и масштабируется копиями${lbs ? ` (сейчас ${lbs.rep})` : ''}, Business service пишет в primary. Под ними гео-индекс и Business DB с репликами для чтения.${x.extras.length ? ` Дополнительно: ${x.extras.join(', ')}.` : ''} ${x.r.m.routed ? `Схема держит ${Math.round(x.r.m.served * 100)}% нагрузки сценария, поиск около ${Math.round(x.bookLat)} мс.` : 'Схема на карте пока не достроена.'}` },
           { step: 'Алгоритм поиска', min: 6, text: x.choice('algo').say },

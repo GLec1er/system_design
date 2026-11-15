@@ -207,7 +207,7 @@
           const wr = W * hot >= (Rd * hot) / (1 + R);
           n.limit = wr ? 'запись в primary' : 'чтения';
           const sMax = Math.max(...opt('sql', 'shards', def));
-          n.need = wr ? (s < sMax ? `больше шардов${hot > 1 / s + 1e-9 ? ' и ровный ключ шардирования' : ''}` : `предел модели (${sMax} шардов): нужна другая модель данных или очередь записи`)
+          n.need = wr ? (s < sMax ? `больше шардов${hot > 1 / s + 1e-9 ? ' и ровный ключ шардирования' : ''}` : `предел модели (${root.LabKit.plural(sMax, 'шард', 'шарда', 'шардов')}): нужна другая модель данных или очередь записи`)
             : (R < 5 ? 'кэш перед БД или больше реплик' : 'кэш перед БД: реплик уже 5');
         }
         ctx.cost += (def.cost || 0) * s * (1 + 0.6 * R);
@@ -275,7 +275,7 @@
         if (n.lbBy) n.explain.push(`Перед блоком балансировщик (${{ rr: 'round robin', least: 'least connections', hash: 'IP hash' }[n.lbBy.cfg.alg]}): копии загружены ${n.capMult < 1 ? `неровно, полезно ${Math.round(n.capMult * 100)}% их мощности` : 'ровно'}.`);
         if (P) n.explain.push(`Читает из Kafka: в группе потребителей не больше, чем партиций (${P}).`);
         if (n.consumerOf && n.consumerOf.def.tune === 'rabbit') n.explain.push(`Читает из RabbitMQ: потребители конкурируют за очередь, их число не ограничено. Prefetch ${n.consumerOf.cfg.prefetch} даёт ${Math.round(n.capMult * 100)}% скорости.`);
-        if (n.util > 0.9) { n.limit = n.limitWhy || (P ? `потребителей не больше, чем партиций (${P})` : `предел модели: ${n.maxRep} копий`); n.need = n.needWhy || def.overload || lab.overload || 'снять нагрузку раньше (кэш, CDN, rate limiter) или делить систему по регионам, в модели этого нет'; }
+        if (n.util > 0.9) { n.limit = n.limitWhy || (P ? `потребителей не больше, чем партиций (${P})` : `предел модели: ${root.LabKit.plural(n.maxRep, 'копия', 'копии', 'копий')}`); n.need = n.needWhy || def.overload || lab.overload || 'снять нагрузку раньше (кэш, CDN, rate limiter) или делить систему по регионам, в модели этого нет'; }
         ctx.cost += (def.cost || 0) * n.rep;
         if (n.rep > 1 && (def.db || def.cache)) ctx.cx += 0.3 * Math.log2(n.rep); // stateless-реплики почти бесплатны по сложности
       }
