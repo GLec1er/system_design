@@ -71,3 +71,7 @@ assert(rc.nodes.metaDB.load < r0.nodes.metaDB.load * 0.6 && rc.nodes.iam.load < 
 const cs = E.addBlock(L, ref('base'), 'cassMeta', [0, 0]), rcs = E.analyze(L, cs.graph, est, deep0, 'base');
 assert(cs.dropped.length >= 1 && F(rcs, 'getMeta').path.some((x) => rcs.nodes[x.id].type === 'cassMeta'), 'cassMeta: потоки идут в неё');
 console.log('ch9 ok');
+
+// вариант книги: три копии в разных AZ с суммой при чтении дают шесть девяток, без проверки сумм нет
+const book = (integrity) => E.adapt(L, 'deep', est, { params: deep0.params, choices: Object.assign({}, good.choices, { redund: 'rep3', integrity }) }).r.m.nines;
+assert(book('read') >= 6 && book('read') < 7 && book('scrub') > book('read') && book('none') < 6, 'три копии и сумма при чтении: шесть девяток');
