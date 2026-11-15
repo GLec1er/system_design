@@ -22,8 +22,10 @@
     { n: 14, dir: 'ch14', book: 'de', abbr: 'DL', title: 'Batch Data Lake', about: 'Ночной ETL: события, таблицы боевых баз и файлы партнёров собираются в HDFS, Spark строит таблицы Hive и витрины, Airflow держит порядок.', tech: ['HDFS', 'Spark', 'Hive', 'Airflow', 'Kafka', 'Parquet', 'Trino'] },
     { n: 15, dir: 'ch15', book: 'de', abbr: 'RT', title: 'Streaming Pipeline', about: 'Аналитика в реальном времени: события через Kafka и потоковую обработку попадают в OLAP за секунды, а копия уходит в озеро.', tech: ['Kafka', 'Spark', 'Flink', 'ClickHouse', 'Schema Registry', 'Exactly-once', 'HDFS'] },
     { n: 16, dir: 'ch16', book: 'de', abbr: 'CDC', title: 'CDC и Lakehouse', about: 'Таблицы боевой базы в озере с задержкой в минуты: Debezium читает журнал, Kafka несёт изменения, Iceberg или Hudi принимают обновления и удаления.', tech: ['Debezium', 'Kafka', 'Spark', 'Iceberg', 'Hudi', 'Airflow', 'Trino', 'S3'] },
+    // Собственные разборы: системы вокруг моделей ИИ. Числа это допущения.
+    { n: 17, dir: 'ch17', book: 'ai', abbr: 'LLM', title: 'LLM Inference Service', about: 'Сервис ответов языковой модели: 2 млн токенов в секунду на тысячах GPU, continuous batching, стриминг, лимиты в токенах и кэш префиксов.', tech: ['GPU', 'vLLM', 'SSE', 'Redis', 'Kafka', 'Cassandra', 'S3'] },
   ];
-  const BOOKS = [{ id: 'sdi2', title: 'System Design Interview, Vol. 2', short: 'V2' }, { id: 'de', title: 'Data Engineering: конвейеры данных', short: 'DE', own: true }];
+  const BOOKS = [{ id: 'sdi2', title: 'System Design Interview, Vol. 2', short: 'V2' }, { id: 'de', title: 'Data Engineering: конвейеры данных', short: 'DE', own: true }, { id: 'ai', title: 'AI-системы', short: 'AI', own: true }];
   CH.forEach((c) => (c.book = c.book || 'sdi2'));
   window.SD_CHAPTERS = CH;
   window.SD_BOOKS = BOOKS;
