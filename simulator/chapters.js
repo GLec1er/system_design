@@ -24,6 +24,7 @@
     { n: 16, dir: 'ch16', book: 'de', abbr: 'CDC', title: 'CDC и Lakehouse', about: 'Таблицы боевой базы в озере с задержкой в минуты: Debezium читает журнал, Kafka несёт изменения, Iceberg или Hudi принимают обновления и удаления.', tech: ['Debezium', 'Kafka', 'Spark', 'Iceberg', 'Hudi', 'Airflow', 'Trino', 'S3'] },
     // Собственные разборы: системы вокруг моделей ИИ. Числа это допущения.
     { n: 17, dir: 'ch17', book: 'ai', abbr: 'LLM', title: 'LLM Inference Service', about: 'Сервис ответов языковой модели: 2 млн токенов в секунду на тысячах GPU, continuous batching, стриминг, лимиты в токенах и кэш префиксов.', tech: ['GPU', 'vLLM', 'SSE', 'Redis', 'Kafka', 'Cassandra', 'S3'] },
+    { n: 18, dir: 'ch18', book: 'ai', abbr: 'REC', title: 'Recommendation Feed', about: 'Персональная лента: двадцать объектов из ста миллионов за 200 мс. Отбор кандидатов по векторам, каскад ранжирования, feature store и обучение на показах.', tech: ['Two-tower', 'ANN', 'Feature store', 'Kafka', 'Flink', 'Redis', 'A/B'] },
   ];
   const BOOKS = [{ id: 'sdi2', title: 'System Design Interview, Vol. 2', short: 'V2' }, { id: 'de', title: 'Data Engineering: конвейеры данных', short: 'DE', own: true }, { id: 'ai', title: 'AI-системы', short: 'AI', own: true }];
   CH.forEach((c) => (c.book = c.book || 'sdi2'));
