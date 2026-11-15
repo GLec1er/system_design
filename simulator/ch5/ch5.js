@@ -347,7 +347,7 @@
       deep: {
         nodes: ['targets', 'collector', 'sd', 'kafka', 'tsdb', 'query', 'qcache', 'engineer', 'grafana', 'alertMgr', 'rules', 'alertStore', 'alertQ', 'notifier'],
         edges: [['targets', 'collector'], ['collector', 'sd'], ['collector', 'kafka'], ['kafka', 'tsdb'], ['engineer', 'grafana'], ['grafana', 'query'], ['query', 'qcache'], ['query', 'tsdb'], ['alertMgr', 'query'], ['alertMgr', 'rules'], ['alertMgr', 'alertStore'], ['alertMgr', 'alertQ'], ['alertQ', 'notifier']],
-        cfg: { kafka: { brokers: 6, partitions: 96 }, qcache: { shards: 1, replicas: 1 } },
+        cfg: { kafka: { brokers: 24, partitions: 96 }, qcache: { shards: 1, replicas: 1 } },
         adapt: [{ add: 'qcache', from: 'query', why: 'одинаковые графики в инцидент считаются один раз' }],
       },
     },

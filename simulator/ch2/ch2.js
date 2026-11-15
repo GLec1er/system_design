@@ -166,7 +166,7 @@
           calc: (d, i, f) => `${f(d.upd)} × ${f(d.fan)} = ${f(d.push)}/с`,
           why: 'Книга: 334 тыс. × 40 ≈ 14 млн в секунду. Это главная нагрузка: её держат Pub/Sub и WebSocket-серверы.', to: 'карта: «Друг видит точку»' },
         { short: 'Pub/Sub CPU', label: 'Серверов Pub/Sub по CPU', uses: [], from: [3], formula: 'рассылки ÷ 100 тыс. на сервер', v: d.psCpu,
-          calc: (d, i, f) => `${f(d.push)} ÷ 100 тыс. = ${f(d.psCpu)} серверов`,
+          calc: (d, i, f) => `${f(d.push)} ÷ 100 тыс. = ${g.LabKit.plural(f(d.psCpu), 'сервер', 'сервера', 'серверов')}`,
           why: 'Книга оценивает гигабитный сервер в 100 тыс. рассылок в секунду и получает около 140 серверов. Оценка консервативная.', to: 'карта: «Redis Pub/Sub»' },
         { short: 'Pub/Sub память', label: 'Память каналов, ГБ', uses: ['dau', 'friends', 'app', 'growth'], from: [], formula: 'каналы × подписчики × 20 Б', v: d.memGB,
           calc: (d, i, f) => `${f(d.U)} × ${f(d.subs)} × 20 Б = ${f(d.memGB)} ГБ, это ${f(d.psMem)} серв. по 100 ГБ`,
@@ -178,7 +178,7 @@
           calc: (d, i, f) => `${f(d.C)} ÷ 1800 = ${f(d.conn)}/с; каждое читает ${i.friends} друзей и подписывается на ${f(d.subs)} каналов`,
           why: 'При подключении сервер читает друзей, их точки одним пакетом и подписывается на их каналы.', to: 'карта: «Открытие экрана»' },
       ],
-      conclusion: (d) => `Обновлений ${big(d.upd * d.k)} в секунду, а рассылок друзьям ${big(d.push * d.k)}: в ${big(d.fan)} раз больше. Хранить почти нечего: кэш ${dec(d.cacheGB)} ГБ, каналы ${big(d.memGB)} ГБ. Узкое место это CPU рассылки: около ${big(d.psCpu * d.k)} серверов Pub/Sub.`,
+      conclusion: (d) => `Обновлений ${big(d.upd * d.k)} в секунду, а рассылок друзьям ${big(d.push * d.k)}: в ${g.LabKit.times(big(d.fan))} больше. Хранить почти нечего: кэш ${dec(d.cacheGB)} ГБ, каналы ${big(d.memGB)} ГБ. Узкое место это CPU рассылки: около ${g.LabKit.plural(big(d.psCpu * d.k), 'сервер', 'сервера', 'серверов')} Pub/Sub.`,
     },
 
     api: {
@@ -465,7 +465,7 @@
       // WebSocket-серверов не меньше, чем нужно под соединения.
       if (ws) { ws.minRep = nWS; ws.minRepWhy = `Соединений ${big(d.C * d.k)}, по ${big(CONN_PER_WS)} на сервер: нужно не меньше ${nWS} серверов.`; }
       // Каналы Pub/Sub должны поместиться в память.
-      if (ps && ps.type === 'pubsub') { ps.minRep = d.psMem; ps.minRepWhy = `Каналы занимают ${big(d.memGB)} ГБ: не меньше ${d.psMem} серверов по 100 ГБ.`; }
+      if (ps && ps.type === 'pubsub') { ps.minRep = d.psMem; ps.minRepWhy = `Каналы занимают ${big(d.memGB)} ГБ: не меньше ${g.LabKit.plural(d.psMem, 'сервер', 'сервера', 'серверов')} по 100 ГБ.`; }
 
       // Стрелка WS → канал несёт публикацию, а не рассылку: рассылка начинается в канале.
       const fo = F('fanout'), k0 = fo.steps.find((s) => s.k);
@@ -580,7 +580,7 @@
         const t = x.fmt, d = x.d, cc = x.cfgOf('locCache'), ps = x.r.nodes.pubsub;
         return [
           { step: 'Требования', min: 4, text: 'Друзья в радиусе 5 миль с расстоянием и временем, обновление каждые несколько секунд, история точек. NFR: малая задержка, потеря отдельной точки допустима, согласованность в конечном счёте.' },
-          { step: 'Оценка', min: 3, text: `${t(d.C * d.k)} онлайн, точка раз в ${d.interval} с: ${t(d.upd * d.k)} обновлений в секунду. По ${t(d.fan)} друзей онлайн: ${t(d.push * d.k)} рассылок в секунду. Каналы ${t(d.memGB)} ГБ, но по CPU нужно около ${t(d.psCpu * d.k)} серверов Pub/Sub.` },
+          { step: 'Оценка', min: 3, text: `${t(d.C * d.k)} онлайн, точка раз в ${d.interval} с: ${t(d.upd * d.k)} обновлений в секунду. По ${t(d.fan)} друзей онлайн: ${t(d.push * d.k)} рассылок в секунду. Каналы ${t(d.memGB)} ГБ, но по CPU нужно около ${g.LabKit.plural(t(d.psCpu * d.k), 'сервер', 'сервера', 'серверов')} Pub/Sub.` },
           { step: 'API', min: 3, text: 'WebSocket: init с начальной точкой, location_update раз в 30 с, friend_location от сервера, subscribe и unsubscribe. REST: профиль и друзья. Кэш loc:{user_id} с TTL, история (user_id, timestamp, lat, lng) в Cassandra.' },
           { step: 'Дизайн', min: 5, text: `Клиент → балансировщик: REST в API-серверы, WebSocket в WebSocket-серверы. Точка идёт в кэш${cc ? ` (${cc.shards} шардов по user_id)` : ''}, историю и канал пользователя в Redis Pub/Sub${ps ? ` (${ps.rep} серверов)` : ''}. Pub/Sub рассылает её серверам друзей, те считают расстояние и пересылают, если друг рядом.` },
           { step: 'Рассылка', min: 4, text: `${x.choice('fanout').say} ${x.choice('psSize').say}` },

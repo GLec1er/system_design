@@ -175,7 +175,7 @@
           calc: (d, i, f) => `${f(d.storeTB)} ÷ ${DISK_TB} = ${f(d.brokersDisk)}`,
           why: 'Сколько брокеров нужно, чтобы данные просто поместились. Пропускная способность может потребовать больше.', to: 'карта: «Брокеры»' },
       ],
-      conclusion: (d) => `Запись ${big(d.inMB * d.k)} МБ/с, с копиями ${big(d.inMB * d.rf * d.k)} МБ/с, чтение в ${d.groups} раза больше. На дисках ${big(d.storeTB)} ТБ: не меньше ${big(d.brokersDisk)} брокеров. Узкие места это диски и сеть, а не CPU.`,
+      conclusion: (d) => `Запись ${big(d.inMB * d.k)} МБ/с, с копиями ${big(d.inMB * d.rf * d.k)} МБ/с, чтение в ${g.LabKit.times(d.groups)} больше. На дисках ${big(d.storeTB)} ТБ: не меньше ${big(d.brokersDisk)} брокеров. Узкие места это диски и сеть, а не CPU.`,
     },
 
     api: {
@@ -429,7 +429,7 @@
         const rf = Math.min(br.cfg.rf, br.cfg.brokers), disk = br.cfg.brokers * DISK_TB, need = (d.storeTB / d.rf) * rf;
         M.diskOk = disk >= need;
         if (!M.diskOk) ctx.warn('bad', `Диски не вмещают данные: ${big(need)} ТБ за ${d.retention} дн. с ${rf} копиями, а у ${br.cfg.brokers} брокеров ${big(disk)} ТБ. Нужно больше брокеров или короче хранение.`);
-        badge(br, '📜', `${br.cfg.partitions} партиций, RF ${rf}`);
+        badge(br, '📜', `${g.LabKit.plural(br.cfg.partitions, 'партиция', 'партиции', 'партиций')}, RF ${rf}`);
       } else M.diskOk = !!rb;
       if (rb) ctx.warn('warn', 'RabbitMQ удаляет сообщение после подтверждения: повторно прочитать и читать несколькими группами нельзя. Это нарушает требования книги.');
 
@@ -485,7 +485,7 @@
       const co = F('consume'), pr = F('produce');
       if (co.ok && pr.ok) co.lat += pr.lat;
       if (M.lost > 0) ctx.warn('bad', `Около ${big(M.lost)} сообщений теряется при сбое брокера или потребителя.`);
-      if (M.stuck > 0) ctx.warn('bad', `${num(M.stuck)} партиций стоят без читателя или лидера после сбоя.`);
+      if (M.stuck > 0) ctx.warn('bad', `${g.LabKit.plural(num(M.stuck), 'партиция стоит', 'партиции стоят', 'партиций стоят')} без читателя или лидера после сбоя.`);
       if (stage === 'deep' && flows.every((f) => f.ok || f.optional) && !F('metricsScrape').ok) ctx.warn('info', 'Нет метрик: отставание групп и сжатие ISR увидишь по жалобам. Добавь «Метрики и алерты».');
       if (stage === 'base' && flows.every((f) => f.ok || f.optional)) ctx.warn('info', `Как показала оценка: запись ${big(d.inMB * d.k)} МБ/с, на дисках ${big(d.storeTB)} ТБ. Брокеров нужно и по дискам, и по записи с копиями.`);
     },
@@ -516,7 +516,7 @@
           { step: 'Требования', min: 4, text: 'Продюсеры пишут, потребители читают и могут перечитать, порядок внутри партиции, retention, сообщения до килобайт, гарантия доставки настраивается. NFR: пропускная способность или задержка на выбор, масштаб, долговечность.' },
           { step: 'Оценка', min: 3, text: `${t(d.msgs * d.k)} сообщений в секунду по ${dec(d.inMB / d.msgs * 1000)} КБ: ${t(d.inMB * d.k)} МБ/с, с копиями ×${d.rf}. Чтение ×${d.groups} группы. За ${d.retention} дн. на дисках ${t(d.storeTB)} ТБ, это не меньше ${t(d.brokersDisk)} брокеров.` },
           { step: 'API', min: 3, text: 'Протокол клиента: Produce пачкой к лидеру партиции, Fetch с offset и long polling, OffsetCommit, JoinGroup и Heartbeat к координатору группы, Metadata для маршрутизации.' },
-          { step: 'Дизайн', min: 5, text: `Топики делятся на партиции, партиции лежат на брокерах${b ? ` (${b.cfg.brokers} брокеров, ${b.cfg.partitions} партиций, RF ${b.cfg.rf})` : ''}. Продюсер с маршрутизацией и буфером пишет лидеру. Потребители в группах забирают сами. Офсеты в хранилище состояния, метаданные и координация в ZooKeeper.` },
+          { step: 'Дизайн', min: 5, text: `Топики делятся на партиции, партиции лежат на брокерах${b ? ` (${g.LabKit.plural(b.cfg.brokers, 'брокер', 'брокера', 'брокеров')}, ${g.LabKit.plural(b.cfg.partitions, 'партиция', 'партиции', 'партиций')}, RF ${b.cfg.rf})` : ''}. Продюсер с маршрутизацией и буфером пишет лидеру. Потребители в группах забирают сами. Офсеты в хранилище состояния, метаданные и координация в ZooKeeper.` },
           { step: 'Хранение', min: 4, text: `${x.choice('storage').say} ${x.choice('batch').say}` },
           { step: 'Потребители', min: 3, text: `${x.choice('pull').say} ${x.choice('rebalance').say}` },
           { step: 'Репликация и гарантии', min: 5, text: `Лидер и ведомые, ISR, ACK=all для долговечности. ${x.choice('commit').say}` },

@@ -5,10 +5,13 @@
   const TARGET = 0.7; // автомасштаб держит загрузку около 70%
   const queue = (u) => (u >= 0.95 ? 12 : Math.min(12, 1 + (0.5 * u * u) / (1 - u)));
   const has = (spec, t) => [].concat(spec).includes(t);
+  // «в 22 раза», но «в 25 раз» и «в 12 раз»
+  const times = (k) => (k % 10 >= 2 && k % 10 <= 4 && (k % 100 < 12 || k % 100 > 14) ? 'раза' : 'раз');
   const rps = (v) => (v >= 10 ? Math.round(v).toLocaleString('ru-RU') : String(+v.toFixed(1)).replace('.', ','));
 
   // Настройки «тяжёлых» блоков, общие для всех глав. book: так делают в книге (остальное эксперименты).
   // Блок включает их через def.tune: 'sql' или 'kafka'; варианты ключа шардирования задаёт глава (def.shardKeys).
+  // Тексты здесь общие. Свои слова глава даёт блоку сама: def.hints[поле] для подсказки, def.notes[поле][значение] для пояснения варианта.
   // def.opts: { shards, brokers, partitions } переопределяет шаги размеров для блока главы (почта на миллиард ящиков крупнее отелей).
   const optOf = (id, dflt) => (def) => (def && def.opts && def.opts[id]) || dflt;
   const TUNE = {
@@ -51,17 +54,17 @@
     ],
     cell: [
       { id: 'cells', label: 'Ячеек', opts: [1, 2, 4, 8, 16, 32], value: 4,
-        hint: 'Сколько полных копий системы. Роутер по ключу (регион или hotel_id) отправляет пользователя в его ячейку, и каждая ячейка получает 1/N трафика. Ячейки ничего не делят между собой, поэтому сбой одной задевает только 1/N пользователей.' },
+        hint: 'Сколько полных копий системы. Роутер по ключу (например, по региону) отправляет пользователя в его ячейку, и каждая ячейка получает 1/N трафика. Ячейки ничего не делят между собой, поэтому сбой одной задевает только 1/N пользователей.' },
     ],
     admit: [
       { id: 'admit', label: 'Пускать в систему', value: 100000,
         opts: [10000, 50000, 100000, 300000, 1000000].map((v) => ({ v, label: v >= 1e6 ? v / 1e6 + ' млн/с' : v / 1000 + ' тыс/с' })),
-        hint: 'Сколько запросов воронки брони (доступность, бронь, оплата) в секунду пускать внутрь. Остальные ждут в очереди. Ставь чуть ниже того, что держит самое слабое место.' },
+        hint: 'Сколько запросов в секунду пускать внутрь. Остальные ждут в очереди. Ставь чуть ниже того, что держит самое слабое место.' },
     ],
     gw: [
       { id: 'shed', label: 'Load shedding', value: 'off',
-        opts: [{ v: 'off', label: 'Нет', note: 'Перегруженный сервис копит очередь: растёт задержка у всех, и бронь тонет вместе с просмотрами.' },
-          { v: 'on', label: 'Да', note: 'Перегруженный сервис сразу отвечает 503 на лишние запросы, начиная с менее важных. Бронь и оплата получают мощность первыми, просмотры режутся. Очереди нет, задержка не растёт.' }] },
+        opts: [{ v: 'off', label: 'Нет', note: 'Перегруженный сервис копит очередь: растёт задержка у всех, и важные запросы тонут вместе с остальными.' },
+          { v: 'on', label: 'Да', note: 'Перегруженный сервис сразу отвечает 503 на лишние запросы, начиная с менее важных. Запись получает мощность первой, чтения режутся. Очереди нет, задержка не растёт.' }] },
     ],
     lb: [
       { id: 'layer', label: 'Уровень', value: 'l4',
@@ -93,7 +96,7 @@
   }
 
   function analyze(lab, graph, inputs, deep, stage) {
-    const d = lab.derive(inputs, deep);
+    const d = lab.derive(inputs, deep), U = lab.unit || 'rps'; // в чём глава меряет поток: запросы, события, строки
     const nodes = {}, out = {}, edgeLoad = {};
     graph.nodes.forEach((n) => {
       const def = lab.blocks[n.type];
@@ -196,8 +199,8 @@
         n.capTotal = n.util ? n.load / n.util : one * s;
         n.cluster = { shards: [hot].concat(Array(s - 1).fill(s > 1 ? (1 - hot) / (s - 1) : 0)).map(part), replicas: R, key: key && key.label, sync: c.sync };
         n.explain = [
-          `Запись ${rps(W)} rps идёт только в primary${s > 1 ? ' своего шарда' : ''}: реплики её не снимают.`,
-          R ? `Чтение ${rps(Rd)} rps делится между primary и ${R} репл.: на каждую копию ${rps((Rd * hot) / (1 + R))} rps.` : `Чтение ${rps(Rd)} rps тоже идёт в primary: реплик нет.`,
+          `Запись ${rps(W)} ${U} идёт только в primary${s > 1 ? ' своего шарда' : ''}: реплики её не снимают.`,
+          R ? `Чтение ${rps(Rd)} ${U} делится между primary и ${R} репл.: на каждую копию ${rps((Rd * hot) / (1 + R))} ${U}.` : `Чтение ${rps(Rd)} ${U} тоже идёт в primary: реплик нет.`,
           s > 1 ? (hot > 1 / s + 1e-9 ? `${key && n.hotKey === undefined ? `Ключ «${key.label}» неровный` : 'Горячий ключ'}: горячий шард получает ${Math.round(hot * 100)}% запросов вместо ${Math.round(100 / s)}%.` : `Каждый из ${s} шардов хранит 1/${s} данных и получает 1/${s} запросов.`) : 'Шард один: весь объём и вся запись на одном primary.',
         ];
         if (n.util > 0.9) {
@@ -221,9 +224,9 @@
         n.capTotal = n.util ? n.load / n.util : cap * s;
         n.cluster = { shards: [hot].concat(Array(s - 1).fill(s > 1 ? (1 - hot) / (s - 1) : 0)).map(part), replicas: R, key: hot > 1 / s + 1e-9 ? 'горячий ключ' : s > 1 && 'хэш-слот ключа', sync: 'async' };
         n.explain = [
-          near ? `Локальный кэш в копиях сервиса отвечает на 60% чтений: до кэша доходит ${rps(Rd2)} rps из ${rps(Rd)}.` : `Все ${rps(Rd)} rps чтений идут в общий кэш: локального кэша в сервисе нет.`,
+          near ? `Локальный кэш в копиях сервиса отвечает на 60% чтений: до кэша доходит ${rps(Rd2)} ${U} из ${rps(Rd)}.` : `Все ${rps(Rd)} ${U} чтений идут в общий кэш: локального кэша в сервисе нет.`,
           hot > 1 / s + 1e-9 ? `Самый популярный ключ берёт ${Math.round(hk * 100)}% чтений и живёт в одном шарде: этот шард загружен сильнее, и новые шарды его не разгрузят.` : s > 1 ? `Ключи делятся по ${s} шардам, каждый держит 1/${s} чтений.` : 'Шард один: все ключи на одном мастере.',
-          R ? `Чтения шарда делятся между мастером и ${R} репл.: одна копия держит около ${rps(cap)} rps.` : `Реплик нет${def.noRepl ? ' (Memcached их не умеет)' : ''}: все чтения шарда на одной машине, около ${rps(cap)} rps.`,
+          R ? `Чтения шарда делятся между мастером и ${R} репл.: одна копия держит около ${rps(cap)} ${U}.` : `Реплик нет${def.noRepl ? ' (Memcached их не умеет)' : ''}: все чтения шарда на одной машине, около ${rps(cap)} ${U}.`,
         ];
         if (n.util > 0.9) {
           const hotBound = hot > 1 / s + 1e-9;
@@ -241,8 +244,8 @@
         n.util = n.load / n.capTotal;
         n.cluster = { brokers: c.brokers, partitions: c.partitions, rf };
         n.explain = [
-          `Поток ${rps(n.load)} rps делится по ${c.partitions} партициям, одна партиция ≈ ${rps(cap)} rps.`,
-          `Каждое событие пишется на ${rf} брокер${rf === 1 ? '' : 'а'}: ${c.brokers} брокер${c.brokers === 1 ? '' : c.brokers < 5 ? 'а' : 'ов'} вместе принимают ${rps(bcap)} rps.`,
+          `Поток ${rps(n.load)} ${U} делится по ${c.partitions} партициям, одна партиция ≈ ${rps(cap)} ${U}.`,
+          `Каждое событие пишется на ${rf} брокер${rf === 1 ? '' : 'а'}: ${c.brokers} брокер${c.brokers === 1 ? '' : c.brokers < 5 ? 'а' : 'ов'} вместе принимают ${rps(bcap)} ${U}.`,
         ];
         n.latAdd = c.acks === 'all' && rf > 1 ? 5 : 0;
         if (c.rf > c.brokers) ctx.warn('bad', `Kafka: RF=${c.rf} при ${c.brokers} брокер${c.brokers === 1 ? 'е' : 'ах'} невозможен, копий будет только ${rf}.`);
@@ -255,7 +258,7 @@
         n.capTotal = qc * c.queues;
         n.util = n.load / n.capTotal;
         n.cluster = { queues: c.queues, qtype: c.qtype, prefetch: c.prefetch };
-        n.explain = [`Exchange раскладывает ${rps(n.load)} rps по ${c.queues} очеред${c.queues === 1 ? 'и' : 'ям'}. Одна очередь ≈ ${rps(qc)} rps${c.qtype === 'quorum' ? ': quorum реплицирует каждое сообщение, поэтому вдвое медленнее' : ''}.`];
+        n.explain = [`Exchange раскладывает ${rps(n.load)} ${U} по ${c.queues} очеред${c.queues === 1 ? 'и' : 'ям'}. Одна очередь ≈ ${rps(qc)} ${U}${c.qtype === 'quorum' ? ': quorum реплицирует каждое сообщение, поэтому вдвое медленнее' : ''}.`];
         if (n.util > 0.9) { n.limit = 'очереди'; n.need = c.queues < 8 ? 'больше очередей' : 'Kafka: у неё параллелизм выше'; }
         ctx.cost += (def.cost || 0) * (c.qtype === 'quorum' ? 1.5 : 1) * (1 + 0.1 * (c.queues - 1));
       } else {
@@ -266,7 +269,7 @@
         n.capTotal = cap * n.rep;
         n.util = n.load / n.capTotal;
         const P = n.consumerOf && n.consumerOf.def.tune === 'kafka' && n.consumerOf.cfg.partitions;
-        n.explain = n.load ? [`${rps(n.load)} rps ÷ ${rps(cap)} rps на копию: копий ${n.rep}${n.want > n.rep ? `, а нужно ${n.want}` : n.rep > n.want ? `, по запросам хватило бы ${n.want}` : ', загрузка около 70%'}.`] : [];
+        n.explain = n.load ? [`${rps(n.load)} ${U} ÷ ${rps(cap)} ${U} на копию: копий ${n.rep}${n.want > n.rep ? `, а нужно ${n.want}` : n.rep > n.want ? `, по запросам хватило бы ${n.want}` : ', загрузка около 70%'}.`] : [];
         if (n.minRepWhy && n.rep > n.want) n.explain.push(n.minRepWhy);
         if (def.tune === 'lb') n.explain.push(n.cfg.layer === 'l7' ? 'L7 разбирает HTTP и снимает TLS: копия держит в 2,5 раза меньше запросов, чем L4, и добавляет 1 мс.' : 'L4 только пересылает TCP-соединения: копия держит очень много запросов.');
         if (n.lbBy) n.explain.push(`Перед блоком балансировщик (${{ rr: 'round robin', least: 'least connections', hash: 'IP hash' }[n.lbBy.cfg.alg]}): копии загружены ${n.capMult < 1 ? `неровно, полезно ${Math.round(n.capMult * 100)}% их мощности` : 'ровно'}.`);
@@ -288,7 +291,7 @@
         return;
       }
       if (n.util > maxU) { maxU = n.util; bottleneck = n; }
-      if (n.util > 1) ctx.warn('bad', `«${def.name}» перегружен: ${n.util < 10 ? Math.round(n.util * 100) + '%' : `в ${Math.round(n.util)} раз сверх мощности`}. Упёрся: ${n.limit}. Нужно: ${n.need}.`);
+      if (n.util > 1) ctx.warn('bad', `«${def.name}» перегружен: ${n.util < 10 ? Math.round(n.util * 100) + '%' : `в ${Math.round(n.util)} ${times(Math.round(n.util))} сверх мощности`}. Упёрся: ${n.limit}. Нужно: ${n.need}.`);
       else if (!n.load && n.why) ctx.warn(n.why.kind === 'useless' ? 'info' : 'warn', `«${def.name}» простаивает. ${n.why.text}`);
     });
     // Сколько реально проходит по стрелке: перегруженный блок пропускает только свою мощность (1 / загрузка),

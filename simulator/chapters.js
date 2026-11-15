@@ -18,8 +18,12 @@
     { n: 11, dir: 'ch11', abbr: 'PAY', title: 'Payment System', about: 'Платежи маркетплейса через PSP: 10 в секунду, но ровно одно списание, ledger с двойной записью и ежедневная сверка.', tech: ['Kafka', 'Идемпотентность', 'Ledger', 'DLQ'] },
     { n: 12, dir: 'ch12', abbr: 'WL', title: 'Digital Wallet', about: 'Кошелёк на миллион переводов в секунду: тысячи шардов, TC/C или Saga, event sourcing на Raft-группах.', tech: ['Redis', 'ZooKeeper', 'Saga', '2PC', 'Event sourcing', 'Raft', 'CQRS'] },
     { n: 13, dir: 'ch13', abbr: 'SE', title: 'Stock Exchange', about: 'Биржа: 215 тысяч заявок в секунду в пик, matching engine и sequencer на одном сервере, путь заявки за микросекунды.', tech: ['Event sourcing', 'Raft', 'mmap', 'Multicast'] },
+    // Собственные разборы: конвейеры данных. Источника-книги у них нет (own в BOOKS), числа это допущения.
+    { n: 14, dir: 'ch14', book: 'de', abbr: 'DL', title: 'Batch Data Lake', about: 'Ночной ETL: события, таблицы боевых баз и файлы партнёров собираются в HDFS, Spark строит таблицы Hive и витрины, Airflow держит порядок.', tech: ['HDFS', 'Spark', 'Hive', 'Airflow', 'Kafka', 'Parquet', 'Trino'] },
+    { n: 15, dir: 'ch15', book: 'de', abbr: 'RT', title: 'Streaming Pipeline', about: 'Аналитика в реальном времени: события через Kafka и потоковую обработку попадают в OLAP за секунды, а копия уходит в озеро.', tech: ['Kafka', 'Spark', 'Flink', 'ClickHouse', 'Schema Registry', 'Exactly-once', 'HDFS'] },
+    { n: 16, dir: 'ch16', book: 'de', abbr: 'CDC', title: 'CDC и Lakehouse', about: 'Таблицы боевой базы в озере с задержкой в минуты: Debezium читает журнал, Kafka несёт изменения, Iceberg или Hudi принимают обновления и удаления.', tech: ['Debezium', 'Kafka', 'Spark', 'Iceberg', 'Hudi', 'Airflow', 'Trino', 'S3'] },
   ];
-  const BOOKS = [{ id: 'sdi2', title: 'System Design Interview, Vol. 2', short: 'V2' }];
+  const BOOKS = [{ id: 'sdi2', title: 'System Design Interview, Vol. 2', short: 'V2' }, { id: 'de', title: 'Data Engineering: конвейеры данных', short: 'DE', own: true }];
   CH.forEach((c) => (c.book = c.book || 'sdi2'));
   window.SD_CHAPTERS = CH;
   window.SD_BOOKS = BOOKS;
@@ -147,7 +151,7 @@
     document.head.appendChild(s);
   }
 
-  // Маскот Окто: статичный кадр img/octo.webp, а поверх него живая 3D-модель из octo3d.js (three.js с CDN).
+  // Маскот Окто: статичный кадр img/octo.webp, а поверх него живая 3D-модель из octo3d.js (three.js лежит в vendor/).
   // Модель грузится, только когда Окто виден и анимация разрешена; без WebGL или сети остаётся картинка.
   window.SD_octoHTML = (caption) => {
     setTimeout(octoLive);
@@ -162,7 +166,7 @@
       host.dataset.loading = '1';
       (mod = mod || import(new URL('octo3d.js', document.querySelector('script[src$="chapters.js"]').src).href))
         .then((m) => { if (octo() && motion() && host.isConnected) host.octo = m.mount(host); })
-        .catch(() => {}) // нет WebGL или CDN: остаётся картинка
+        .catch(() => {}) // нет WebGL или страница открыта с диска (модули по file:// не грузятся): остаётся картинка
         .finally(() => delete host.dataset.loading);
     });
   }
