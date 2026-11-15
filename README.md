@@ -6,7 +6,7 @@
 Каждая глава строится по одному шаблону ([TEMPLATE.md](TEMPLATE.md)). Главный раздел — «Путь решения»: на каждом шаге **проблема → решение → что улучшилось → компромисс → альтернативы**. Диаграммы только иллюстрируют этот рассказ.
 
 ## 🎮 Симулятор
-В [simulator/](simulator/index.html) лежат интерактивные главы 1–13 по шагам, как на интервью: требования, оценка, API, схема на карте с потоками, углубление и итог. Открой `simulator/index.html` в браузере или включи GitHub Pages. Главы: [1. Proximity Service](simulator/ch1/index.html), [2. Nearby Friends](simulator/ch2/index.html), [3. Google Maps](simulator/ch3/index.html), [4. Message Queue](simulator/ch4/index.html), [5. Metrics Monitoring](simulator/ch5/index.html), [6. Ad Click Aggregation](simulator/ch6/index.html), [7. Hotel Reservation](simulator/ch7/index.html), [8. Distributed Email](simulator/ch8/index.html), [9. S3-like Object Storage](simulator/ch9/index.html), [10. Gaming Leaderboard](simulator/ch10/index.html), [11. Payment System](simulator/ch11/index.html), [12. Digital Wallet](simulator/ch12/index.html), [13. Stock Exchange](simulator/ch13/index.html). Подробности в [simulator/README.md](simulator/README.md).
+В [simulator/](simulator/index.html) лежат интерактивные главы 1–13 по шагам, как на интервью: требования, оценка, API, схема на карте с потоками, углубление и итог. Открой `simulator/index.html` в браузере или включи GitHub Pages. Главы: [1. Proximity Service](simulator/ch1/index.html), [2. Nearby Friends](simulator/ch2/index.html), [3. Google Maps](simulator/ch3/index.html), [4. Message Queue](simulator/ch4/index.html), [5. Metrics Monitoring](simulator/ch5/index.html), [6. Ad Click Aggregation](simulator/ch6/index.html), [7. Hotel Reservation](simulator/ch7/index.html), [8. Distributed Email](simulator/ch8/index.html), [9. S3-like Object Storage](simulator/ch9/index.html), [10. Gaming Leaderboard](simulator/ch10/index.html), [11. Payment System](simulator/ch11/index.html), [12. Digital Wallet](simulator/ch12/index.html), [13. Stock Exchange](simulator/ch13/index.html). Отдельной группой идут конвейеры данных: [14. Batch Data Lake](simulator/ch14/index.html), [15. Streaming Pipeline](simulator/ch15/index.html), [16. CDC и Lakehouse](simulator/ch16/index.html). Подробности в [simulator/README.md](simulator/README.md).
 
 ## Как повторять
 1. Закрыть конспект, нарисовать архитектуру по памяти.
@@ -32,6 +32,15 @@
 | 13 | [Stock Exchange](chapters/13-stock-exchange/README.md) | биржа, матчинг заявок | 🟨 |
 
 ⬜ не начата · 🟨 конспект · 🟩 повторена
+
+### Data Engineering: конвейеры данных
+Собственные разборы, не из книги: как строят платформы данных на Kafka, Spark, Hadoop, Hive и Airflow. Числа в них это допущения.
+
+| # | Глава | О чём | Статус |
+|---|-------|-------|--------|
+| 14 | [Batch Data Lake](chapters/14-batch-data-lake/README.md) | ночной ETL: источники → HDFS → Spark → Hive, оркестрация Airflow | 🟨 |
+| 15 | [Streaming Pipeline](chapters/15-streaming-pipeline/README.md) | аналитика в реальном времени: Kafka → Spark Streaming или Flink → OLAP | 🟨 |
+| 16 | [CDC и Lakehouse](chapters/16-cdc-lakehouse/README.md) | таблицы боевой базы в озере: Debezium → Kafka → Iceberg или Hudi | 🟨 |
 
 ## Шпаргалки
 Знания, которые нужны во всех главах сразу, лежат в [cheatsheets/](cheatsheets/README.md):

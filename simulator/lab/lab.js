@@ -10,6 +10,12 @@
   const esc = (t) => tidy(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   // Пишем в DOM, только если разметка изменилась: неизменённые панели не теряют фокус, раскрытые <details> и анимации.
   const setH = (el, html) => { if (el.__h === html) return false; el.innerHTML = html; el.__h = html; return true; };
+  // Глава принадлежит книге из chapters.js. У собственных разборов (book.own) книги-первоисточника нет:
+  // там, где интерфейс говорит «как в книге», для них стоит «типовая схема». bk(a, b) выбирает формулировку.
+  const BOOK = ((window.SD_BOOKS || []).find((b) => b.id === ((window.SD_CHAPTERS || []).find((c) => c.n === L.n) || {}).book)) || { title: 'System Design Interview, Vol. 2' };
+  const bk = (book, own) => (BOOK.own ? own : book);
+  // В чём измеряется поток на карте: запросы в секунду или, для конвейеров данных, события и строки.
+  const UNIT = L.unit || 'rps';
   const KEY = 'sd-lab-' + L.id;
   const W = L.board.w, H = L.board.h;
   // Текущий размер доски: не меньше W×H, растёт под блоки и во весь экран заполняет рамку.
@@ -107,7 +113,7 @@
   // ---------- каркас ----------
   function init() {
     document.title = `${L.title} · System Design Lab`;
-    $('#hero').innerHTML = `<div class="hero-copy"><span class="eyebrow">Глава ${L.n} · System Design Interview, Vol. 2</span><h1>${esc(L.title)}</h1>
+    $('#hero').innerHTML = `<div class="hero-copy"><span class="eyebrow">Глава ${L.n} · ${esc(BOOK.title)}</span><h1>${esc(L.title)}</h1>
       <div class="hero-meta" id="hero-meta"></div><span class="eyebrow">Задача</span><p>${esc(L.intro)}</p></div>${window.SD_octoHTML ? SD_octoHTML() : ''}`;
     const h = location.hash.slice(1), i = L.steps.findIndex((s) => s.id === h);
     if (i >= 0) st.step = i;
@@ -422,8 +428,8 @@
       <section class="broken" id="broken" hidden></section>
       <div class="lab-grid">
         ${tabsHtml('pal', [
-          { id: 'book', label: '📘 По книге', html: '<p class="palh">Этих блоков хватает для ответа на интервью.</p><div id="palBook"></div>' },
-          { id: 'exp', label: '🧪 Эксперименты', html: '<p class="palh">В книге их нет. Добавь и посмотри, что станет лучше, а что хуже.</p><div id="palExp"></div>' },
+          { id: 'book', label: bk('📘 По книге', '📘 Основа'), html: '<p class="palh">Этих блоков хватает для ответа на интервью.</p><div id="palBook"></div>' },
+          { id: 'exp', label: '🧪 Эксперименты', html: `<p class="palh">${bk('В книге их нет', 'В типовой схеме их нет')}. Добавь и посмотри, что станет лучше, а что хуже.</p><div id="palExp"></div>` },
         ], 'pal-card')}
         <section class="card mapcard" id="mapcard">
           <div class="toolbar">
@@ -431,7 +437,7 @@
             <div class="tb">
               <button class="ib" data-z="-1" aria-label="Уменьшить" title="Уменьшить">−</button><button class="ib" data-z="0" title="Вписать">⤢</button><button class="ib" data-z="1" aria-label="Увеличить" title="Увеличить">+</button>
               <button class="ib" id="full" title="Во весь экран">⛶</button>
-              <button class="btn sm" id="ref" title="Эталон под текущий сценарий: оригинал из книги или его адаптация">✨ Эталон</button><button class="btn sm ghost" id="refBook" title="Схема ровно как в книге">📘 Оригинал</button><button class="btn sm ghost" id="clr">Очистить</button>
+              <button class="btn sm" id="ref" title="Эталон под текущий сценарий: ${bk('оригинал из книги', 'типовая схема')} или его адаптация">✨ Эталон</button><button class="btn sm ghost" id="refBook" title="${bk('Схема ровно как в книге', 'Типовая схема без подгонки')}">📘 Оригинал</button><button class="btn sm ghost" id="clr">Очистить</button>
             </div>
           </div>
           <div class="cmp" id="cmp"></div>
@@ -461,9 +467,9 @@
     $('#ref').onclick = () => {
       const A = refFor(step().stage);
       loadRef(A.graph);
-      toast(A.original ? 'Разложен эталон: при этом сценарии схема из книги выдерживает нагрузку как есть.' : `Эталон адаптирован под сценарий (${scnText()}): ${A.changes.join('; ')}.${A.ok ? '' : ' Но и так не выдерживает: причины над картой.'}`);
+      toast(A.original ? `Разложен эталон: при этом сценарии ${bk('схема из книги', 'типовая схема')} выдерживает нагрузку как есть.` : `Эталон адаптирован под сценарий (${scnText()}): ${A.changes.join('; ')}.${A.ok ? '' : ' Но и так не выдерживает: причины над картой.'}`);
     };
-    $('#refBook').onclick = () => { loadRef(E.refGraph(L, step().stage)); toast('Разложена схема ровно как в книге. Сравни её метрики с адаптацией под нагрузку.'); };
+    $('#refBook').onclick = () => { loadRef(E.refGraph(L, step().stage)); toast(bk('Разложена схема ровно как в книге.', 'Разложена типовая схема без подгонки.') + ' Сравни её метрики с адаптацией под нагрузку.'); };
     $('#clr').onclick = () => { if (confirm('Убрать все блоки и стрелки с карты?')) { st.graph = { nodes: [], edges: [] }; selNode = null; changed(); } };
     $('#edel').onclick = () => { if (selEdge != null) { st.graph.edges.splice(selEdge, 1); selEdge = null; changed(); } };
     bindScn(soon);
@@ -624,7 +630,7 @@
       const onMap = st.graph.nodes.some((n) => n.type === t);
       const done = onMap && !b.multi, chips = done ? [] : effects(r, analyzeG(E.addBlock(L, st.graph, t, [0, 0]).graph, step().stage));
       return `<div class="pwrap"><button class="pi cat-${b.cat}"${brand(b)} data-t="${t}" title="Перетащи на карту или нажми">
-        <span class="pic">${icon(b)}</span><span class="pin"><b>${esc(b.name)}</b><span class="pmeta"><span class="ptag ${b.extra ? 'xp' : 'bk'}">${b.extra ? '🧪 эксперимент' : '📘 книга'}</span>${b.alsoExp ? '<span class="ptag xp">🧪 сравни с аналогами</span>' : ''}${onMap ? '<em>на карте</em>' : ''}</span><small>${esc(b.tag || '')}</small>
+        <span class="pic">${icon(b)}</span><span class="pin"><b>${esc(b.name)}</b><span class="pmeta"><span class="ptag ${b.extra ? 'xp' : 'bk'}">${b.extra ? '🧪 эксперимент' : bk('📘 книга', '📘 основа')}</span>${b.alsoExp ? '<span class="ptag xp">🧪 сравни с аналогами</span>' : ''}${onMap ? '<em>на карте</em>' : ''}</span><small>${esc(b.tag || '')}</small>
         ${done ? '' : `<span class="chips">${chips.length ? chips.slice(0, 4).map(([t, good]) => `<span class="chip ${good ? 'good' : 'bad'}">${esc(t)}</span>`).join('') : '<span class="hchip">сейчас без эффекта</span>'}</span>`}</span></button>
         ${b.fit ? `<button class="pinfo" data-info="${t}" aria-expanded="${infoOpen.has(t)}" title="Для чего подходит, когда не стоит, ограничения">ⓘ</button>${infoOpen.has(t) ? `<div class="pfit">${fitHtml(b.fit)}</div>` : ''}` : ''}</div>`;
     };
@@ -696,9 +702,9 @@
       const n = r.nodes[g.id], b = n.def, hot = n === r.m.bottleneck && r.m.maxU > 0.7;
       const body = b.cap
         ? `<div class="meter"><i class="${cls(n.util)}" style="width:${Math.min(100, n.util * 100)}%"></i></div>
-           <div class="nmx"><span>${fmt(n.load)} rps</span><b class="${cls(n.util)}">${pct(n.util)}</b></div>
+           <div class="nmx"><span>${fmt(n.load)} ${UNIT}</span><b class="${cls(n.util)}">${pct(n.util)}</b></div>
            <div class="nf">${sizePills(b, n)}<span class="pill">${ms(b.lat * n.q)}</span>${n.badges.map((x) => `<span class="pill bd" title="${esc(x.title)}">${x.icon}</span>`).join('')}</div>`
-        : `<div class="nf"><span class="pill">${fmt(Object.values(n.flows).reduce((s, v) => s + v, 0))} rps</span></div>`;
+        : `<div class="nf"><span class="pill">${fmt(Object.values(n.flows).reduce((s, v) => s + v, 0))} ${UNIT}</span></div>`;
       const cl = clusterHtml(b, n, r);
       return `<div class="node cat-${b.cat} ${b.extra ? 'exp' : ''} ${cl ? 'wide' : ''} ${hot ? 'hot' : ''} ${n.load || !b.cap ? '' : 'idle'} ${selNode === g.id ? 'sel' : ''}" data-id="${g.id}" tabindex="0" role="group" aria-label="${esc(b.name)}${b.cap ? `, загрузка ${pct(n.util)}` : ''}. Enter открывает детали, стрелки двигают блок" style="left:${g.x}px;top:${g.y}px;${brand(b).slice(8, -1)}">
         <div class="nh"><span class="ni">${icon(b)}</span><span class="nt"><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''}${b.extra ? ' · 🧪 эксперимент' : ''}</small></span><button class="nx" data-del aria-label="Удалить ${esc(b.name)}" title="Удалить">×</button></div>
@@ -790,11 +796,11 @@
         const d = curve(x1 + nx * o, y1 + ny * o, x2 + nx * o, y2 + ny * o);
         const n = Math.max(1, Math.min(4, Math.round(1 + Math.log10(v + 1)))), dur = +Math.max(0.9, 2.8 - 0.4 * Math.log10(v + 1)).toFixed(1);
         const dots = reduceMotion ? '' : Array.from({ length: n }, (_, j) => `<circle r="4" fill="${f.color}"><animateMotion dur="${dur}s" begin="-${((j * dur) / n).toFixed(2)}s" repeatCount="indefinite"><mpath href="#${id}"/></animateMotion></circle>`).join('');
-        return `<path id="${id}" class="fl" d="${d}" style="stroke:${f.color}"><title>${esc(f.label)}: ${fmt(v)} rps${v < loads[f.id] * 0.995 ? ` из ${fmt(loads[f.id])}` : ''}</title></path>${dots}`;
+        return `<path id="${id}" class="fl" d="${d}" style="stroke:${f.color}"><title>${esc(f.label)}: ${fmt(v)} ${UNIT}${v < loads[f.id] * 0.995 ? ` из ${fmt(loads[f.id])}` : ''}</title></path>${dots}`;
       }).join('');
       const d = curve(x1, y1, x2, y2), sel = selEdge === i, sum = fl.reduce((s, f) => s + loads[f.id], 0), got = fl.reduce((s, f) => s + pass[f.id], 0), cut = got < sum * 0.995;
       // Перегруженный блок выше по цепочке пропускает меньше, чем нужно: показываем «прошло из нужного».
-      const lab = sum && len > 90 ? `<text class="elab ${cut ? 'cut' : ''}" x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 8}">${fmt(got)}${cut ? ` из ${fmt(sum)}` : ''} rps</text>` : '';
+      const lab = sum && len > 90 ? `<text class="elab ${cut ? 'cut' : ''}" x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 8}">${fmt(got)}${cut ? ` из ${fmt(sum)}` : ''} ${UNIT}</text>` : '';
       out.push(`<g class="edge ${sel ? 'sel' : ''} ${fl.length ? 'live' : ''}" data-e="${i}" data-k="${e.from}>${e.to}"><path class="hit" d="${d}"><title>${esc(r ? edgeText(e) : '')}</title></path><path class="base" d="${d}" marker-end="url(#${sel ? 'arrS' : 'arr'})"/>${lines}${lab}</g>`);
       if (sel) delAt = [(x1 + x2) / 2, (y1 + y2) / 2];
     });
@@ -962,7 +968,7 @@
   function edgeText(e) {
     const loads = (last && last.edgeLoad[e.from + '>' + e.to]) || {}, pass = (last && last.edgePass[e.from + '>' + e.to]) || {}, fl = last.flows.filter((f) => loads[f.id] > 0);
     const head = `«${bname(typeOf(e.from))}» вызывает «${bname(typeOf(e.to))}».`;
-    return fl.length ? `${head} По стрелке идёт: ${fl.map((f) => `${f.label} ${fmt(pass[f.id])} rps${pass[f.id] < loads[f.id] * 0.995 ? ` из нужных ${fmt(loads[f.id])}: остальное отвалилось на перегруженном блоке раньше` : ''}`).join(', ')}.` : `${head} По стрелке пока ничего не идёт. ${(last.nodes[e.to] && last.nodes[e.to].why && last.nodes[e.to].why.text) || stuck(e)}`;
+    return fl.length ? `${head} По стрелке идёт: ${fl.map((f) => `${f.label} ${fmt(pass[f.id])} ${UNIT}${pass[f.id] < loads[f.id] * 0.995 ? ` из нужных ${fmt(loads[f.id])}: остальное отвалилось на перегруженном блоке раньше` : ''}`).join(', ')}.` : `${head} По стрелке пока ничего не идёт. ${(last.nodes[e.to] && last.nodes[e.to].why && last.nodes[e.to].why.text) || stuck(e)}`;
   }
 
   // Стрелка есть, но поток по ней обрывается дальше: говорим, какой стрелки не хватает.
@@ -1003,7 +1009,7 @@
     }).join(''));
     prevKpi = kp;
 
-    setH($('#legend'), r.flows.filter((f) => !f.optional || f.ok).map((f) => `<button class="lg ${st.show === f.id ? 'on' : ''} ${f.ok ? '' : 'off'}" data-f="${f.id}" title="Показать только этот поток"><i style="background:${f.color}"></i>${esc(f.label)}<span>${fmt(f.rate)} rps · ${f.ok ? ms(f.lat) : 'не доходит'}${f.ok && f.pass < 0.995 ? ` · <b class="bad">проходит ${pct(f.pass)}</b>` : ''}</span></button>`).join(''));
+    setH($('#legend'), r.flows.filter((f) => !f.optional || f.ok).map((f) => `<button class="lg ${st.show === f.id ? 'on' : ''} ${f.ok ? '' : 'off'}" data-f="${f.id}" title="Показать только этот поток"><i style="background:${f.color}"></i>${esc(f.label)}<span>${fmt(f.rate)} ${UNIT} · ${f.ok ? ms(f.lat) : 'не доходит'}${f.ok && f.pass < 0.995 ? ` · <b class="bad">проходит ${pct(f.pass)}</b>` : ''}</span></button>`).join(''));
     $$('#legend .lg').forEach((b) => (b.onclick = () => { st.show = st.show === b.dataset.f ? null : b.dataset.f; save(); renderPanels(last); drawEdges(); }));
 
     $$('[data-pset]').forEach((box) => {
@@ -1019,7 +1025,7 @@
     setH($('#scnsrc'), `📐 На входе из оценки: ${L.flows.filter((f) => !f.optional).map((f) => `<span class="fr"><i style="background:${f.color}"></i>${esc(f.label)} ${fmt(f.rate(d))}/с</span>`).join('')} <button class="lnk" data-go="${L.steps.findIndex((x) => x.kind === 'est')}">изменить</button>`);
     $('[data-go]', $('#scnsrc')).onclick = (e) => go(+e.target.dataset.go);
     const nb = st.graph.nodes.filter((g) => !L.blocks[g.type].extra).length, nx = st.graph.nodes.length - nb;
-    setH($('#bookline'), `<span class="bk">📘 По книге: ${nb}</span><span class="xp">🧪 Эксперименты: ${nx}</span><span class="muted">Блоки-эксперименты на карте с пунктирной рамкой.</span>`);
+    setH($('#bookline'), `<span class="bk">${bk('📘 По книге', '📘 Основа')}: ${nb}</span><span class="xp">🧪 Эксперименты: ${nx}</span><span class="muted">Блоки-эксперименты на карте с пунктирной рамкой.</span>`);
     const goals = L.goals[step().stage], done = goals.filter((g) => g.check(r)).length;
     setH($('#goals'), `<div class="gprog"><i style="width:${(done / goals.length) * 100}%"></i></div><p class="muted">Выполнено ${done} из ${goals.length}${done === goals.length ? ' 🎉' : ''}</p>
       <ul class="goals">${goals.map((g) => { const ok = g.check(r); return `<li class="${ok ? 'done' : ''}"><span class="${ok ? 'y' : 'n'}">${ok ? '✔' : '○'}</span><span>${esc(g.text)}</span></li>`; }).join('')}</ul>`);
@@ -1037,9 +1043,9 @@
     const k = (x) => { const b = x.flows.find((f) => f.id === MAIN.id);
       if (!x.m.routed) return '<span class="bad">схема не достроена: часть потоков не доходит до данных</span>';
       return `<span class="${x.m.served >= 1 && x.m.maxU <= 0.9 ? 'ok' : 'bad'}">выдерживает ${pct(x.m.served)}, пик загрузки ${pct(x.m.maxU)}</span> · ${esc(MAIN.label.toLowerCase())} ${b && b.ok ? ms(b.lat) : '—'} · ${money(x.m.cost)} · сложность ${x.m.cx.toFixed(1)}`; };
-    setH($('#cmp'), `<div class="cref ${A.ok ? '' : 'nok'}"><div class="ct"><b>${A.original ? '📘 Эталон: оригинал из книги' : `🔧 Эталон: адаптация под ${esc(scnText())}`}</b><small>${k(A.r)}</small></div>
-      ${A.original ? '<p class="muted">При этом сценарии схема из книги выдерживает нагрузку без изменений.</p>'
-        : `<details><summary>Чем отличается от книги (${A.changes.length})</summary><ul>${A.changes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul><p class="muted">Оригинал из книги здесь: ${k(A.before)}</p></details>`}
+    setH($('#cmp'), `<div class="cref ${A.ok ? '' : 'nok'}"><div class="ct"><b>${A.original ? bk('📘 Эталон: оригинал из книги', '📘 Эталон: типовая схема') : `🔧 Эталон: адаптация под ${esc(scnText())}`}</b><small>${k(A.r)}</small></div>
+      ${A.original ? `<p class="muted">При этом сценарии ${bk('схема из книги', 'типовая схема')} выдерживает нагрузку без изменений.</p>`
+        : `<details><summary>${bk('Чем отличается от книги', 'Чем отличается от типовой схемы')} (${A.changes.length})</summary><ul>${A.changes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul><p class="muted">${bk('Оригинал из книги', 'Типовая схема')} здесь: ${k(A.before)}</p></details>`}
       ${A.ok ? '' : `<div class="blk">⛔ Даже адаптированный эталон не выдерживает. Упёрлись: ${A.blockers.map((x) => `«${esc(x.name)}» ${pct(x.util)} (${esc(x.limit)})`).join(', ')}. Нужно: ${[...new Set(A.blockers.map((x) => x.need))].map(esc).join('; ')}.</div>`}</div>
       <div class="cmine"><div class="ct"><b>🧩 Твоя схема</b><small>${st.graph.nodes.length ? k(r) : 'карта пустая'}</small></div></div>`);
   }
@@ -1055,9 +1061,9 @@
     const flows = last.flows.filter((f) => n.flows[f.id] > 0), max = Math.max(...flows.map((f) => n.flows[f.id]), 1);
     const li = (a) => (a && a.length ? '<ul>' + a.map((t) => `<li>${esc(t)}</li>`).join('') + '</ul>' : '');
     const arrows = st.graph.edges.map((e, i) => ({ e, i })).filter(({ e }) => e.from === g.id || e.to === g.id);
-    setH(box, `<div class="ih cat-${b.cat}"${brand(b)}><span class="ni">${icon(b)}</span><div><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''} · ${b.extra ? '🧪 эксперимент, в книге его нет' : '📘 по книге'}</small></div><button class="nx" id="inspX" aria-label="Закрыть">×</button></div>
+    setH(box, `<div class="ih cat-${b.cat}"${brand(b)}><span class="ni">${icon(b)}</span><div><b>${esc(b.name)}</b><small>${CAT[b.cat] || ''} · ${b.extra ? bk('🧪 эксперимент, в книге его нет', '🧪 эксперимент, в типовой схеме его нет') : bk('📘 по книге', '📘 основа')}</small></div><button class="nx" id="inspX" aria-label="Закрыть">×</button></div>
       <p>${esc(b.learn.what)}</p>
-      ${b.cap ? `<div class="istats"><div><span>Нагрузка</span><b>${fmt(n.load)} / ${fmt(n.capTotal)} rps</b></div><div><span>Загрузка</span><b class="${cls(n.util)}">${pct(n.util)}</b></div><div><span>${esc(b.repLabel || 'Реплик')}</span><b>${n.rep}${!b.tune && n.rep >= n.maxRep ? ' (макс.)' : ''}</b></div><div><span>Задержка</span><b>${ms((b.lat + (n.latAdd || 0)) * n.q)}</b></div></div>` : ''}
+      ${b.cap ? `<div class="istats"><div><span>Нагрузка</span><b>${fmt(n.load)} / ${fmt(n.capTotal)} ${UNIT}</b></div><div><span>Загрузка</span><b class="${cls(n.util)}">${pct(n.util)}</b></div><div><span>${esc(b.repLabel || 'Реплик')}</span><b>${n.rep}${!b.tune && n.rep >= n.maxRep ? ' (макс.)' : ''}</b></div><div><span>Задержка</span><b>${ms((b.lat + (n.latAdd || 0)) * n.q)}</b></div></div>` : ''}
       ${n.explain && n.explain.length ? `<h5>Почему такая нагрузка</h5><ul class="expl">${n.explain.map((t) => `<li>${esc(t)}</li>`).join('')}${n.limit ? `<li class="lim">Упёрся: ${esc(n.limit)}. Нужно: ${esc(n.need)}.</li>` : ''}</ul>` : ''}
       ${tuneHtml(b, n)}
       ${flows.length ? `<h5>Какие потоки идут</h5>${flows.map((f) => `<div class="fbar"><span>${esc(f.label)}</span><i style="width:${(n.flows[f.id] / max) * 100}%;background:${f.color}"></i><b>${fmt(n.flows[f.id])}</b></div>`).join('')}` : `<p class="why ${n.why ? n.why.kind : ''}">${n.why ? (n.why.kind === 'useless' ? '💤 ' : '🔌 ') + esc(n.why.text) : 'Через блок не идёт ни один поток.'}</p>`}
@@ -1082,7 +1088,7 @@
     const fields = E.TUNE[def.tune].filter((f) => !f.when || f.when(n.cfg, def));
     return `<h5>⚙️ Настройки</h5><div class="tune">${fields.map((f) => {
       const opts = tuneOpts(f, def), cur = opts.find((o) => o.v === n.cfg[f.id]);
-      return `<div class="tf"><div class="tfl">${esc(f.label)}<span class="${f.book ? 'bk' : 'xp'}">${f.book ? '📘 по книге' : '🧪 эксперимент'}</span></div>
+      return `<div class="tf"><div class="tfl">${esc(f.label)}<span class="${f.book ? 'bk' : 'xp'}">${f.book ? bk('📘 по книге', '📘 основа') : '🧪 эксперимент'}</span></div>
         <div class="tseg">${opts.map((o) => { const no = f.id === 'rf' && o.v > n.cfg.brokers;
           return `<button class="${o === cur ? 'on' : ''}" data-tf="${f.id}" data-v="${esc(o.v)}" ${no ? `disabled title="Копий не может быть больше, чем брокеров (${n.cfg.brokers})"` : ''}>${esc(o.label)}</button>`; }).join('')}</div>
         <p class="tnote">${esc((cur && def.notes && def.notes[f.id] && def.notes[f.id][cur.v]) || (cur && cur.note) || (def.hints && def.hints[f.id]) || f.hint || '')}</p></div>`;
@@ -1154,13 +1160,13 @@
     const pct = (v, routed) => (routed ? Math.round(v * 100) + '%' : '—');
     const probs = L.problems.filter((p) => p.options);
     const BAD = S.badRow, bad = (mm) => BAD.ids.reduce((a, id) => a + (mm[id] || 0), 0);
-    return `${head(step(), 'Итог собран из того, что ты сделал на предыдущих шагах: твоя схема против эталона, твои решения против книги и рассказ для интервью с твоими цифрами.')}
+    return `${head(step(), `Итог собран из того, что ты сделал на предыдущих шагах: твоя схема против эталона, твои решения против ${bk('книги', 'типовых')} и рассказ для интервью с твоими цифрами.`)}
       <section class="card"><h4 class="grp first">Твой результат</h4><div class="ssteps">
         ${card(stepIdx('req'), 'Требования', st.reqChecked ? `${sc.ok} из ${sc.total}` : '—', st.reqChecked ? 'верных ответов' : 'не проверены', st.reqChecked ? sc.ok === sc.total : null)}
         ${card(stepIdx('est'), 'Оценка нагрузки', esc(S.estCard(x.d, fmt)), esc(scnText()), null)}
         ${card(stepIdx('map', 'base'), 'Дизайн', `${goalsOk('base', base)} из ${L.goals.base.length}`, 'целей выполнено', goalsOk('base', base) === L.goals.base.length)}
         ${card(stepIdx('map', 'deep'), 'Углубление', `${goalsOk('deep', r)} из ${L.goals.deep.length}`, 'целей выполнено', goalsOk('deep', r) === L.goals.deep.length)}
-        ${card(stepIdx('map', 'deep'), 'Решения', `${probs.filter((p) => x.choice(p.key).ok).length} из ${probs.length}`, 'совпадают с книгой', probs.every((p) => x.choice(p.key).ok))}
+        ${card(stepIdx('map', 'deep'), 'Решения', `${probs.filter((p) => x.choice(p.key).ok).length} из ${probs.length}`, bk('совпадают с книгой', 'совпадают с типовыми'), probs.every((p) => x.choice(p.key).ok))}
       </div></section>
       <div class="sum-grid">
         <section class="card"><h4 class="grp first">Схема против эталона</h4>${m.routed ? '' : '<p class="w bad">Схема не достроена: часть потоков не доходит до данных, поэтому метрики не считаются.</p>'}
@@ -1175,8 +1181,8 @@
           ${D.onlyMine.length ? `<p class="small">🧪 Есть только у тебя: ${D.onlyMine.map(esc).join(', ')}.</p>` : ''}
           ${D.onlyRef.length ? `<p class="small">📘 Есть в эталоне, но нет у тебя: ${D.onlyRef.map(esc).join(', ')}.</p>` : ''}
           ${!D.onlyMine.length && !D.onlyRef.length ? '<p class="small">Набор блоков совпадает с эталоном.</p>' : ''}</section>
-        <section class="card"><h4 class="grp first">Твои решения против книги</h4><div class="decs">${probs.map((p) => { const q = x.choice(p.key);
-          return `<div class="dec ${q.ok ? 'ok' : 'no'}"><b>${p.icon} ${esc(p.title)}</b><span>Ты: <em>${esc(q.o.label)}</em> ${q.ok ? '✔' : `· в книге: ${esc(p.options.filter((o) => (p.best || []).includes(o.v) && !o.ext).map((o) => o.label).join(' или '))}`}</span><small>${esc(q.say)}</small></div>`; }).join('')}</div></section>
+        <section class="card"><h4 class="grp first">${bk('Твои решения против книги', 'Твои решения против типовых')}</h4><div class="decs">${probs.map((p) => { const q = x.choice(p.key);
+          return `<div class="dec ${q.ok ? 'ok' : 'no'}"><b>${p.icon} ${esc(p.title)}</b><span>Ты: <em>${esc(q.o.label)}</em> ${q.ok ? '✔' : `· ${bk('в книге', 'обычно')}: ${esc(p.options.filter((o) => (p.best || []).includes(o.v) && !o.ext).map((o) => o.label).join(' или '))}`}</span><small>${esc(q.say)}</small></div>`; }).join('')}</div></section>
       </div>
       <section class="card"><h4 class="grp first">Рассказ на интервью с твоими цифрами</h4><p class="muted small">Около ${S.script(x).reduce((a, s) => a + s.min, 0)} минут: столько обычно и есть на дизайн-секцию. Рассказ меняется вместе со схемой и решениями.</p>
         <ol class="script2">${D.script.map((s) => `<li><span class="sst">${esc(s.step)}<small>~${s.min} мин</small></span><span>${esc(s.text)}</span></li>`).join('')}</ol>
