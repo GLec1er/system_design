@@ -38,7 +38,7 @@
     { title: '🧯 Если не получилось', items: [
       ['Очередь ошибок', 'Временная ошибка (4xx, получатель перегружен) уходит в очередь повторов с паузой 1, 5, 30 минут. Сообщение не блокирует остальные.'],
       ['Bounce', 'Постоянная ошибка (5xx, адреса нет) или исчерпаны повторы: отправителю приходит письмо о недоставке, адрес попадает в список «не слать».'],
-      ['At-least-once', 'Воркер может упасть после отправки, но до подтверждения: письмо уйдёт дважды. Поэтому у письма постоянный Message-ID, а получатели и мы сами отбрасывают повтор.'],
+      ['At-least-once', 'Воркер может упасть после отправки, но до подтверждения: письмо уйдёт дважды. Поэтому у письма постоянный Message-ID, а получатели и мы сами отбрасываем повтор.'],
     ] },
   ];
   const OBS_MORE = [
@@ -664,7 +664,7 @@
       const shards = mc ? mc.shards : 1;
       if (c.cons === 'multi') { M.conflicts = (d.Rday + d.Sday) * 0.0005 * Math.min(1, p.fails / 5); }
       if (c.cons === 'quorum') { M.conflicts = (d.Rday + d.Sday) * 0.00002 * Math.min(1, p.fails / 5); list.extraLat += 8; send.extraLat += 8; ctx.cx += 1; badge(db ? db.type : 'metaDB', '🗳️', 'Кворум R + W > N'); }
-      if (c.cons === 'single') { M.unavail = (p.fails * d.U) / shards; ctx.cx += 0.5; badge(db ? db.type : 'metaDB', '👑', 'Один primary на ящик'); if (M.unavail > 0) ctx.warn('info', `При ${p.fails} сбоях в день около ${big(M.unavail)} ящиков ждут failover около 30 секунд. Больше узлов, меньше ящиков на каждом: при ${shards} узл. сбой задевает ${big(d.U / shards)} ящиков.`); }
+      if (c.cons === 'single') { M.unavail = (p.fails * d.U) / shards; ctx.cx += 0.5; badge(db ? db.type : 'metaDB', '👑', 'Один primary на ящик'); if (M.unavail > 0) ctx.warn('info', `При ${p.fails} сбоях в день около ${big(M.unavail)} ящиков ждут failover около 30 секунд. Больше узлов, меньше ящиков на каждом: при ${shards} узлах сбой задевает ${big(d.U / shards)} ящиков.`); }
 
       // 4. Повторы доставки наружу
       if (ok('out')) {
@@ -699,7 +699,7 @@
         const a = nodes[e.from], b = nodes[e.to];
         if (a && b && a.type === 'client' && b.def.db) ctx.warn('bad', `Клиент ходит в «${b.def.name}» напрямую.`);
       });
-      if (M.lost > 0) ctx.warn('bad', `Около ${num(M.lost)} писем в день теряются: временные ошибки доставки или очередь без репликации.`);
+      if (M.lost > 0) ctx.warn('bad', `Около ${big(M.lost)} писем в день теряются: временные ошибки доставки или очередь без репликации.`);
       if (M.spamIn > 1) ctx.warn(M.spamIn > d.Rday * 0.001 ? 'bad' : 'info', `Около ${big(M.spamIn)} писем со спамом и вирусами в день доходят до «Входящих».`);
       if (M.conflicts > 0) ctx.warn('bad', `Около ${big(M.conflicts)} расхождений в день: копии ящика приняли разные изменения (письмо пропало или задвоилось).`);
       if (M.junked > d.Sday * 0.01) ctx.warn('warn', `Около ${big(M.junked)} наших писем в день попадают у получателей в спам.`);
@@ -736,7 +736,7 @@
           { step: 'Оценка', min: 5, text: `${t(d.Sday)} писем в день ÷ 86 400 ≈ ${t(d.send * d.k)} отправок в секунду, приём ${t(d.inbound * d.k)}/с, чтений ящика ${t(d.reads * d.k)}/с. В год ${t(d.metaPB)} ПБ метаданных и ${t(d.attPB)} ПБ вложений. ${g.LAB.estimate.conclusion(d)}` },
           { step: 'Протоколы и API', min: 4, text: 'Между серверами SMTP: письмо из интернета приходит на наш MX. Webmail говорит с нами по HTTPS: POST /v1/messages (202 Accepted, асинхронно), GET папок, списка и письма, PATCH «прочитано», поиск. Новые письма по WebSocket. Вложения загружаются по подписанной ссылке прямо в S3.' },
           { step: 'Дизайн', min: 8, text: `Клиент → балансировщик → web-серверы (stateless HTTP) и real-time серверы (WebSocket, с состоянием). Отправка: web-сервер пишет в «Отправленные», кладёт событие в очередь исходящих, SMTP-воркеры проверяют и доставляют. Приём: SMTP-серверы → очередь входящих → воркеры (спам, вирусы) → Metadata DB, S3, поисковый индекс и push онлайн-получателю.${x.extras.length ? ` Дополнительно: ${x.extras.join(', ')}.` : ''} ${x.r.m.routed ? `Схема держит ${Math.round(x.r.m.served * 100)}% нагрузки сценария, список писем около ${Math.round(x.bookLat)} мс.` : 'Схема на карте пока не достроена.'}` },
-          { step: 'Хранение метаданных', min: 4, text: mc ? `Метаданные в wide-column NoSQL, ${mc.shards} узл.${mc.shards > 1 ? `, ключ раздела ${(g.LAB.blocks.metaDB.shardKeys.find((k) => k.v === mc.shardKey) || {}).label}` : ''}. ${mc.shardKey === 'user' || mc.shards === 1 ? 'Весь ящик пользователя на одном узле: список папки одним чтением.' : 'Правильный ключ раздела user_id: весь ящик на одном узле.'} Таблицы под запросы: folders_by_user, emails_by_folder, emails_by_user, вложения в S3, свежие письма в кэше.` : 'Реляционная БД и S3 для метаданных не подходят: нужен wide-column NoSQL с разделом по user_id, таблицы под запросы, вложения в S3.' },
+          { step: 'Хранение метаданных', min: 4, text: mc ? `Метаданные в wide-column NoSQL, ${g.LabKit.plural(mc.shards, 'узел', 'узла', 'узлов')}${mc.shards > 1 ? `, ключ раздела ${(g.LAB.blocks.metaDB.shardKeys.find((k) => k.v === mc.shardKey) || {}).label}` : ''}. ${mc.shardKey === 'user' || mc.shards === 1 ? 'Весь ящик пользователя на одном узле: список папки одним чтением.' : 'Правильный ключ раздела user_id: весь ящик на одном узле.'} Таблицы под запросы: folders_by_user, emails_by_folder, emails_by_user, вложения в S3, свежие письма в кэше.` : 'Реляционная БД и S3 для метаданных не подходят: нужен wide-column NoSQL с разделом по user_id, таблицы под запросы, вложения в S3.' },
           { step: 'Непрочитанные', min: 2, text: x.choice('unread').say },
           { step: 'Спам и вирусы', min: 3, text: x.choice('filter').say + (hasT('dnsbl') ? ' Фильтр по репутации IP стоит перед SMTP-серверами.' : '') },
           { step: 'Согласованность', min: 3, text: x.choice('cons').say },

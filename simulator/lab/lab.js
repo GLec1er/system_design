@@ -748,8 +748,8 @@
       const B = c.brokers, P = c.partitions, on = (k) => Array.from({ length: P }, (_, p) => p).filter((p) => (k - (p % B) + B) % B < c.rf);
       const cons = consumersOf(r, n.id);
       return `<div class="cl"><div class="clr">✍️ ${esc(producersOf(r, n.id))} → топик, ${P} парт.</div>
-        ${P > 24 ? `<div class="clr">${B} брокеров, около ${Math.ceil(P / B)} партиций-лидеров на каждом</div>` : `<div class="brs">${Array.from({ length: Math.min(B, 8) }, (_, k) => { const all = on(k), lead = all.filter((p) => p % B === k);
-          return `<div class="br" title="Брокер ${k + 1}: лидер для ${lead.length} партиций, копии ещё ${all.length - lead.length}"><span class="shn">B${k + 1}</span><span class="pts">${lead.slice(0, 6).map((p) => `<i class="ld">P${p}</i>`).join('')}${lead.length > 6 ? `<i>+${lead.length - 6}</i>` : ''}</span>${all.length > lead.length ? `<small>+${all.length - lead.length} коп.</small>` : ''}</div>`; }).join('')}${B > 8 ? `<div class="br more">+${B - 8} брокеров</div>` : ''}</div>`}
+        ${P > 24 ? `<div class="clr">${window.LabKit.plural(B, 'брокер', 'брокера', 'брокеров')}, около ${Math.ceil(P / B)} партиций-лидеров на каждом</div>` : `<div class="brs">${Array.from({ length: Math.min(B, 8) }, (_, k) => { const all = on(k), lead = all.filter((p) => p % B === k);
+          return `<div class="br" title="Брокер ${k + 1}: лидер для ${lead.length} партиций, копии ещё ${all.length - lead.length}"><span class="shn">B${k + 1}</span><span class="pts">${lead.slice(0, 6).map((p) => `<i class="ld">P${p}</i>`).join('')}${lead.length > 6 ? `<i>+${lead.length - 6}</i>` : ''}</span>${all.length > lead.length ? `<small>+${all.length - lead.length} коп.</small>` : ''}</div>`; }).join('')}${B > 8 ? `<div class="br more">+${window.LabKit.plural(B - 8, 'брокер', 'брокера', 'брокеров')}</div>` : ''}</div>`}
         <div class="clk">${cons.length ? cons.map((x) => x.def.cache ? `<span>📥 ${esc(x.def.name)}: CDC</span>` : `<span>👥 ${esc(x.def.name)}: ${x.rep} потреб., ${x.rep >= P ? 'по 1 партиции' : `по ${Math.ceil(P / x.rep)} парт.`}${x.want > P ? `; нужно ${x.want}, но лишним не досталось бы партиций` : ''}</span>`).join('') : '<span>👥 потребителей нет</span>'}<span>RF ${c.rf}: лидер + ${c.rf - 1} коп.</span></div></div>`;
     }
     if (b.tune === 'rabbit') {
@@ -1017,7 +1017,7 @@
       if (!n) { box.innerHTML = `<p class="onote">«${esc(def.name)}» нет на карте.</p>`; return; }
       const c = n.cfg, key = c.shards > 1 && def.shardKeys ? `, ключ ${def.shardKeys.find((k) => k.v === c.shardKey).label}` : '';
       box.closest('.prob').classList.toggle('solved', n.util <= 0.9 && !(def.shardKeys || []).some((k) => k.skew && k.v === c.shardKey && c.shards > 1));
-      const now = def.tune === 'kafka' ? `${c.brokers} брок., ${c.partitions} партиций, RF ${c.rf}` : def.tune === 'rabbit' ? `${c.queues} очеред.` : `${c.shards} шард.${key}, реплик ${c.replicas}`;
+      const now = def.tune === 'kafka' ? `${c.brokers} брок., ${window.LabKit.plural(c.partitions, 'партиция', 'партиции', 'партиций')}, RF ${c.rf}` : def.tune === 'rabbit' ? `${c.queues} очеред.` : `${c.shards} шард.${key}, реплик ${c.replicas}`;
       box.innerHTML = `<p class="onote">Сейчас: ${now}. Загрузка ${Math.round(n.util * 100)}%.</p><button class="btn sm" data-open="${g.id}">⚙️ Настроить ${esc(def.name)}</button>`;
       $('[data-open]', box).onclick = () => { select(g.id); $('#mapcard').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
     });
@@ -1106,7 +1106,7 @@
   function autoTune(g) {
     const def = L.blocks[g.type], res = E.sizeFor(L, st.graph, st.est, deepFor(step().stage), step().stage, g.id), c = res.cfg, n = res.r.nodes[g.id];
     g.cfg = c;
-    const what = { sql: `${c.shards} шард., реплик ${c.replicas}`, kafka: `${c.brokers} брокер., ${c.partitions} партиций`, rabbit: `${c.queues} очеред.` }[def.tune];
+    const what = { sql: `${c.shards} шард., реплик ${c.replicas}`, kafka: `${c.brokers} брокер., ${window.LabKit.plural(c.partitions, 'партиция', 'партиции', 'партиций')}`, rabbit: `${c.queues} очеред.` }[def.tune];
     const reads = def.tune === 'sql' && n.wload < 0.2 * n.load ? ' Почти всё здесь чтения: кэш перед БД обойдётся дешевле реплик.' : '';
     toast(res.ok ? `Подобрал: ${what}. Загрузка ${pct(n.util)}.${reads}` : `Даже ${what} не хватает (${pct(n.util)}). ${n.need ? 'Нужно: ' + n.need + '.' : ''}`);
     changed();
