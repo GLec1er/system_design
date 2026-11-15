@@ -100,7 +100,7 @@ flowchart LR
 ## 5. Паттерны
 Continuous batching · KV-кэш и PagedAttention · Стриминг по SSE · Token bucket в токенах · Маршрутизация по префиксу · Ограниченная очередь с приоритетами · Масштабирование по очереди · Тёплый резерв · Отмена по обрыву соединения · Каскад моделей
 
-**Шпаргалки к главе:** [повторы и backoff](../../cheatsheets/README.md#повторы-backoff-и-dlq) · [backpressure](../../cheatsheets/resilience.md#backpressure)
+**Шпаргалки к главе:** [ИИ-системы](../../cheatsheets/ai-systems.md) · [повторы и backoff](../../cheatsheets/README.md#повторы-backoff-и-dlq) · [backpressure](../../cheatsheets/resilience.md#backpressure)
 
 ## 6. Вопросы для повторения
 <details><summary>Почему нагрузку считают в токенах?</summary>
