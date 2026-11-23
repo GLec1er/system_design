@@ -6,7 +6,7 @@
 Каждая глава строится по одному шаблону ([TEMPLATE.md](TEMPLATE.md)). Главный раздел — «Путь решения»: на каждом шаге **проблема → решение → что улучшилось → компромисс → альтернативы**. Диаграммы только иллюстрируют этот рассказ.
 
 ## 🎮 Симулятор
-В [simulator/](simulator/index.html) лежат интерактивные главы 1–13 по шагам, как на интервью: требования, оценка, API, схема на карте с потоками, углубление и итог. Открой `simulator/index.html` в браузере или включи GitHub Pages. Главы: [1. Proximity Service](simulator/ch1/index.html), [2. Nearby Friends](simulator/ch2/index.html), [3. Google Maps](simulator/ch3/index.html), [4. Message Queue](simulator/ch4/index.html), [5. Metrics Monitoring](simulator/ch5/index.html), [6. Ad Click Aggregation](simulator/ch6/index.html), [7. Hotel Reservation](simulator/ch7/index.html), [8. Distributed Email](simulator/ch8/index.html), [9. S3-like Object Storage](simulator/ch9/index.html), [10. Gaming Leaderboard](simulator/ch10/index.html), [11. Payment System](simulator/ch11/index.html), [12. Digital Wallet](simulator/ch12/index.html), [13. Stock Exchange](simulator/ch13/index.html). Отдельной группой идут конвейеры данных: [14. Batch Data Lake](simulator/ch14/index.html), [15. Streaming Pipeline](simulator/ch15/index.html), [16. CDC и Lakehouse](simulator/ch16/index.html). И системы вокруг моделей ИИ: [17. LLM Inference Service](simulator/ch17/index.html), [18. Recommendation Feed](simulator/ch18/index.html). Подробности в [simulator/README.md](simulator/README.md).
+В [simulator/](simulator/index.html) лежат интерактивные главы по шагам, как на интервью: требования, оценка, API, схема на карте с потоками, углубление и итог. Открой `simulator/index.html` в браузере или включи GitHub Pages. Главы: [1. Proximity Service](simulator/ch1/index.html), [2. Nearby Friends](simulator/ch2/index.html), [3. Google Maps](simulator/ch3/index.html), [4. Message Queue](simulator/ch4/index.html), [5. Metrics Monitoring](simulator/ch5/index.html), [6. Ad Click Aggregation](simulator/ch6/index.html), [7. Hotel Reservation](simulator/ch7/index.html), [8. Distributed Email](simulator/ch8/index.html), [9. S3-like Object Storage](simulator/ch9/index.html), [10. Gaming Leaderboard](simulator/ch10/index.html), [11. Payment System](simulator/ch11/index.html), [12. Digital Wallet](simulator/ch12/index.html), [13. Stock Exchange](simulator/ch13/index.html). Отдельной группой идут конвейеры данных: [14. Batch Data Lake](simulator/ch14/index.html), [15. Streaming Pipeline](simulator/ch15/index.html), [16. CDC и Lakehouse](simulator/ch16/index.html). И системы вокруг моделей ИИ: [17. LLM Inference Service](simulator/ch17/index.html), [18. Recommendation Feed](simulator/ch18/index.html), [19. RAG Assistant](simulator/ch19/index.html). Классические задачи интервью: [20. Key-Value Store](simulator/ch20/index.html), [21. Collaborative Editor](simulator/ch21/index.html), [22. Messenger](simulator/ch22/index.html), [23. Ride Matching](simulator/ch23/index.html). Подробности в [simulator/README.md](simulator/README.md).
 
 ## Как повторять
 1. Закрыть конспект, нарисовать архитектуру по памяти.
@@ -49,6 +49,17 @@
 |---|-------|-------|--------|
 | 17 | [LLM Inference Service](chapters/17-llm-inference/README.md) | сервис ответов языковой модели: батчинг на GPU, стриминг, лимиты в токенах, кэш префиксов | 🟨 |
 | 18 | [Recommendation Feed](chapters/18-recommendation-feed/README.md) | персональная лента: отбор кандидатов, ранжирование, feature store, обучение на показах | 🟨 |
+| 19 | [RAG Assistant](chapters/19-rag-assistant/README.md) | ответы по документам: нарезка, гибридный поиск, права в индексе, свежесть | 🟨 |
+
+### Классика интервью
+Собственные разборы задач, которые часто спрашивают, но которых нет во втором томе. Числа в них это допущения.
+
+| # | Глава | О чём | Статус |
+|---|-------|-------|--------|
+| 20 | [Key-Value Store](chapters/20-key-value-store/README.md) | хранилище в духе Dynamo: кольцо, кворум, векторные часы, сверка копий | 🟨 |
+| 21 | [Collaborative Editor](chapters/21-collaborative-editor/README.md) | совместная правка: OT или CRDT, сервер на документ, журнал и снимки | 🟨 |
+| 22 | [Messenger](chapters/22-messenger/README.md) | мессенджер: соединения, порядок, доставка, группы, сквозное шифрование | 🟨 |
+| 23 | [Ride Matching](chapters/23-ride-matching/README.md) | такси: гео-индекс H3, подбор по времени подачи, блокировка, динамическая цена | 🟨 |
 
 ## Шпаргалки
 Знания, которые нужны во всех главах сразу, лежат в [cheatsheets/](cheatsheets/README.md):
