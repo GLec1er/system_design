@@ -25,8 +25,14 @@
     // Собственные разборы: системы вокруг моделей ИИ. Числа это допущения.
     { n: 17, dir: 'ch17', book: 'ai', abbr: 'LLM', title: 'LLM Inference Service', about: 'Сервис ответов языковой модели: 2 млн токенов в секунду на тысячах GPU, continuous batching, стриминг, лимиты в токенах и кэш префиксов.', tech: ['GPU', 'vLLM', 'SSE', 'Redis', 'Kafka', 'Cassandra', 'S3'] },
     { n: 18, dir: 'ch18', book: 'ai', abbr: 'REC', title: 'Recommendation Feed', about: 'Персональная лента: двадцать объектов из ста миллионов за 200 мс. Отбор кандидатов по векторам, каскад ранжирования, feature store и обучение на показах.', tech: ['Two-tower', 'ANN', 'Feature store', 'Kafka', 'Flink', 'Redis', 'A/B'] },
+    { n: 19, dir: 'ch19', book: 'ai', abbr: 'RAG', title: 'RAG Assistant', about: 'Ответы языковой модели по документам компании: нарезка, гибридный поиск, переранжирование, права в индексе и инкрементальная индексация.', tech: ['RAG', 'Elasticsearch', 'ANN', 'Cross-encoder', 'Kafka', 'GPU'] },
+    // Собственные разборы: классические задачи интервью, которых нет во втором томе. Числа это допущения.
+    { n: 20, dir: 'ch20', book: 'cls', abbr: 'KV', title: 'Key-Value Store', about: 'Хранилище в духе Dynamo: consistent hashing с виртуальными узлами, кворум N/R/W, векторные часы, hinted handoff, деревья Меркла, gossip.', tech: ['Consistent hashing', 'Quorum', 'Vector clocks', 'Merkle tree', 'Gossip', 'LSM'] },
+    { n: 21, dir: 'ch21', book: 'cls', abbr: 'DOC', title: 'Collaborative Editor', about: 'Совместная правка как в Google Docs: OT или CRDT, один сервер на документ, WebSocket, журнал операций и снимки, офлайн.', tech: ['OT', 'CRDT', 'WebSocket', 'Cassandra', 'S3'] },
+    { n: 22, dir: 'ch22', book: 'cls', abbr: 'MSG', title: 'Messenger', about: 'Мессенджер как WhatsApp: долгие соединения, реестр сессий, номер в чате, подтверждения, очереди на устройство, сквозное шифрование.', tech: ['WebSocket', 'Redis', 'Cassandra', 'Signal', 'Push'] },
+    { n: 23, dir: 'ch23', book: 'cls', abbr: 'CAB', title: 'Ride Matching', about: 'Заказ такси: 250 тысяч координат в секунду, H3-ячейки в Redis, подбор по времени подачи, блокировка водителя, динамическая цена.', tech: ['H3', 'Redis', 'Kafka', 'Flink', 'PostgreSQL'] },
   ];
-  const BOOKS = [{ id: 'sdi2', title: 'System Design Interview, Vol. 2', short: 'V2' }, { id: 'de', title: 'Data Engineering: конвейеры данных', short: 'DE', own: true }, { id: 'ai', title: 'AI-системы', short: 'AI', own: true }];
+  const BOOKS = [{ id: 'sdi2', title: 'System Design Interview, Vol. 2', short: 'V2' }, { id: 'de', title: 'Data Engineering: конвейеры данных', short: 'DE', own: true }, { id: 'ai', title: 'AI-системы', short: 'AI', own: true }, { id: 'cls', title: 'Классика интервью', short: 'SD', own: true }];
   CH.forEach((c) => (c.book = c.book || 'sdi2'));
   window.SD_CHAPTERS = CH;
   window.SD_BOOKS = BOOKS;
